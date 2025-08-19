@@ -1,0 +1,11 @@
+watch_paths:
+  - /docs
+exclude_globs: ["*.tmp", "*.swp", "~*", ".*", "*.part", "*.crdownload"]
+include_ext: [".txt", ".pdf", ".md", ".csv", ".log"]
+chroma_path: /cache/chroma
+collection: activate_rag
+embedding_model: sentence-transformers/all-MiniLM-L6-v2
+stabilize_seconds: 10
+chunk_chars: 700
+chunk_overlap: 80
+batch_size: 64
