@@ -1,5 +1,5 @@
-
 import os
+import re
 import json
 from typing import Dict, List, Optional, Any, AsyncGenerator, Tuple
 import httpx
@@ -8,6 +8,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from transformers import AutoTokenizer
 
+# =========================
+# Core config
+# =========================
 RAG_URL = os.getenv("RAG_URL", "http://rag:8080")
 VLLM_URL = os.getenv("VLLM_URL", "http://vllm:8000/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.2")
@@ -19,6 +22,21 @@ VLLM_API_KEY = os.getenv("VLLM_API_KEY", "")
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "120"))
 CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "10"))
 
+# =========================
+# Revised system directive
+# =========================
+SYSTEM_PROMPT = (
+    "You are a careful assistant. Use ONLY the provided context blocks to answer. "
+    "Each block is numbered [1], [2], … and includes source metadata. "
+    "When you use information from a block, you MUST cite it inline with [n]. "
+    "At the end of your response, include a 'References:' section with one reference per line "
+    "formatted as: [n] file_path (chunk index). "
+    "Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+)
+
+# =========================
+# Tokenizer helpers
+# =========================
 _tokenizer = None
 def get_tokenizer():
     global _tokenizer
@@ -37,6 +55,9 @@ def token_len(messages: List[Dict[str, Any]]) -> int:
             text += f"[{m.get('role','').upper()}]\n{m.get('content','')}\n"
         return len(tok.encode(text))
 
+# =========================
+# Legacy packer (kept)
+# =========================
 def pack_messages(system_prompt: str, user_query: str, chunks: List[str],
                   max_context: int, max_completion_tokens: int = 256,
                   per_chunk_header: str = "\n\n[CONTEXT]\n") -> Tuple[List[Dict[str, str]], int]:
@@ -63,6 +84,121 @@ def pack_messages(system_prompt: str, user_query: str, chunks: List[str],
     return [{"role":"system","content":system_prompt},
             {"role":"user","content":user_query}], used
 
+# =========================
+# NEW: Numbered context & citations
+# =========================
+CITE_RE = re.compile(r"\[(\d{1,3})\]")  # [1], [23], etc.
+
+def build_context_and_map(results: List[Dict[str, Any]], max_chars: int = 8000
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Produce a numbered context block and a parallel citation map.
+    Each result is expected to carry metadata with at least file_path & chunk_index.
+    """
+    blocks: List[str] = []
+    citations: List[Dict[str, Any]] = []
+    total = 0
+
+    for i, r in enumerate(results, start=1):
+        meta = r.get("metadata") or {}
+        fp = meta.get("file_path") or "unknown"
+        idx = meta.get("chunk_index")
+        title = meta.get("title") or fp.split("/")[-1]
+        sha = meta.get("doc_sha256")
+        sim = r.get("similarity")
+        head = f"[{i}] {title} — {fp}"
+        if idx is not None:
+            head += f" (chunk {idx})"
+        if sim is not None:
+            try:
+                head += f"  • sim={float(sim):.3f}"
+            except Exception:
+                pass
+        text = (r.get("chunk_text") or "").strip()
+        block = f"{head}\n<<<\n{text}\n>>>"
+        if total + len(block) > max_chars:
+            break
+        total += len(block)
+        blocks.append(block)
+        citations.append({
+            "n": i,
+            "file_path": fp,
+            "chunk_index": idx,
+            "title": title,
+            "doc_sha256": sha,
+            "similarity": sim
+        })
+
+    return "\n\n".join(blocks), citations
+
+def extract_used_citations(text: str, citations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    index = {c["n"]: c for c in citations}
+    used_order: List[Dict[str, Any]] = []
+    seen = set()
+    for m in CITE_RE.finditer(text or ""):
+        n = int(m.group(1))
+        if n in index and n not in seen:
+            used_order.append(index[n])
+            seen.add(n)
+    return used_order
+
+def _pack_numbered_chat(user_query: str, context_block: str,
+                        max_context: int, max_completion_tokens: int) -> List[Dict[str, str]]:
+    """System + user (with numbered context). Trims context if needed."""
+    system_prompt = SYSTEM_PROMPT
+    user_preface = (
+        "Context blocks (cite with [n] when used):\n\n"
+        f"{context_block}\n\n"
+        "Now answer the user's question using ONLY the context above. "
+        "Cite sources inline as [n].\n\n"
+        f"User question: {user_query}"
+    )
+    msgs = [{"role":"system","content":system_prompt},
+            {"role":"user","content":user_preface}]
+    # crude trim loop if needed
+    while token_len(msgs) > (max_context - max_completion_tokens - 64) and len(context_block) > 200:
+        # drop last ~20% of the context
+        trim_to = int(len(context_block) * 0.8)
+        context_block = context_block[:trim_to]
+        msgs[1]["content"] = (
+            "Context blocks (cite with [n] when used):\n\n"
+            f"{context_block}\n\n"
+            "Now answer the user's question using ONLY the context above. "
+            "Cite sources inline as [n].\n\n"
+            f"User question: {user_query}"
+        )
+    return msgs
+
+def _pack_numbered_prompt(user_query: str, context_block: str,
+                          max_context: int, max_completion_tokens: int) -> str:
+    """
+    Build a flat prompt for /v1/completions that still encodes numbered context and the directive.
+    """
+    system = SYSTEM_PROMPT
+    prompt = (
+        f"[SYSTEM]\n{system}\n\n"
+        "Context blocks (cite with [n] when used):\n\n"
+        f"{context_block}\n\n"
+        f"[USER]\n{user_query}\n\n"
+        "Answer using ONLY the context above and cite sources inline as [n]."
+    )
+    # simple trimming loop (by chars) if tokenizer is unavailable
+    msgs = [{"role":"system","content":system},{"role":"user","content":prompt}]
+    while token_len(msgs) > (max_context - max_completion_tokens - 64) and len(context_block) > 200:
+        context_block = context_block[:int(len(context_block) * 0.8)]
+        prompt = (
+            f"[SYSTEM]\n{system}\n\n"
+            "Context blocks (cite with [n] when used):\n\n"
+            f"{context_block}\n\n"
+            f"[USER]\n{user_query}\n\n"
+            "Answer using ONLY the context above and cite sources inline as [n]."
+        )
+        msgs = [{"role":"system","content":system},{"role":"user","content":prompt}]
+    return prompt
+
+# =========================
+# FastAPI app
+# =========================
 app = FastAPI(title="RAG→vLLM OpenAI Proxy (Plus v2)", version="1.3")
 async_client = httpx.AsyncClient(timeout=httpx.Timeout(HTTP_TIMEOUT, connect=CONNECT_TIMEOUT))
 
@@ -77,6 +213,9 @@ def _headers_with_auth(extra: Optional[Dict[str,str]] = None) -> Dict[str,str]:
     if extra: headers.update(extra)
     return headers
 
+# =========================
+# RAG fetch
+# =========================
 async def _rag_search(query: str, k: int, file_contains: Optional[str]=None) -> List[Dict[str, Any]]:
     params = {"query": query, "top_k": k}
     if file_contains:
@@ -96,8 +235,10 @@ def _extract_user_query(messages: List[Dict[str, Any]]) -> str:
     return ""
 
 def _rag_cfg(req_json: Dict[str, Any], headers: Dict[str,str]) -> Dict[str, Any]:
-    cfg = {"enabled": True, "top_k": TOP_K_DEFAULT, "system_prompt":"Answer using the provided context when relevant, and please cite sources with the file_path. If unsure, say so.", "file_contains": None}
-    #cfg = {"enabled": True, "top_k": TOP_K_DEFAULT, "system_prompt":"Use only the provided [CONTEXT] snippets. Cite file_path:chunk_index for any claim.", "file_contains": None}
+    # default config; system prompt remains available but the proxy will inject SYSTEM_PROMPT too
+    cfg = {"enabled": True, "top_k": TOP_K_DEFAULT,
+           "system_prompt": "Use only the provided context; cite sources with [n]. If absent, say so.",
+           "file_contains": None}
     if isinstance(req_json.get("rag"), dict):
         for k in cfg.keys():
             if k in req_json["rag"]:
@@ -118,6 +259,9 @@ def _rag_cfg(req_json: Dict[str, Any], headers: Dict[str,str]) -> Dict[str, Any]
 def _passthrough(src: Dict[str, Any], allowed: List[str]) -> Dict[str, Any]:
     return {k:v for k,v in src.items() if k in allowed and v is not None}
 
+# =========================
+# Model list / embeddings
+# =========================
 @app.get("/v1/models")
 async def list_models():
     try:
@@ -135,6 +279,9 @@ async def embeddings(request: Request):
     except Exception as e:
         raise HTTPException(502, {"error": str(e), "vllm_url": VLLM_URL})
 
+# =========================
+# /v1/completions (kept)
+# =========================
 ALLOWED_COMPLETION_FIELDS = [
     "model","prompt","suffix","max_tokens","temperature","top_p","n","stream","logprobs",
     "echo","stop","presence_penalty","frequency_penalty","best_of","logit_bias","user","seed","response_format"
@@ -153,14 +300,21 @@ async def completions(request: Request):
 
     used = 0
     results: List[Dict[str, Any]] = []
-    if rag_cfg["enabled"]:
-        results = await _rag_search(prompt, rag_cfg["top_k"], rag_cfg.get("file_contains"))
-        chunks = [x["chunk_text"] for x in results]
-        messages, used = pack_messages(rag_cfg["system_prompt"], prompt, chunks, MAX_CONTEXT, req_json.get("max_tokens") or DEFAULT_MAX_TOKENS)
-        flat = ""
-        for m in messages:
-            flat += f"[{m['role'].upper()}]\n{m['content']}\n"
-        prompt = flat
+    citations_all: List[Dict[str, Any]] = []
+    context_block = ""
+    user_query = prompt  # completions => prompt is the user question
+
+    if rag_cfg["enabled"] and user_query.strip():
+        results = await _rag_search(user_query, rag_cfg["top_k"], rag_cfg.get("file_contains"))
+        # Build numbered context/citation map
+        context_block, citations_all = build_context_and_map(results)
+        # Build a numbered prompt for completions
+        prompt = _pack_numbered_prompt(
+            user_query=user_query,
+            context_block=context_block,
+            max_context=MAX_CONTEXT,
+            max_completion_tokens=req_json.get("max_tokens") or DEFAULT_MAX_TOKENS
+        )
 
     payload = _passthrough(req_json, ALLOWED_COMPLETION_FIELDS)
     payload["prompt"] = prompt
@@ -182,20 +336,79 @@ async def completions(request: Request):
         r = await async_client.post(url, json=payload, headers=_headers_with_auth())
     except Exception as e:
         raise HTTPException(502, {"error": str(e), "vllm_url": VLLM_URL})
-    data = None
+
+    # Try to attach citations metadata
     try:
         data = r.json()
     except Exception:
         return Response(content=r.content, status_code=r.status_code, media_type=r.headers.get("content-type","application/json"))
+
     if isinstance(data, dict):
-        citations = [{"file_path":x["metadata"]["file_path"], "chunk_index":x["metadata"]["chunk_index"]} for x in results[:used]]
-        data["_rag"] = {"used_chunks": used, "citations": citations, "enabled": bool(rag_cfg["enabled"])}
+        out_text = ""
+        try:
+            out_text = data["choices"][0].get("text","") or data["choices"][0].get("message",{}).get("content","")
+        except Exception:
+            pass
+
+        citations_used = extract_used_citations(out_text, citations_all) if citations_all else []
+        data["_rag"] = {
+            "enabled": bool(rag_cfg["enabled"]),
+            "query": user_query,
+            "citations_all": citations_all,
+            "citations_used": citations_used,
+            "context_blocks": context_block
+        }
+
+        # Prefer used citations; fallback to all
+        refs_text = _format_references(citations_used or citations_all)
+        _append_refs_to_openai_response(data, refs_text)
     return JSONResponse(status_code=r.status_code, content=data)
 
+# =========================
+# /v1/chat/completions (kept)
+# =========================
 ALLOWED_CHAT_FIELDS = [
     "model","messages","max_tokens","temperature","top_p","n","stream","stop","presence_penalty",
     "frequency_penalty","logit_bias","user","tools","tool_choice","seed","response_format","logprobs"
 ]
+
+def _format_references(citations: List[Dict[str, Any]]) -> str:
+    """
+    Build a multi-line 'References:' block.
+    Ensures one reference per line, with stable numbering.
+    """
+    if not citations:
+        return ""
+    lines = ["References:"]
+    for i, c in enumerate(citations, start=1):
+        n = c.get("n") or i
+        fp = c.get("file_path") or "?"
+        idx = c.get("chunk_index")
+        if idx is None:
+            lines.append(f"[{n}] {fp}")
+        else:
+            lines.append(f"[{n}] {fp} (chunk {idx})")
+    # Return without leading/trailing blank lines; caller adds spacing
+    return "\n".join(lines)
+
+def _append_refs_to_openai_response(data: Dict[str, Any], refs_text: str) -> None:
+    """
+    Append references to OpenAI-compatible responses in-place.
+    Adds two newlines before refs and a trailing newline for cleanliness.
+    Handles both /v1/completions and /v1/chat/completions shapes.
+    """
+    if not refs_text or "choices" not in data or not data["choices"]:
+        return
+    block = "\n\n" + refs_text + "\n"
+    ch0 = data["choices"][0]
+    # /v1/completions
+    if isinstance(ch0.get("text"), str):
+        ch0["text"] += block
+        return
+    # /v1/chat/completions
+    msg = ch0.get("message")
+    if isinstance(msg, dict) and isinstance(msg.get("content"), str):
+        msg["content"] += block
 
 class ChatReq(BaseModel):
     model: Optional[str] = None
@@ -226,15 +439,21 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
     messages = req.messages or []
     user_query = _extract_user_query(messages)
 
-    used = 0
     results: List[Dict[str, Any]] = []
+    citations_all: List[Dict[str, Any]] = []
+    context_block = ""
     final_messages = messages
 
-    if rag_cfg["enabled"]:
+    if rag_cfg["enabled"] and user_query.strip():
         results = await _rag_search(user_query, rag_cfg["top_k"], rag_cfg.get("file_contains"))
-        chunks = [x["chunk_text"] for x in results]
-        max_tok = req.max_tokens or DEFAULT_MAX_TOKENS
-        final_messages, used = pack_messages(rag_cfg["system_prompt"], user_query, chunks, MAX_CONTEXT, max_tok)
+        context_block, citations_all = build_context_and_map(results)
+        # Build numbered chat messages with trimming if needed
+        final_messages = _pack_numbered_chat(
+            user_query=user_query,
+            context_block=context_block,
+            max_context=MAX_CONTEXT,
+            max_completion_tokens=(req.max_tokens or DEFAULT_MAX_TOKENS)
+        )
 
     payload = _passthrough(req.dict(exclude_none=True), ALLOWED_CHAT_FIELDS)
     payload["messages"] = final_messages
@@ -245,9 +464,7 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
         async def gen() -> AsyncGenerator[bytes, None]:
             try:
                 async with async_client.stream("POST", url, json=payload, headers=_headers_with_auth()) as resp:
-                    # Use upstream content-type if available
-                    ctype = resp.headers.get("content-type", "text/event-stream")
-                    # We ignore ctype here because StreamingResponse is created outside; chunks are forwarded raw
+                    # forward raw SSE; citations are only attached in non-stream mode
                     async for chunk in resp.aiter_raw():
                         yield chunk
             except Exception as e:
@@ -259,16 +476,37 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
         r = await async_client.post(url, json=payload, headers=_headers_with_auth())
     except Exception as e:
         raise HTTPException(502, {"error": str(e), "vllm_url": VLLM_URL})
-    data = None
+
+    # Attach citations metadata
     try:
         data = r.json()
     except Exception:
         return Response(content=r.content, status_code=r.status_code, media_type=r.headers.get("content-type","application/json"))
+
     if isinstance(data, dict):
-        citations = [{"file_path":x["metadata"]["file_path"], "chunk_index":x["metadata"]["chunk_index"]} for x in results[:used]]
-        data["_rag"] = {"used_chunks": used, "citations": citations, "enabled": bool(rag_cfg["enabled"])}
+        content = ""
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except Exception:
+            pass
+
+        citations_used = extract_used_citations(content, citations_all) if citations_all else []
+        data["_rag"] = {
+            "enabled": bool(rag_cfg["enabled"]),
+            "query": user_query,
+            "citations_all": citations_all,
+            "citations_used": citations_used,
+            "context_blocks": context_block
+        }
+
+        # Prefer used citations; fallback to all
+        refs_text = _format_references(citations_used or citations_all)
+        _append_refs_to_openai_response(data, refs_text)
     return JSONResponse(status_code=r.status_code, content=data)
 
+# =========================
+# Health & debug
+# =========================
 @app.get("/health")
 async def health():
     out = {"model": MODEL_NAME, "vllm_url": VLLM_URL, "rag_url": RAG_URL,
@@ -314,6 +552,31 @@ async def debug_probe():
     except Exception as e:
         res["rag_error"] = str(e)
     return res
+
+@app.get("/debug/peek")
+async def debug_peek(query: str, top_k: int = 4, file_contains: Optional[str] = None):
+    """
+    Quick end-to-end RAG probe:
+    - Calls the RAG /search
+    - Builds the numbered context using your build_context_and_map()
+    - Returns exactly what will feed vLLM (context + citation map)
+    """
+    try:
+        results = await _rag_search(query, top_k, file_contains)
+    except HTTPException as e:
+        return {"error": "rag_fetch_failed", "detail": e.detail}
+
+    context_block, citations_all = build_context_and_map(results)
+    return {
+        "query": query,
+        "top_k": top_k,
+        "file_contains": file_contains,
+        "results_len": len(results),
+        "first_result_keys": (list(results[0].keys()) if results else []),
+        "context_chars": len(context_block),
+        "context_blocks": context_block,
+        "citations_all": citations_all,
+    }
 
 @app.get("/")
 def root():
