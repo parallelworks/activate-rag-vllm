@@ -10,8 +10,22 @@ This Compose stack runs:
 ## Quickstart
 ```bash
 # 1) Review and copy env
-cp env.example .env
-source .env
+cp env.example env/env.sh
+source env/env.sh
+
+# have to do this if nodev is set
+sudo mount -o remount,exec,dev /tmp
+export TMPDIR=$PWD/containers
+export SINGULARITY_TMPDIR=$PWD/containers
+export SINGULARITY_CACHEDIR=$PWD/containers
+
+pip3 install singularity-compose
+singularity-compose build
+
+mkdir -p cache cache/chroma docs
+
+singularity instance start 
+
 
 # 2) Build RAG/Proxy image (vLLM & WebUI pulled automatically)
 if [ "$RUN_OPENWEBUI" = "1" ]; then

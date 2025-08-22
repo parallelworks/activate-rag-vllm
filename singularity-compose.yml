@@ -1,0 +1,94 @@
+version: "2.0"
+
+instances:
+  
+  vllm:
+    build:
+      context: .
+      recipe: containers/Singularity.vllm
+    image: vllm.sif
+    network:
+      enable: false
+    # Pass GPU flag at instance start so the runtime has CUDA inside
+    start:
+      options:
+        - nv
+    run:
+      args:
+        - >
+          nohup python3 -m vllm.entrypoints.openai.api_server --model "${MODEL_NAME}" --tokenizer "${MODEL_NAME}" --host 0.0.0.0 --port ${VLLM_SERVER_PORT} ${VLLM_EXTRA_ARGS} > /logs/vllm.out 2>&1 &
+    volumes:
+      - ./logs:/logs
+      - ./cache:/root/.cache
+      - ./env.sh:/.singularity.d/env/env.sh
+
+  chroma:
+    build:
+      context: .
+      recipe: containers/Singularity.chroma
+    image: chroma.sif 
+    network:
+      enable: false
+    run:
+      args:
+        - >
+          nohup uvicorn chromadb.app:app --workers 1 --host 0.0.0.0 --port 8001 --proxy-headers --log-config chromadb/log_config.yml --timeout-keep-alive 30 > /logs/chroma.out 2>&1 &
+    volumes:
+      - ./logs:/logs
+      - ./cache/chroma:/chroma/chroma
+      - ./env.sh:/.singularity.d/env/env.sh
+    ports:
+      - "8001:8001"
+
+  rag:
+    build:
+      context: .
+      recipe: containers/Singularity.rag
+    image: rag.sif
+    network:
+      enable: false
+    volumes:
+      - ./logs:/logs
+      - ./cache:/root/.cache
+      - ./env.sh:/.singularity.d/env/env.sh
+    run:
+      args:
+        - >
+          nohup bash -c "sleep 3 && python3 /app/rag_server.py --port ${RAG_PORT}  --collection activate_rag --embedding_model ${EMBEDDING_MODEL}" > /logs/rag.out 2>&1 &
+    depends_on:
+      - chroma
+    ports:
+      - "8080:8080"
+
+  indexer:
+    image: rag.sif
+    network:
+      enable: false
+    volumes:
+      - ./logs:/logs
+      - ./docs:/docs
+      - ./cache:/cache
+      - ./env.sh:/.singularity.d/env/env.sh
+    run: 
+      args:
+        - >
+          nohup bash -c "sleep 3 && python3 /app/indexer.py --config /app/indexer_config.yaml --poll --rescan-seconds 10" > /logs/indexer.out 2>&1 &
+    depends_on:
+      - rag
+  
+  proxy:
+    image: rag.sif
+    network:
+      enable: false
+    volumes:
+      - ./logs:/logs
+      - ./cache:/root/.cache
+      - ./env.sh:/.singularity.d/env/env.sh
+    run: 
+      args:
+        - >
+          nohup python3 /app/rag_proxy.py > /logs/proxy.out 2>&1 &
+    ports:
+      - "8081:8081"
+    depends_on:
+      - indexer

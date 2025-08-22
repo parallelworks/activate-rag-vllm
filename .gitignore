@@ -1,3 +1,9 @@
 cache
 docs
 .env
+env.sh
+*.sif
+logs
+containers/cache
+etc.hosts
+resolv.conf

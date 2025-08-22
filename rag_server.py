@@ -121,8 +121,8 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     args=ap.parse_args()
 
-    host=os.environ.get("CHROMA_HOST","chroma")
-    port=int(os.environ.get("CHROMA_PORT","8000"))
+    host=os.environ.get("CHROMA_HOST","127.0.0.1")
+    port=int(os.environ.get("CHROMA_PORT","8001"))
     global retriever
     retriever=Retriever(args.collection, args.embedding_model, host, port)
     uvicorn.run(app, host="0.0.0.0", port=args.port)
