@@ -10,39 +10,13 @@ This Compose stack runs from the [github repo here](https://github.com/parallelw
 
 ## Quickstart
 ```bash
-# 1) Review and copy env
-cp env.example env/env.sh
-source env/env.sh
+export HF_TOKEN=hf_xyz
+export RUNMODE=docker # or singularity
+export BUILD=true
+export RUNTYPE=all # or vllm only
 
-pip3 install singularity-compose
-singularity-compose build
-
-mkdir -p cache cache/chroma docs
-
-singularity instance start 
-
-
-# 2) Build RAG/Proxy image (vLLM & WebUI pulled automatically)
-if [ "$RUN_OPENWEBUI" = "1" ]; then
-    echo "building vllm, rag and openwebui"
-    docker compose -f docker-compose.yml -f docker-compose.openwebui.yml build
-else
-    echo "building vllm and rag"
-    docker compose build
-fi
-
-# 3) Launch
-if [ "$RUN_OPENWEBUI" = "1" ]; then
-    echo "running vllm, rag and openwebui"
-    docker compose -f docker-compose.yml -f docker-compose.openwebui.yml up -d
-else
-    echo "running vllm and rag"
-    docker compose up -d
-fi
-
-# 4) URLs
-# Proxy:     http://localhost:${PROXY_PORT}/health
-# OpenWebUI: http://localhost:${OPENWEBUI_PORT}
+# run the service
+./run.sh
 ```
 
 ## Files you might care about
