@@ -1,6 +1,6 @@
-# ACTIVATE — vLLM + RAG + Proxy + Optional OpenWebUI
+# ACTIVATE — vLLM + RAG + Proxy
 
-This Compose stack runs from the [github repo here](https://github.com/parallelworks/activate-rag-vllm-compose) and executes the below services in Docker or Singularity modes:
+This Compose stack runs from the [github repo here](https://github.com/parallelworks/activate-rag-vllm) and executes the below services in Docker or Singularity modes:
 
 - **vLLM** model server (OpenAI-compatible)
 - **RAG** retrieval API (Chroma)
