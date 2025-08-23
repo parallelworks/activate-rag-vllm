@@ -13,11 +13,11 @@ if [ "$RUNMODE" == "docker" ];then
 
     mkdir -p logs cache cache/chroma docs
 
-    [ "$BUILD" = "true" ] && docker compose build
-    
     if [ "$RUNTYPE" == "all" ];then
+        [ "$BUILD" = "true" ] && docker compose build
         docker compose up -d
     else
+        [ "$BUILD" = "true" ] && docker compose build $RUNTYPE
         docker compose up $RUNTYPE -d
     fi
 
@@ -30,13 +30,17 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     mkdir -p logs cache cache/chroma docs
 
+    # needed to set an explicit tmp and cache location to avoid errors on the PW lab server
+    mkdir -p /tmp/singularity-tmp /tmp/singularity-cache
+    export SINGULARITY_TMPDIR=/tmp/singularity-tmp
+    export SINGULARITY_CACHEDIR=/tmp/singularity-cache
+
     # pip3 install singularity-compose 
-
-    [ "$BUILD" = "true" ] && singularity-compose build
-
     if [ "$RUNTYPE" == "all" ];then
+        [ "$BUILD" = "true" ] && singularity-compose build
         singularity-compose up
     else
+        [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
     fi
 
