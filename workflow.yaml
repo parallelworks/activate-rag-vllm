@@ -14,14 +14,11 @@ jobs:
         run: |
           cd ~/
           sudo rm -Rf ${{ inputs.rundir }}
-          git clone https://github.com/parallelworks/activate-rag-vllm-compose.git ${{ inputs.rundir }}
+          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
       - name: Start Docker
         run: |
           cd ${{ inputs.rundir }}
-          cp env.example .env
-          # add the HF variable
-          sed -i 's/^#\s*HF_TOKEN=.*/HF_TOKEN=${{ inputs.hftoken }}/' .env
-          #docker compose up
+          
 'on':
   execute:
     inputs:

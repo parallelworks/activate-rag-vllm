@@ -50,4 +50,4 @@ python3 /app/rag_proxy.py >/logs/rag_proxy.log 2>&1 & p4=$!
 echo "All services started."
 
 trap 'kill -TERM $p1 $p2 $p3 $p4 2>/dev/null || true' TERM INT
-# wait -n $p1 $p2 $p3 $p4 # exits on any failure
+wait -n $p1 $p2 $p3 $p4 # exits on any failure
