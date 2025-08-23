@@ -11,13 +11,13 @@ from transformers import AutoTokenizer
 # =========================
 # Core config
 # =========================
-RAG_URL = os.getenv("RAG_URL", "http://rag:8080")
-VLLM_URL = os.getenv("VLLM_URL", "http://vllm:8000/v1")
+RAG_URL = os.getenv("RAG_URL", "http://127.0.0.1:8080")
+VLLM_URL = os.getenv("VLLM_URL", "http://127.0.0.1:8000/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.2")
 MAX_CONTEXT = int(os.getenv("MAX_CONTEXT", "8192"))
 DEFAULT_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "256"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
-TOP_K_DEFAULT = int(os.getenv("TOP_K", "2"))
+TOP_K_DEFAULT = int(os.getenv("TOP_K", "4"))
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "")
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "120"))
 CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "10"))
@@ -580,7 +580,7 @@ async def debug_peek(query: str, top_k: int = 4, file_contains: Optional[str] = 
 
 @app.get("/")
 def root():
-    return {"service": "RAG→vLLM OpenAI Proxy (Plus v2)", "version": "1.3"}
+    return {"service": "RAG→vLLM OpenAI Proxy for Singularity", "version": "1.4"}
 
 if __name__ == "__main__":
     import uvicorn

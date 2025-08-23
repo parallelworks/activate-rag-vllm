@@ -1,0 +1,9 @@
+Bootstrap: docker
+From: vllm/vllm-openai:latest
+
+%runscript
+cd /app
+exec /bin/bash -lc "$@"
+%startscript
+cd /app
+exec /bin/bash -lc "$@"

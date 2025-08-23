@@ -1,7 +1,0 @@
-# RAG + Indexer + Proxy image
-FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
-WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends git wget curl build-essential ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN pip3 install --no-cache-dir     "fastapi>=0.110,<0.112" "uvicorn[standard]>=0.29,<0.31"     "transformers>=4.41,<4.45" "sentence-transformers>=2.6,<3"     "chromadb==0.5.4" "watchdog>=3,<5" "pypdf>=4,<5" requests httpx pyyaml
-COPY rag_server.py indexer.py indexer_config.yaml rag_proxy.py /app/
-ENV HF_HOME=/root/.cache/huggingface
