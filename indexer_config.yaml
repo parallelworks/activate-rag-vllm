@@ -2,7 +2,7 @@ watch_paths:
   - /docs
 exclude_globs: ["*.tmp", "*.swp", "~*", ".*", "*.part", "*.crdownload"]
 include_ext: [".txt", ".pdf", ".md", ".csv", ".log"]
-chroma_path: /cache/chroma
+chroma_path: /root/.cache/chroma
 collection: activate_rag
 embedding_model: sentence-transformers/all-MiniLM-L6-v2
 stabilize_seconds: 10

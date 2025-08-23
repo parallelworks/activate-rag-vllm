@@ -7,18 +7,19 @@ rag_server.py /app/
 indexer.py /app/
 indexer_config.yaml /app/
 rag_proxy.py /app/
+singularity-entrypoint.sh /app/
+
 %post
 # RAG + Indexer + Proxy image
 mkdir -p /app
 cd /app
 apt-get update && apt-get install -y --no-install-recommends git wget curl build-essential ca-certificates && rm -rf /var/lib/apt/lists/*
-pip3 install --no-cache-dir     "fastapi>=0.110,<0.112" "uvicorn[standard]>=0.29,<0.31"     "transformers>=4.41,<4.45" "sentence-transformers>=2.6,<3"     "chromadb==0.5.4" "watchdog>=3,<5" "pypdf>=4,<5" requests httpx pyyaml
+pip3 install --no-cache-dir chromadb "fastapi>=0.110,<0.112" "uvicorn[standard]>=0.29,<0.31"     "transformers>=4.41,<4.45" "sentence-transformers>=2.6,<3"     "chromadb==0.5.4" "watchdog>=3,<5" "pypdf>=4,<5" requests httpx pyyaml
 HF_HOME=/root/.cache/huggingface
+chmod +x singularity-entrypoint.sh
+
 %environment
 export HF_HOME=/root/.cache/huggingface
+
 %runscript
-cd /app
-exec /bin/bash -lc "$@"
-%startscript
-cd /app
-exec /bin/bash -lc "$@"
+/bin/bash singularity-entrypoint.sh

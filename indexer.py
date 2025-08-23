@@ -106,7 +106,7 @@ def matches_any(patterns, name):
 
 # ---------- FTS helpers (per-operation connection; thread-safe) ----------
 
-FTS_ROOT = "/cache/fts"
+FTS_ROOT = "/root/.cache/fts"
 FTS_DB = os.path.join(FTS_ROOT, "chunks.db")
 
 def fts_exec(sql: str, params: tuple = (), many: Optional[List[tuple]] = None):
@@ -187,7 +187,7 @@ def _chroma_add_with_retries(col, ids, docs, embs, metas, file_path: str,
 class Indexer:
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        host = os.environ.get("CHROMA_HOST", "chroma")
+        host = os.environ.get("CHROMA_HOST", "127.0.0.1")
         port = int(os.environ.get("CHROMA_PORT", "8000"))
         self.client = http_chroma_client(host, port)
         self.col = self.client.get_or_create_collection(cfg['collection'])

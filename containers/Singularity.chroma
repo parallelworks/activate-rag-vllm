@@ -1,9 +1,0 @@
-Bootstrap: docker
-From: ghcr.io/chroma-core/chroma:0.5.4
-
-%runscript
-cd /chroma
-exec /bin/bash -lc "$@"
-%startscript
-cd /chroma
-exec /bin/bash -lc "$@"

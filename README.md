@@ -1,6 +1,7 @@
-# ACTIVATE — Docker Compose: vLLM + RAG + Proxy + Optional OpenWebUI
+# ACTIVATE — vLLM + RAG + Proxy + Optional OpenWebUI
 
-This Compose stack runs:
+This Compose stack runs from the [github repo here](https://github.com/parallelworks/activate-rag-vllm-compose) and executes the below services in Docker or Singularity modes:
+
 - **vLLM** model server (OpenAI-compatible)
 - **RAG** retrieval API (Chroma)
 - **Indexer** (filesystem → Chroma, auto-updates)
@@ -12,12 +13,6 @@ This Compose stack runs:
 # 1) Review and copy env
 cp env.example env/env.sh
 source env/env.sh
-
-# have to do this if nodev is set
-sudo mount -o remount,exec,dev /tmp
-export TMPDIR=$PWD/containers
-export SINGULARITY_TMPDIR=$PWD/containers
-export SINGULARITY_CACHEDIR=$PWD/containers
 
 pip3 install singularity-compose
 singularity-compose build
