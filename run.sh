@@ -21,6 +21,7 @@ if [ "$RUNMODE" == "docker" ];then
     cp env.example .env
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" .env
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
     source .env
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
@@ -41,6 +42,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     cp env.sh.example env.sh
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" env.sh
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" env.sh
     source env.sh
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
