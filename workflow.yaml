@@ -23,6 +23,7 @@ jobs:
           SYSTEM_PROMPT: ${{ inputs.systemprompt }}
           HF_TOKEN: ${{ inputs.hf_token  }}
           MODEL_NAME: ${{ inputs.hf_model  }}
+          DOCS_DIR: ${{ inputs.docsdir }}
         run: |
           cd ${{ inputs.rundir }}
           /bin/bash run.sh
@@ -68,6 +69,12 @@ jobs:
         optional: true
         default: ${{ org.HF_TOKEN }}
         type: password
+      docsdir:
+        label: RAG Directory
+        hidden: ${{ inputs.runtype != 'all' }}
+        optional: true
+        default: ./docs
+        type: string
       systemprompt:
         type: string
         label: System Prompt
