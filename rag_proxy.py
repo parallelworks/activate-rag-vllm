@@ -25,14 +25,7 @@ CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "10"))
 # =========================
 # Revised system directive
 # =========================
-SYSTEM_PROMPT = (
-    "You are a careful assistant. Use ONLY the provided context blocks to answer. "
-    "Each block is numbered [1], [2], … and includes source metadata. "
-    "When you use information from a block, you MUST cite it inline with [n]. "
-    "At the end of your response, include a 'References:' section with one reference per line "
-    "formatted as: [n] file_path (chunk index). "
-    "Do not invent citations or sources. If the context does not contain the answer, say so briefly."
-)
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT","You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References:' section with one reference per line formatted as: [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.")
 
 # =========================
 # Tokenizer helpers
