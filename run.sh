@@ -6,6 +6,15 @@ export RUNTYPE=${RUNTYPE:-all} # all or vllm
 export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
 export DOCS_DIR=${DOCS_DIR:-./docs}
 
+echo ""
+echo "Running workflow with the below inputs:"
+echo "  RUNMODE=$RUNMODE"
+echo "  BUILD=$BUILD"
+echo "  RUNTYPE=$RUNTYPE"
+echo "  MODEL_NAME=$MODEL_NAME"
+echo "  DOCS_DIR=$DOCS_DIR"
+echo ""
+
 if [ "$RUNMODE" == "docker" ];then
 
     cp docker/* ./ -Rf
