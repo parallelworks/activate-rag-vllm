@@ -60,7 +60,7 @@ services:
     volumes:
       - ./logs:/logs
       - ./cache:/root/.cache
-      - ./docs:/docs
+      - ${DOCS_DIR}:/docs
     ports:
       - "${PROXY_PORT}:8081"
     networks: [ragnet]

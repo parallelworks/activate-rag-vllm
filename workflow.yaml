@@ -12,13 +12,20 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
-          cd ~/
-          sudo rm -Rf ${{ inputs.rundir }}
-          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
-      - name: Start Docker
+          if [ ! -d "${{ inputs.rundir }}" ] ; then
+            git clone https://github.com/parallelworks/activate-rag-vllm-compose.git ${{ inputs.rundir }}
+          fi
+      - name: Execute Process
+        env:
+          RUNMODE: ${{ inputs.runmode  }}
+          BUILD: ${{ inputs.build  }}
+          RUNTYPE: ${{ inputs.runtype  }}
+          SYSTEM_PROMPT: ${{ inputs.systemprompt }}
+          HF_TOKEN: ${{ inputs.hf_token  }}
+          MODEL_NAME: ${{ inputs.hf_model  }}
         run: |
           cd ${{ inputs.rundir }}
-          
+          /bin/bash run.sh
 'on':
   execute:
     inputs:
@@ -32,15 +39,40 @@ jobs:
         label: Run Directory
         type: string
         default: ~/activate-rag-vllm
-      type:
-        label: Type
+      runmode:
+        label: Execution Mode
         type: dropdown
         options:
           - value: docker
             label: Docker
           - value: singularity
             label: Singularity
+      runtype:
+        label: Run Type
+        type: dropdown
+        options:
+          - value: all
+            label: vLLM+RAG
+          - value: vllm
+            label: vLLM Only
+      build:
+        label: Build Containers
+        type: boolean
+        default: true
+      hfmodel:
+        label: HF Model
+        default: meta-llama/Llama-3.1-8B-Instruct
+        type: string
       hftoken:
         label: HF Token (gated models)
         optional: true
+        default: ${{ org.HF_TOKEN }}
         type: password
+      systemprompt:
+        type: string
+        label: System Prompt
+        hidden: ${{ inputs.runtype != 'all' }}
+        textarea: true
+        optional: true
+        default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+      

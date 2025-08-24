@@ -4,6 +4,7 @@ export RUNMODE=${RUNMODE:-docker} # docker or singularity
 export BUILD=${BUILD:-true} # true or false
 export RUNTYPE=${RUNTYPE:-all} # all or vllm
 export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
+export DOCS_DIR=${DOCS_DIR:-./docs}
 
 if [ "$RUNMODE" == "docker" ];then
 
@@ -13,7 +14,7 @@ if [ "$RUNMODE" == "docker" ];then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" .env
     source .env
 
-    mkdir -p logs cache cache/chroma docs
+    mkdir -p logs cache cache/chroma $DOCS_DIR
 
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && docker compose build
@@ -31,7 +32,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" env.sh
     source env.sh
 
-    mkdir -p logs cache cache/chroma docs
+    mkdir -p logs cache cache/chroma $DOCS_DIR
 
     # needed to set an explicit tmp and cache location to avoid errors on the PW lab server
     mkdir -p /tmp/singularity-tmp /tmp/singularity-cache
