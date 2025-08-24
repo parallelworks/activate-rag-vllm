@@ -50,11 +50,6 @@ elif [ "$RUNMODE" == "singularity" ]; then
         ln -s $DOCS_DIR ./docs
     fi
 
-    # needed to set an explicit tmp and cache location to avoid errors on the PW lab server
-    mkdir -p /tmp/singularity-tmp /tmp/singularity-cache
-    export SINGULARITY_TMPDIR=/tmp/singularity-tmp
-    export SINGULARITY_CACHEDIR=/tmp/singularity-cache
-
     # pip3 install singularity-compose 
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && singularity-compose build
