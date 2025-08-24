@@ -32,6 +32,9 @@ if [ "$RUNMODE" == "docker" ];then
         [ "$BUILD" = "true" ] && docker compose build $RUNTYPE
         docker compose up $RUNTYPE -d
     fi
+    
+    sleep 2
+    docker compose logs
 
 elif [ "$RUNMODE" == "singularity" ]; then
 

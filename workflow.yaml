@@ -21,8 +21,8 @@ jobs:
           BUILD: ${{ inputs.build  }}
           RUNTYPE: ${{ inputs.runtype  }}
           SYSTEM_PROMPT: ${{ inputs.systemprompt }}
-          HF_TOKEN: ${{ inputs.hf_token  }}
-          MODEL_NAME: ${{ inputs.hf_model  }}
+          HF_TOKEN: ${{ inputs.hftoken  }}
+          MODEL_NAME: ${{ inputs.hfmodel  }}
           DOCS_DIR: ${{ inputs.docsdir }}
         run: |
           cd ${{ inputs.rundir }}
@@ -82,4 +82,3 @@ jobs:
         textarea: true
         optional: true
         default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
-      
