@@ -32,8 +32,7 @@ if [ "$RUNMODE" == "docker" ];then
         [ "$BUILD" = "true" ] && docker compose build $RUNTYPE
         docker compose up $RUNTYPE -d
     fi
-    
-    sleep 2
+
     docker compose logs
 
 elif [ "$RUNMODE" == "singularity" ]; then
@@ -46,6 +45,11 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
 
+    # singularity-compose does not support env variables in the yml config file
+    if [ "$DOCS_DIR" != "./docs" ];then
+        ln -s $DOCS_DIR ./docs
+    fi
+
     # needed to set an explicit tmp and cache location to avoid errors on the PW lab server
     mkdir -p /tmp/singularity-tmp /tmp/singularity-cache
     export SINGULARITY_TMPDIR=/tmp/singularity-tmp
@@ -54,7 +58,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     # pip3 install singularity-compose 
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && singularity-compose build
-        singularity-compose up
+        DOCS_DIR=$DOCS_DIR singularity-compose up
     else
         [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
