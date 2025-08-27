@@ -2,8 +2,8 @@ permissions:
   - '*'
 sessions:
   session:
-    useTLS: false
     redirect: false
+    openAI: true
 jobs:
   execute_job:
     ssh:
@@ -27,6 +27,16 @@ jobs:
         run: |
           cd ${{ inputs.rundir }}
           /bin/bash run.sh
+      - name: Update Session
+        uses: parallelworks/update-session
+        with:
+          remotePort: '8081'
+          target: ${{ inputs.resource.id }}
+          name: ${{ sessions.session }}
+      - name: Block for Session
+        run: |
+          cd ${{ inputs.rundir }}
+          docker compose logs -f
 'on':
   execute:
     inputs:
