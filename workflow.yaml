@@ -11,7 +11,7 @@ jobs:
       remoteUser: ${{ inputs.resource.namespace }}
     steps:
       - name: Preparing Run Directory
-        run: git clone https://github.com/parallelworks/activate-rag-vllm-compose.git
+        run: git clone --branch alvaro/dev https://github.com/parallelworks/activate-rag-vllm-compose.git
       - name: Execute Process
         env:
           RUNMODE: ${{ inputs.runmode  }}
@@ -37,7 +37,7 @@ jobs:
         cleanup: |
           cd activate-rag-vllm-compose
           bash cancel.sh
-          
+
 'on':
   execute:
     inputs:
