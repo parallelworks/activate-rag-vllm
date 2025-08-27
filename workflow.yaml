@@ -31,7 +31,7 @@ jobs:
           echo "export RUNMODE=${RUNMODE}" > run.env
           echo "export BUILD=${BUILD}" >> run.env
           echo "export RUNTYPE=${RUNTYPE}" >> run.env
-          echo "export SYSTEM_PROMPT=${SYSTEM_PROMPT}" >> run.env
+          echo "export SYSTEM_PROMPT=\"${SYSTEM_PROMPT}\"" >> run.env
           echo "export HF_TOKEN=${HF_TOKEN}" >> run.env
           echo "export MODEL_NAME=${MODEL_NAME}" >> run.env
           echo "export DOCS_DIR=${DOCS_DIR}" >> run.env
