@@ -11,7 +11,7 @@ jobs:
       remoteUser: ${{ inputs.resource.namespace }}
     steps:
       - name: Preparing Run Directory
-        run: git clone https://github.com/parallelworks/activate-rag-vllm-compose.git .
+        run: git clone https://github.com/parallelworks/activate-rag-vllm-compose.git
       - name: Execute Process
         env:
           RUNMODE: ${{ inputs.runmode  }}
@@ -22,6 +22,8 @@ jobs:
           MODEL_NAME: ${{ inputs.hfmodel  }}
           DOCS_DIR: ${{ inputs.docsdir }}
         run: |
+          cd activate-rag-vllm-compose
+
           echo "export RUNMODE=${RUNMODE}" > run.env
           echo "export BUILD=${BUILD}" >> run.env
           echo "export RUNTYPE=${RUNTYPE}" >> run.env
