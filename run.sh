@@ -74,7 +74,7 @@ if [ "$RUNMODE" == "docker" ];then
         ${docker_cmd} compose up $RUNTYPE -d
     fi
 
-    ${docker_cmd} compose logs
+    ${docker_cmd} compose logs -f
 
 elif [ "$RUNMODE" == "singularity" ]; then
 
