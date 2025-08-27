@@ -38,6 +38,7 @@ if [ "$RUNMODE" == "docker" ];then
         exit 1
     else
         sudo systemctl start docker
+        sudo dnf install -y nvidia-container-toolkit
         docker_cmd="sudo docker"
     fi
 
