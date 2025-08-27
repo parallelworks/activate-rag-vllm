@@ -8,7 +8,6 @@ jobs:
   execute_job:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
-      remoteUser: ${{ inputs.resource.namespace }}
     steps:
       - name: Preparing Run Directory
         run: |
