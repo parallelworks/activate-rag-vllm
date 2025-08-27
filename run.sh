@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 export RUNMODE=${RUNMODE:-docker} # docker or singularity
 export BUILD=${BUILD:-true} # true or false
