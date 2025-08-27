@@ -15,7 +15,8 @@ jobs:
           rundir=${{ inputs.parent_rundir }}/$(date +"%Y/%m/%d/%H-%M-%S")
           echo "rundir=${rundir}" | tee -a $OUTPUTS
           mkdir -p ${rundir}
-          cd ${rundir} git clone https://github.com/parallelworks/activate-rag-vllm-compose.git .
+          cd ${rundir} 
+          git clone https://github.com/parallelworks/activate-rag-vllm-compose.git .
       - name: Execute Process
         env:
           RUNMODE: ${{ inputs.runmode  }}
