@@ -16,6 +16,9 @@ echo "  MODEL_NAME=$MODEL_NAME"
 echo "  DOCS_DIR=$DOCS_DIR"
 echo ""
 
+# Create cleanup script
+echo '#!/bin/bash' > cancel.sh
+chmod +x cancel.sh
 
 if [ "$RUNMODE" == "docker" ];then
 
@@ -38,8 +41,6 @@ if [ "$RUNMODE" == "docker" ];then
         docker_cmd="sudo docker"
     fi
 
-    echo ${docker_cmd}
-
     cp docker/* ./ -Rf
     cp env.example .env
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
@@ -49,6 +50,21 @@ if [ "$RUNMODE" == "docker" ];then
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
 
+    major_version=$(docker compose version --short | cut -d'.' -f1)
+    minor_version=$(docker compose version --short | cut -d'.' -f2)
+    if [ "${major_version}" -ge 3 ]; then
+        cp docker-compose-v2.39.1.yml docker-compose.yml 
+    elif [ "${major_version}" -le 1 ]; then
+        cp docker-compose-v2.27.0.yml docker-compose.yml
+    else
+        if [ "${minor_version}" -ge 39 ]; then
+            cp docker-compose-v2.39.1.yml docker-compose.yml
+        else
+            cp docker-compose-v2.27.0.yml docker-compose.yml
+        fi
+    fi
+
+    echo "${docker_cmd} compose down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && ${docker_cmd} compose build
         ${docker_cmd} compose up -d

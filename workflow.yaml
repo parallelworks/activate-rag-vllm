@@ -33,6 +33,11 @@ jobs:
           echo "export DOCS_DIR=${DOCS_DIR}" >> run.env
 
           /bin/bash run.sh
+        
+        cleanup: |
+          cd activate-rag-vllm-compose
+          bash cancel.sh
+          
 'on':
   execute:
     inputs:
