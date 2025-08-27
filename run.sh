@@ -37,8 +37,8 @@ if [ "$RUNMODE" == "docker" ];then
         echo " $(date) ERROR: User cannot run docker and has no root access to run sudo docker"
         exit 1
     else
-        sudo systemctl start docker
         sudo dnf install -y nvidia-container-toolkit
+        sudo systemctl start docker
         docker_cmd="sudo docker"
     fi
 
