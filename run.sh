@@ -16,7 +16,29 @@ echo "  MODEL_NAME=$MODEL_NAME"
 echo "  DOCS_DIR=$DOCS_DIR"
 echo ""
 
+
 if [ "$RUNMODE" == "docker" ];then
+
+    # Ensure docker service is started and set docker_cmd
+    which docker >/dev/null 2>&1 || { 
+        echo "$(date) ERROR: Docker is not installed."
+        exit 1
+    }
+
+    docker ps >/dev/null 2>&1
+    EXIT_CODE=$?
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        docker_cmd="docker"
+    elif ! sudo -n true 2>/dev/null; then
+        echo " $(date) ERROR: User cannot run docker and has no root access to run sudo docker"
+        exit 1
+    else
+        sudo systemctl start docker
+        docker_cmd="sudo docker"
+    fi
+
+    echo ${docker_cmd}
 
     cp docker/* ./ -Rf
     cp env.example .env
@@ -28,14 +50,14 @@ if [ "$RUNMODE" == "docker" ];then
     mkdir -p logs cache cache/chroma $DOCS_DIR
 
     if [ "$RUNTYPE" == "all" ];then
-        [ "$BUILD" = "true" ] && docker compose build
-        docker compose up -d
+        [ "$BUILD" = "true" ] && ${docker_cmd} compose build
+        ${docker_cmd} compose up -d
     else
-        [ "$BUILD" = "true" ] && docker compose build $RUNTYPE
-        docker compose up $RUNTYPE -d
+        [ "$BUILD" = "true" ] && ${docker_cmd} compose build $RUNTYPE
+        ${docker_cmd} compose up $RUNTYPE -d
     fi
 
-    docker compose logs
+    ${docker_cmd} compose logs
 
 elif [ "$RUNMODE" == "singularity" ]; then
 
