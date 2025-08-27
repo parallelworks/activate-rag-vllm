@@ -12,9 +12,10 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
-          if [ ! -d "${{ inputs.rundir }}" ] ; then
-            git clone https://github.com/parallelworks/activate-rag-vllm-compose.git ${{ inputs.rundir }}
-          fi
+          rundir=${{ inputs.parent_rundir }}/$(date +"%Y/%m/%d/%H-%M-%S")
+          echo "rundir=${rundir}" | tee -a $OUTPUTS
+          mkdir -p ${rundir}
+          cd ${rundir} git clone https://github.com/parallelworks/activate-rag-vllm-compose.git .
       - name: Execute Process
         env:
           RUNMODE: ${{ inputs.runmode  }}
@@ -25,7 +26,7 @@ jobs:
           MODEL_NAME: ${{ inputs.hfmodel  }}
           DOCS_DIR: ${{ inputs.docsdir }}
         run: |
-          cd ${{ inputs.rundir }}
+          cd ${{ needs.execute_job.outputs.rundir }}
           echo "export RUNMODE=${RUNMODE}" > run.env
           echo "export BUILD=${BUILD}" >> run.env
           echo "export RUNTYPE=${RUNTYPE}" >> run.env
@@ -44,7 +45,7 @@ jobs:
         autoselect: true
         include-workspace: false
         tooltip: Resource to run the service
-      rundir:
+      parent_rundir:
         label: Run Directory
         type: string
         default: ~/activate-rag-vllm
