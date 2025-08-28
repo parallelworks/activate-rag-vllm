@@ -29,7 +29,7 @@ services:
       test: ["CMD-SHELL", "curl -sSf http://localhost:8000/v1/models >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
-      retries: 20
+      retries: 100
       start_period: 30s
 
   rag:

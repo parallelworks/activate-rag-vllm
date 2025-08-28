@@ -34,6 +34,7 @@ jobs:
           /bin/bash run.sh
         
         cleanup: |
+          set -x
           cd activate-rag-vllm-compose
           bash cancel.sh
 
