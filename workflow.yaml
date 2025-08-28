@@ -10,7 +10,7 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Preparing Run Directory
-        run: git clone --branch alvaro/dev https://github.com/parallelworks/activate-rag-vllm-compose.git
+        run: git clone --branch alvaro/dev-2 https://github.com/parallelworks/activate-rag-vllm-compose.git
       - name: Execute Process
         env:
           RUNMODE: ${{ inputs.runmode  }}
