@@ -59,6 +59,7 @@ if [ "$RUNMODE" == "docker" ];then
         if command -v nvidia-ctk >/dev/null 2>&1; then
             sudo systemctl start docker
         else
+            # FIXME: This is not robust!
             sudo dnf install -y nvidia-container-toolkit
             sudo systemctl restart docker
         fi
