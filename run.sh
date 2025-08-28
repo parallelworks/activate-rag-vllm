@@ -16,30 +16,49 @@ echo "  MODEL_NAME=$MODEL_NAME"
 echo "  DOCS_DIR=$DOCS_DIR"
 echo ""
 
+install_docker_compose(){
+    echo "$(date) Downloading docker-compose v2.39.1"
+    curl -L "https://github.com/docker/compose/releases/download/v2.39.1/docker-compose-$(uname -s)-$(uname -m)" -o docker-compose
+    chmod +x docker-compose
+}
+
 # Create cleanup script
 echo '#!/bin/bash' > cancel.sh
 chmod +x cancel.sh
 
 if [ "$RUNMODE" == "docker" ];then
 
-    # Ensure docker service is started and set docker_cmd
+    # Ensure docker service is installed
     which docker >/dev/null 2>&1 || { 
         echo "$(date) ERROR: Docker is not installed."
         exit 1
     }
 
+    # Ensure docker compose is installed and meets requirements
+    which docker-compose >/dev/null 2>&1 || install_docker_compose
+
+    major_version=$(docker compose version --short | cut -d'.' -f1)
+    minor_version=$(docker compose version --short | cut -d'.' -f2)
+    if [ -z "$major_version" ] || [ -z "$minor_version" ] || [ "$major_version" -lt 2 ] || { [ "$major_version" -eq 2 ] && [ "$minor_version" -lt 39 ]; }; then
+        install_docker_compose
+        docker_compose_cmd="./docker-compose"
+    else
+        docker_compose_cmd="docker-compose"
+    fi
+    
+    # Ensure docker service is started and set docker_compose_cmd
     docker ps >/dev/null 2>&1
     EXIT_CODE=$?
 
     if [ $EXIT_CODE -eq 0 ]; then
-        docker_cmd="docker"
+        echo "$(date) User has docker access" 
     elif ! sudo -n true 2>/dev/null; then
-        echo " $(date) ERROR: User cannot run docker and has no root access to run sudo docker"
+        echo "$(date) ERROR: User cannot run docker and has no root access to run sudo docker"
         exit 1
     else
         sudo dnf install -y nvidia-container-toolkit
         sudo systemctl start docker
-        docker_cmd="sudo docker"
+        docker_compose_cmd="sudo ${docker_compose_cmd}"
     fi
 
     cp docker/* ./ -Rf
@@ -51,30 +70,16 @@ if [ "$RUNMODE" == "docker" ];then
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
 
-    major_version=$(docker compose version --short | cut -d'.' -f1)
-    minor_version=$(docker compose version --short | cut -d'.' -f2)
-    if [ "${major_version}" -ge 3 ]; then
-        cp docker-compose-v2.39.1.yml docker-compose.yml 
-    elif [ "${major_version}" -le 1 ]; then
-        cp docker-compose-v2.27.0.yml docker-compose.yml
-    else
-        if [ "${minor_version}" -ge 39 ]; then
-            cp docker-compose-v2.39.1.yml docker-compose.yml
-        else
-            cp docker-compose-v2.27.0.yml docker-compose.yml
-        fi
-    fi
-
-    echo "${docker_cmd} compose down" >> cancel.sh
+    echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
-        [ "$BUILD" = "true" ] && ${docker_cmd} compose build
-        ${docker_cmd} compose up -d
+        [ "$BUILD" = "true" ] && ${docker_compose_cmd} build
+        ${docker_compose_cmd} up -d
     else
-        [ "$BUILD" = "true" ] && ${docker_cmd} compose build $RUNTYPE
-        ${docker_cmd} compose up $RUNTYPE -d
+        [ "$BUILD" = "true" ] && ${docker_compose_cmd} build $RUNTYPE
+        ${docker_compose_cmd} up $RUNTYPE -d
     fi
 
-    ${docker_cmd} compose logs -f
+    ${docker_compose_cmd} logs -f
 
 elif [ "$RUNMODE" == "singularity" ]; then
 
