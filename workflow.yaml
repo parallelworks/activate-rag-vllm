@@ -2,8 +2,9 @@ permissions:
   - '*'
 sessions:
   session:
-    useTLS: false
     redirect: false
+    openAI: true
+
 jobs:
   execute_job:
     ssh:
@@ -37,6 +38,46 @@ jobs:
           set -x
           cd activate-rag-vllm-compose
           bash cancel.sh
+
+  create_session:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Get Compute Hostname
+        early-cancel: any-job-failed
+        run: |
+          cd activate-rag-vllm-compose
+          while true; do
+            echo "Waiting for target hostname..."
+
+            # Check if the service.port file exists and read its contents
+            target_hostname=$(cat target.hostname)
+
+            # Exit the loop if file was found and read
+            if [ -n "${target_hostname}" ]; then
+              echo "Target's hostname found: ${target_hostname}"
+              break
+            fi
+
+            # Wait before the next check
+            sleep 5
+          done
+          # FIXME: ONLY IF SLURM IS TRUE
+          #job_id=$(cat job.id)
+          #if [ -z "${job_id}" ]; then
+          #  echo "Error: SLURM job ID is empty!" >&2
+          #  exit 1
+          #fi
+          #target_hostname=$(squeue -j "${job_id}" --noheader --format="%N")
+          echo "target_hostname=${target_hostname}"  | tee -a $OUTPUTS
+      - name: Update Session
+        uses: parallelworks/update-session
+        with:
+          remotePort: '8081'
+          target: '${{ inputs.resource.id }}'
+          name: '${{ sessions.session }}'
+          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+
 
 'on':
   execute:

@@ -83,7 +83,8 @@ if [ "$RUNMODE" == "docker" ];then
         [ "$BUILD" = "true" ] && ${docker_compose_cmd} build $RUNTYPE
         ${docker_compose_cmd} up $RUNTYPE -d
     fi
-
+    # Required for session's remoteHost
+    hostname > target.hostname
     ${docker_compose_cmd} logs -f
 
 elif [ "$RUNMODE" == "singularity" ]; then
