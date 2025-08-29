@@ -62,7 +62,7 @@ jobs:
             echo "$(date) Job submission failed"
             exit 1
           fi
-          echo "jobid=${jobid}"  | tee -a $OUTPUTS
+          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
           cd activate-rag-vllm-compose
@@ -149,8 +149,10 @@ jobs:
       - name: Get Hostname
         early-cancel: any-job-failed
         run: |
+          cd activate-rag-vllm-compose
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
-            jobid=${{ needs.slurm_job.outputs.jobid }}
+            #jobid=${{ needs.slurm_job.outputs.jobid }}
+            jobid=$(cat jobid)
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
