@@ -46,9 +46,7 @@ jobs:
       - name: Get Compute Hostname
         early-cancel: any-job-failed
         run: |
-          set -x
-          cd activate-rag-vllm-compose
-          pwd
+          while [ ! -d "activate-rag-vllm-compose" ]; do sleep 5; done; cd activate-rag-vllm-compose
           while true; do
             echo "Waiting for target hostname..."
 
