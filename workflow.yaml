@@ -68,7 +68,7 @@ jobs:
           set -x
           cd activate-rag-vllm-compose
           jobid=${{ needs.slurm_job.outputs.jobid }}}}
-          target_hostname=$(squeue -j "${job_id}" --noheader --format="%N")
+          target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
       - name: Monitor SLURM Job
