@@ -76,10 +76,10 @@ if [ "$RUNMODE" == "docker" ];then
     echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && ${docker_compose_cmd} build
-        ${docker_compose_cmd} up -d
+        ${docker_compose_cmd} up -d --remove-orphans
     else
         [ "$BUILD" = "true" ] && ${docker_compose_cmd} build $RUNTYPE
-        ${docker_compose_cmd} up $RUNTYPE -d
+        ${docker_compose_cmd} up $RUNTYPE -d --remove-orphans
     fi
     # Required for session's remoteHost
     hostname > target.hostname
