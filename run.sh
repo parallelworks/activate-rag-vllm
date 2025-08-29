@@ -41,7 +41,7 @@ if [ "$RUNMODE" == "docker" ];then
         install_docker_compose
         docker_compose_cmd="./docker-compose"
     else
-        docker_compose_cmd="docker-compose"
+        docker_compose_cmd="docker compose"
     fi
     
     # Ensure docker service is started and set docker_compose_cmd
