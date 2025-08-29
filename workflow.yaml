@@ -43,7 +43,8 @@ jobs:
 
           echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           echo "#SBATCH --chdir=${PWD}" >> run.sh
-          echo "#SBATCH --stdout=${PWD}/run.out" >> run.sh
+          echo "#SBATCH -o ${PWD}/run.out" >> run.sh
+          echo "#SBATCH -e ${PWD}/run.out" >> run.sh
           if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
             echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
           fi
