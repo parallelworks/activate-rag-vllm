@@ -44,7 +44,9 @@ jobs:
           echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH --stdout=${PWD}/run.out" >> run.sh
-          echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
+          if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
+            echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
+          fi
 
           # Indicates job started running
           touch job.started >> run.sh
