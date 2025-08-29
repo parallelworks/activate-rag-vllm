@@ -11,7 +11,7 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Preparing Run Directory
-        run: git clone --branch alvaro/dev-3 https://github.com/parallelworks/activate-rag-vllm-compose.git
+        run: git clone https://github.com/parallelworks/activate-rag-vllm-compose.git
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
@@ -23,7 +23,7 @@ jobs:
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
-        clenaup: |
+        cleanup: |
           cd activate-rag-vllm-compose
           rm .run.env
 
