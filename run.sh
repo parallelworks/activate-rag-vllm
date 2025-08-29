@@ -35,8 +35,6 @@ if [ "$RUNMODE" == "docker" ];then
     }
 
     # Ensure docker compose is installed and meets requirements
-    which docker-compose >/dev/null 2>&1 || install_docker_compose
-
     major_version=$(docker compose version --short | cut -d'.' -f1)
     minor_version=$(docker compose version --short | cut -d'.' -f2)
     if [ -z "$major_version" ] || [ -z "$minor_version" ] || [ "$major_version" -lt 2 ] || { [ "$major_version" -eq 2 ] && [ "$minor_version" -lt 39 ]; }; then
