@@ -40,8 +40,9 @@ jobs:
           cd activate-rag-vllm-compose
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
-
-          echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
+            echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          fi
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH -o ${PWD}/run.out" >> run.sh
           echo "#SBATCH -e ${PWD}/run.out" >> run.sh
