@@ -15,6 +15,7 @@ jobs:
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
+          set -x
           cd activate-rag-vllm-compose
           echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
           echo "export BUILD=${{ inputs.build  }}" >> .run.env
