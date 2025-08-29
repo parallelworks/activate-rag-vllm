@@ -1,11 +1,5 @@
-#!/bin/bash
-set -x
 
-export RUNMODE=${RUNMODE:-docker} # docker or singularity
-export BUILD=${BUILD:-true} # true or false
-export RUNTYPE=${RUNTYPE:-all} # all or vllm
-export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
-export DOCS_DIR=${DOCS_DIR:-./docs}
+source .run.env
 
 echo ""
 echo "Running workflow with the below inputs:"
@@ -81,8 +75,6 @@ if [ "$RUNMODE" == "docker" ];then
         [ "$BUILD" = "true" ] && ${docker_compose_cmd} build $RUNTYPE
         ${docker_compose_cmd} up $RUNTYPE -d --remove-orphans
     fi
-    # Required for session's remoteHost
-    hostname > target.hostname
     ${docker_compose_cmd} logs -f
 
 elif [ "$RUNMODE" == "singularity" ]; then
