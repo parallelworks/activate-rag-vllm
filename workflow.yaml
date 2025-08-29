@@ -151,7 +151,7 @@ jobs:
         run: |
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
             jobid=${{ needs.slurm_job.outputs.jobid }}
-            target_hostname=$(squeue -j "${job_id}" --noheader --format="%N")
+            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
