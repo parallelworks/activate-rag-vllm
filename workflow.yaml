@@ -50,7 +50,6 @@ jobs:
           touch job.started >> run.sh
           
           cat start_service.sh >> run.sh
-          cat run.sh
       - name: Submit SLURM Script
         run: |
           cd activate-rag-vllm-compose
@@ -121,7 +120,6 @@ jobs:
           touch job.started >> run.sh
 
           cat start_service.sh >> run.sh
-          cat run.sh
       - name: Submit SSH Script
         run: |
           cd activate-rag-vllm-compose
