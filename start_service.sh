@@ -1,5 +1,6 @@
 
 source .run.env
+rm .run.env
 
 echo ""
 echo "Running workflow with the below inputs:"
