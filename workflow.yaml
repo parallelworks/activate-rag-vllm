@@ -102,6 +102,7 @@ jobs:
             fi
           done
         cleanup: |
+          set -x
           cd activate-rag-vllm-compose
           kill $(cat tail.pid)
 
