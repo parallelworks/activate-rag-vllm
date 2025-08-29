@@ -6,70 +6,184 @@ sessions:
     openAI: true
 
 jobs:
-  execute_job:
+  prepare_job_directory:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Preparing Run Directory
-        run: git clone --branch alvaro/dev-2 https://github.com/parallelworks/activate-rag-vllm-compose.git
-      - name: Execute Process
-        env:
-          RUNMODE: ${{ inputs.runmode  }}
-          BUILD: ${{ inputs.build  }}
-          RUNTYPE: ${{ inputs.runtype  }}
-          SYSTEM_PROMPT: ${{ inputs.systemprompt }}
-          HF_TOKEN: ${{ inputs.hftoken  }}
-          MODEL_NAME: ${{ inputs.hfmodel  }}
-          DOCS_DIR: ${{ inputs.docsdir }}
+        run: git clone --branch alvaro/dev-3 https://github.com/parallelworks/activate-rag-vllm-compose.git
+      - name: Create Environment File
+        early-cancel: any-job-failed
         run: |
           cd activate-rag-vllm-compose
+          echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
+          echo "export BUILD=${{ inputs.build  }}" >> .run.env
+          echo "export RUNTYPE=${{ inputs.runtype  }}" >> .run.env
+          echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
+          echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
+          echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+        clenaup: |
+          cd activate-rag-vllm-compose
+          rm .run.env
 
-          echo "export RUNMODE=${RUNMODE}" > run.env
-          echo "export BUILD=${BUILD}" >> run.env
-          echo "export RUNTYPE=${RUNTYPE}" >> run.env
-          echo "export SYSTEM_PROMPT=\"${SYSTEM_PROMPT}\"" >> run.env
-          echo "export HF_TOKEN=${HF_TOKEN}" >> run.env
-          echo "export MODEL_NAME=${MODEL_NAME}" >> run.env
-          echo "export DOCS_DIR=${DOCS_DIR}" >> run.env
+  slurm_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'SLURM' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create SLURM Script
+        early-cancel: any-job-failed
+        run: |
+          cd activate-rag-vllm-compose
+          echo '#!/bin/bash' > run.sh
+          chmod +x run.sh
 
-          /bin/bash run.sh
-        
+          echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          echo "#SBATCH --chdir=${PWD}" >> run.sh
+          echo "#SBATCH --stdout=${PWD}/run.out" >> run.sh
+          echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
+
+          # Indicates job started running
+          touch job.started >> run.sh
+          
+          cat start_service.sh >> run.sh
+          cat run.sh
+      - name: Submit SLURM Script
+        run: |
+          cd activate-rag-vllm-compose
+          echo "$(date) Submitting SLURM Job"
+          jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
+          if [ -z "${jobid}" ]; then
+            echo "$(date) Job submission failed"
+            exit 1
+          fi
+          echo "jobid=${jobid}"  | tee -a $OUTPUTS
+        cleanup: |
+          set -x
+          cd activate-rag-vllm-compose
+          jobid=${{echo ${{ needs.slurm_job.outputs.jobid }}}}
+          target_hostname=$(squeue -j "${job_id}" --noheader --format="%N")
+          ssh ${target_hostname} bash cancel.sh
+          scancel ${jobid}
+      - name: Monitor SLURM Job
+        run: |
+          jobid=${{ needs.slurm_job.outputs.jobid }}
+          echo "$(date) Monitoring SLURM job ${jobid}"
+
+          cd activate-rag-vllm-compose
+          touch run.out
+          tail -f run.out &
+          echo &! > tail.pid
+
+          get_slurm_job_status() {
+              # Get the header line to determine the column index corresponding to the job status
+              if [ -z "${SQUEUE_HEADER}" ]; then
+                  export SQUEUE_HEADER="$(eval squeue | awk 'NR==1')"
+              fi
+              status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
+              status_response=$(eval squeue | awk -v jobid="${jobid}" '$1 == jobid')
+              echo "${SQUEUE_HEADER}"
+              echo "${status_response}"
+              export job_status=$(echo ${status_response} | awk -v id="${jobid}" -v col="$status_column" '{print $col}')
+          }
+
+          while true; do
+            sleep 15
+            get_slurm_job_status
+            if [ -z "${job_status}" ]; then
+              job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
+              echo "$(date) Job exited with status ${job_status}"
+              exit 0
+            fi
+          done
+        cleanup: |
+          cd activate-rag-vllm-compose
+          kill $(cat tail.pif)
+
+  ssh_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'SSH' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create SSH Script
+        early-cancel: any-job-failed
+        run: |
+          cd activate-rag-vllm-compose
+          echo '#!/bin/bash' > run.sh
+          chmod +x run.sh
+
+          # Indicates job started running
+          touch job.started >> run.sh
+
+          cat start_service.sh >> run.sh
+          cat run.sh
+      - name: Submit SSH Script
+        run: |
+          cd activate-rag-vllm-compose
+          bash ./run.sh
         cleanup: |
           set -x
           cd activate-rag-vllm-compose
           bash cancel.sh
 
   create_session:
+    needs:
+      - prepare_job_directory
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - name: Get Compute Hostname
+      - name: Wait for job to start
         early-cancel: any-job-failed
         run: |
-          while [ ! -d "activate-rag-vllm-compose" ]; do sleep 5; done; cd activate-rag-vllm-compose
-          while true; do
-            echo "Waiting for target hostname..."
-
-            # Check if the service.port file exists and read its contents
-            target_hostname=$(cat target.hostname  2>/dev/null)
-
-            # Exit the loop if file was found and read
-            if [ -n "${target_hostname}" ]; then
-              echo "Target's hostname found: ${target_hostname}"
-              break
-            fi
-
-            # Wait before the next check
+          cd activate-rag-vllm-compose
+          while [ ! -f job.started ]; do
+            echo "Waiting for job to start..."
             sleep 5
           done
-          # FIXME: ONLY IF SLURM IS TRUE
-          #job_id=$(cat job.id)
-          #if [ -z "${job_id}" ]; then
-          #  echo "Error: SLURM job ID is empty!" >&2
-          #  exit 1
-          #fi
-          #target_hostname=$(squeue -j "${job_id}" --noheader --format="%N")
-          echo "target_hostname=${target_hostname}"  | tee -a $OUTPUTS
+      - name: Get Hostname
+        early-cancel: any-job-failed
+        run: |
+          if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
+            jobid=${{ needs.slurm_job.outputs.jobid }}
+            target_hostname=$(squeue -j "${job_id}" --noheader --format="%N")
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
+            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+          fi
+      - name: Wait for Server To Start
+        env:
+          remote_port: '8081'
+          remote_host: '${{ needs.create_session.outputs.target_hostname }}'
+        early-cancel: any-job-failed
+        run: |
+          TIMEOUT=5
+          RETRY_INTERVAL=3
+
+          # Function to check if server is listening
+          check_server() {
+              curl --silent --connect-timeout "$TIMEOUT" "http://${remote_host}:${remote_port}" >/dev/null 2>&1
+              return $?
+          }
+
+          # Main loop
+          attempt=1
+          while true; do
+              echo "Attempt $attempt: Checking if server is listening on ${remote_host}:${remote_port}..."
+              
+              if check_server; then
+                  echo "Success: Server is listening on ${remote_host}:${remote_port}!"
+                  exit 0
+              else
+                  echo "Server not responding. Retrying in ${RETRY_INTERVAL} seconds..."
+                  sleep "$RETRY_INTERVAL"
+                  ((attempt++))
+              fi
+          done
       - name: Update Session
         uses: parallelworks/update-session
         with:
@@ -88,6 +202,16 @@ jobs:
         autoselect: true
         include-workspace: false
         tooltip: Resource to run the service
+      execmethod:
+        type: dropdown
+        label: Execution Method
+        default: SSH
+        tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        options:
+          - value: SSH
+            label: SSH
+          - value: SLURM
+            label: SLURM
       runmode:
         label: Execution Mode
         type: dropdown
@@ -130,3 +254,23 @@ jobs:
         textarea: true
         optional: true
         default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+      slurm:
+        type: group
+        label: SLURM Directives
+        hidden: ${{ inputs.execmethod != 'SLURM' }}
+        items:
+          partition:
+            type: slurm-partitions
+            label: SLURM partition
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: true
+            resource: ${{ inputs.resource }}
+            tooltip: |
+              Partition to submit the interactive job. Leave empty to let SLURM pick
+              the optimal option.
+          scheduler_directives:
+            type: editor
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: true
+            tooltip: |
+              Type in additional scheduler directives. 
