@@ -157,13 +157,12 @@ jobs:
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
           fi
       - name: Wait for Server To Start
-        env:
-          remote_port: '8081'
-          remote_host: '${{ needs.create_session.outputs.target_hostname }}'
         early-cancel: any-job-failed
         run: |
           TIMEOUT=5
           RETRY_INTERVAL=3
+          remote_host="${{ needs.create_session.outputs.target_hostname }}"
+          remote_port="8081"
 
           # Function to check if server is listening
           check_server() {
