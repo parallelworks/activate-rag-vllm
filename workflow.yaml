@@ -103,7 +103,7 @@ jobs:
           done
         cleanup: |
           cd activate-rag-vllm-compose
-          kill $(cat tail.pif)
+          kill $(cat tail.pid)
 
   ssh_job:
     needs:
@@ -149,6 +149,7 @@ jobs:
       - name: Get Hostname
         early-cancel: any-job-failed
         run: |
+          set -x
           cd activate-rag-vllm-compose
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
             #jobid=${{ needs.slurm_job.outputs.jobid }}
