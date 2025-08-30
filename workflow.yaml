@@ -200,7 +200,7 @@ jobs:
           remotePort: '8081'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
-          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+          remoteHost: '${{ inputs.resources.ip }}'
 
 
 'on':
