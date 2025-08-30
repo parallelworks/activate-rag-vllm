@@ -11,7 +11,10 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Preparing Run Directory
-        run: git clone https://github.com/parallelworks/activate-rag-vllm.git
+        run: |
+          git clone https://github.com/parallelworks/activate-rag-vllm.git
+          cd activate-rag-vllm
+          git pull
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
