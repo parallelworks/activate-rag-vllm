@@ -11,12 +11,12 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Preparing Run Directory
-        run: git clone https://github.com/parallelworks/activate-rag-vllm-compose.git
+        run: git clone https://github.com/parallelworks/activate-rag-vllm.git
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
           set -x
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
           echo "export BUILD=${{ inputs.build  }}" >> .run.env
           echo "export RUNTYPE=${{ inputs.runtype  }}" >> .run.env
@@ -35,7 +35,7 @@ jobs:
       - name: Create SLURM Script
         early-cancel: any-job-failed
         run: |
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
           if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
@@ -54,7 +54,7 @@ jobs:
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
         run: |
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           echo "$(date) Submitting SLURM Job"
           jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
           if [ -z "${jobid}" ]; then
@@ -64,7 +64,7 @@ jobs:
           echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           jobid=${{ needs.slurm_job.outputs.jobid }}}}
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
@@ -74,7 +74,7 @@ jobs:
           jobid=${{ needs.slurm_job.outputs.jobid }}
           echo "$(date) Monitoring SLURM job ${jobid}"
 
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           touch run.out
           tail -f run.out &
           echo &! > tail.pid
@@ -103,7 +103,7 @@ jobs:
           done
         cleanup: |
           set -x
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           kill $(cat tail.pid)
 
   ssh_job:
@@ -116,7 +116,7 @@ jobs:
       - name: Create SSH Script
         early-cancel: any-job-failed
         run: |
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
 
@@ -126,12 +126,12 @@ jobs:
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
         run: |
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           bash ./run.sh
           touch job.ended
         cleanup: |
           set -x
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           bash cancel.sh
 
   create_session:
@@ -143,7 +143,7 @@ jobs:
       - name: Wait for job to start
         early-cancel: any-job-failed
         run: |
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           while [ ! -f job.started ]; do
             echo "Waiting for job to start..."
             sleep 5
@@ -152,7 +152,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd activate-rag-vllm-compose
+          cd activate-rag-vllm
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
             #jobid=${{ needs.slurm_job.outputs.jobid }}
             source jobid
