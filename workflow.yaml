@@ -159,7 +159,7 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+            echo "target_hostname=${{ inputs.resource.ip }}" | tee -a $OUTPUTS
           fi
       - name: Wait for Server To Start
         early-cancel: any-job-failed
