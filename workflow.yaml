@@ -148,7 +148,7 @@ jobs:
             echo "Waiting for job to start..."
             sleep 5
           done
-      - name: Get Hostname
+      - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
           set -x
@@ -159,14 +159,13 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=${{ inputs.resource.ip }}" | tee -a $OUTPUTS
+            target_hostname="${{ inputs.resource.ip }}"
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           fi
-      - name: Wait for Server To Start
-        early-cancel: any-job-failed
-        run: |
+
           TIMEOUT=5
           RETRY_INTERVAL=3
-          remote_host="${{ needs.create_session.outputs.target_hostname }}"
+          remote_host="$target_hostname"
           remote_port="8081"
 
           # Function to check if server is listening
