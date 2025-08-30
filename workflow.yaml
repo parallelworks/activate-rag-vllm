@@ -159,7 +159,7 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            target_hostname="${{ inputs.resource.ip }}"
+            target_hostname="127.0.0.1"
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           fi
 
