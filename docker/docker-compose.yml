@@ -36,7 +36,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.rag
-    image: activate/rag-proxy-plus:latest
+    image: parallelworks/activate-rag-vllm:latest
     container_name: rag
     environment:
       RAG_URL: ${RAG_URL}

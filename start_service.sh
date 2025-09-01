@@ -1,6 +1,14 @@
+#!/bin/bash
 
-source .run.env
-rm .run.env
+source .run.env > /dev/null 2>&1
+rm .run.env > /dev/null 2>&1
+
+# set these if running manually
+export RUNMODE=${RUNMODE:-docker} # docker or singularity
+export BUILD=${BUILD:-false} # true or false
+export RUNTYPE=${RUNTYPE:-all} # all or vllm
+export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
+export DOCS_DIR=${DOCS_DIR:-./docs}
 
 echo ""
 echo "Running workflow with the below inputs:"
@@ -70,7 +78,11 @@ if [ "$RUNMODE" == "docker" ];then
 
     echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
-        [ "$BUILD" = "true" ] && ${docker_compose_cmd} build
+        if [ "$BUILD" = "true" ];then
+            ${docker_compose_cmd} build
+            else
+            docker pull parallelworks/activate-rag-vllm:latest
+        fi
         ${docker_compose_cmd} up -d --remove-orphans
     else
         [ "$BUILD" = "true" ] && ${docker_compose_cmd} build $RUNTYPE
