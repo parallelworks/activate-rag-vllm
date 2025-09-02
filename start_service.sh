@@ -92,6 +92,23 @@ if [ "$RUNMODE" == "docker" ];then
 
 elif [ "$RUNMODE" == "singularity" ]; then
 
+    # Check if singularity is installed
+    if ! command -v singularity >/dev/null 2>&1; then
+        echo "$(date) Error: singularity is not installed"
+        exit 1
+    fi
+
+    # Check if singularity-compose is installed
+    if ! command -v singularity-compose >/dev/null 2>&1; then
+        echo "$(date) singularity-compose not found, installing..."
+        pip3 install singularity-compose
+        if [ $? -ne 0 ]; then
+            echo "$(date) Error: Failed to install singularity-compose"
+            exit 1
+        fi
+        echo "$(date) singularity-compose installed successfully"
+    fi
+
     cp singularity/* ./ -Rf
     cp env.sh.example env.sh
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
