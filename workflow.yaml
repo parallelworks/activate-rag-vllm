@@ -151,24 +151,25 @@ jobs:
             echo "Waiting for job to start..."
             sleep 5
           done
-      - name: Wait for Server To Start
+      - name: Get Hostname
         early-cancel: any-job-failed
         run: |
           set -x
-          cd activate-rag-vllm
+          cd activate-rag-vllm-compose
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
             #jobid=${{ needs.slurm_job.outputs.jobid }}
             source jobid
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            target_hostname="127.0.0.1"
-            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
           fi
-
+      - name: Wait for Server To Start
+        early-cancel: any-job-failed
+        run: |
           TIMEOUT=5
           RETRY_INTERVAL=3
-          remote_host="$target_hostname"
+          remote_host="${{ needs.create_session.outputs.target_hostname }}"
           remote_port="8081"
 
           # Function to check if server is listening
@@ -200,8 +201,7 @@ jobs:
           remotePort: '8081'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
-          remoteHost: '127.0.0.1'
-
+          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
 
 'on':
   execute:
