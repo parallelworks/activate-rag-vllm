@@ -6,8 +6,6 @@ instances:
     build:
       context: .
       recipe: Singularity.vllm
-      options:
-        - fakeroot
     image: vllm.sif
     network:
       enable: false
@@ -28,8 +26,6 @@ instances:
     build:
       context: .
       recipe: Singularity.rag
-      options:
-        - fakeroot
     image: rag.sif
     network:
       enable: false
