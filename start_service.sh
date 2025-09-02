@@ -123,12 +123,18 @@ elif [ "$RUNMODE" == "singularity" ]; then
         ln -s $DOCS_DIR ./docs
     fi
 
-    # pip3 install singularity-compose 
+    # If build is true check that user has root access
+    if [ "$BUILD" = "true" ] && ! sudo -n true 2>/dev/null; then
+        echo "$(date) ERROR: User needs root access to build singularity containers"
+        exit 1
+    fi
+
+
     if [ "$RUNTYPE" == "all" ];then
-        [ "$BUILD" = "true" ] && singularity-compose build
+        [ "$BUILD" = "true" ] && sudo singularity-compose build
         DOCS_DIR=$DOCS_DIR singularity-compose up
     else
-        [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
+        [ "$BUILD" = "true" ] && sudo singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
     fi
     singularity-compose logs --follow
