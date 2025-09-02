@@ -6,5 +6,6 @@ mkdir -p /app
 cd /app
 exec /bin/bash -lc "$@"
 %startscript
+mkdir -p /app
 cd /app
 exec /bin/bash -lc "$@"
