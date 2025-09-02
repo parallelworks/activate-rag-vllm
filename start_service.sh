@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 source .run.env > /dev/null 2>&1
 rm .run.env > /dev/null 2>&1
@@ -128,7 +129,6 @@ elif [ "$RUNMODE" == "singularity" ]; then
         echo "$(date) ERROR: User needs root access to build singularity containers"
         exit 1
     fi
-
 
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && sudo singularity-compose build
