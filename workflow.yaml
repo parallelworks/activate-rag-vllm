@@ -162,6 +162,10 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
+            
+            # add this in for temporary user OUTPUTS bug
+            if sudo -n true 2>/dev/null; then [ -d "$(dirname "$OUTPUTS")" ] || { sudo mkdir -p "$(dirname "$OUTPUTS")" && sudo chmod 777 "$(dirname "$OUTPUTS")"; }; else echo "⚠️ No sudo access so OUTPUT variables won't work"; fi
+
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
           fi
       - name: Wait for Server To Start
