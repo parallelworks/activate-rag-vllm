@@ -129,7 +129,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     #    echo "$(date) ERROR: User needs root access to build singularity containers"
     #    exit 1
     #fi
-
+    echo "singularity-compose down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && singularity-compose build
         DOCS_DIR=$DOCS_DIR singularity-compose up
