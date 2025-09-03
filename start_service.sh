@@ -125,16 +125,16 @@ elif [ "$RUNMODE" == "singularity" ]; then
     fi
 
     # If build is true check that user has root access
-    if [ "$BUILD" = "true" ] && ! sudo -n true 2>/dev/null; then
-        echo "$(date) ERROR: User needs root access to build singularity containers"
-        exit 1
-    fi
+    #if [ "$BUILD" = "true" ] && ! sudo -n true 2>/dev/null; then
+    #    echo "$(date) ERROR: User needs root access to build singularity containers"
+    #    exit 1
+    #fi
 
     if [ "$RUNTYPE" == "all" ];then
-        [ "$BUILD" = "true" ] && sudo singularity-compose build
+        [ "$BUILD" = "true" ] && singularity-compose build
         DOCS_DIR=$DOCS_DIR singularity-compose up
     else
-        [ "$BUILD" = "true" ] && sudo singularity-compose build "${RUNTYPE}1"
+        [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
     fi
     singularity-compose logs --follow
