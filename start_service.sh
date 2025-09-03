@@ -137,6 +137,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
         [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
     fi
-    singularity-compose logs --follow
+    # Follow the logs
+    tail -f logs/*
 
 fi
