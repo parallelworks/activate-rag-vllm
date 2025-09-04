@@ -19,7 +19,7 @@ services:
     command: >
       --model ${MODEL_NAME}
       --host 0.0.0.0
-      --port 8000
+      --port ${VLLM_SERVER_PORT}
       ${VLLM_EXTRA_ARGS}
     ports:
       - "${VLLM_SERVER_PORT}:${VLLM_SERVER_PORT}"
