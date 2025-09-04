@@ -81,6 +81,7 @@ if [ "$RUNMODE" == "docker" ];then
     cp env.example .env
     VLLM_SERVER_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
+    echo "PROXY_PORT=${PROXY_PORT}" > PROXY_PORT
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
     sed -i "s/^PROXY_PORT=.*/PROXY_PORT=${PROXY_PORT}/" .env
 
