@@ -82,7 +82,7 @@ if [ "$RUNMODE" == "docker" ];then
     VLLM_SERVER_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
-    sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${PROXY_PORT}/" .env
+    sed -i "s/^PROXY_PORT=.*/PROXY_PORT=${PROXY_PORT}/" .env
 
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
@@ -96,6 +96,12 @@ if [ "$RUNMODE" == "docker" ];then
         stack_name=${stack_name: -50}
     fi
     docker_compose_cmd="${docker_compose_cmd} -p ${stack_name}"
+
+    # Check if any containers are running in the project
+    if [ "$(${docker_compose_cmd} ps -q)" ]; then
+        echo "$(date) ERROR: Stack ${stack_name} is already running. Choose a different run directory or delete stack."
+        exit 1
+    fi
 
     echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
