@@ -6,7 +6,6 @@ services:
 
   vllm:
     image: vllm/vllm-openai:latest
-    container_name: vllm
     gpus: all
     environment:
       NVIDIA_VISIBLE_DEVICES: all
@@ -37,7 +36,6 @@ services:
       context: .
       dockerfile: Dockerfile.rag
     image: parallelworks/activate-rag-vllm:latest
-    container_name: rag
     environment:
       RAG_URL: ${RAG_URL}
       VLLM_URL: ${VLLM_URL}

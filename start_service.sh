@@ -26,6 +26,15 @@ install_docker_compose(){
     chmod +x docker-compose
 }
 
+findAvailablePort() {
+    availablePort=$(pw agent open-port)
+    echo ${availablePort}
+    if [ -z "${availablePort}" ]; then
+        echo "$(date) ERROR: No port found. Exiting job"
+        exit 1
+    fi
+}
+
 # Create cleanup script
 echo '#!/bin/bash' > cancel.sh
 chmod +x cancel.sh
@@ -70,12 +79,23 @@ if [ "$RUNMODE" == "docker" ];then
 
     cp docker/* ./ -Rf
     cp env.example .env
+    VLLM_SERVER_PORT=$(findAvailablePort)
+    PROXY_PORT=$(findAvailablePort)
+    sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
+    sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${PROXY_PORT}/" .env
+
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" .env
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
     source .env
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
+
+    stack_name=$(echo ragvllm-${PWD} | tr '/' '-')
+    if [ ${#stack_name} -gt 50 ]; then
+        stack_name=${stack_name: -50}
+    fi
+    docker_compose_cmd="${docker_compose_cmd} -p ${stack_name}"
 
     echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
