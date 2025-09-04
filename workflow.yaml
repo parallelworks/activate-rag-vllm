@@ -147,8 +147,7 @@ jobs:
       - name: Wait for job to start
         early-cancel: any-job-failed
         run: |
-          cd ${{ inputs.rundir }}
-          while [ ! -f job.started ]; do
+          while [ ! -f ${{ inputs.rundir }}/job.started ]; do
             echo "Waiting for job to start..."
             sleep 5
           done
