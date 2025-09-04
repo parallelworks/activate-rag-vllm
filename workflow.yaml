@@ -13,7 +13,7 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b avaro/port-generalization https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b alvaro/v2 https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
       - name: Create Environment File
