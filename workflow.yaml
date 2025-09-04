@@ -173,7 +173,7 @@ jobs:
 
           TIMEOUT=5
           RETRY_INTERVAL=3
-          cd "${{ inputs.rundir }}"
+          cd ${{ inputs.rundir }}
 
           attempt=1
           while true; do
