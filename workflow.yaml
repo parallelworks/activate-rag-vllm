@@ -168,9 +168,30 @@ jobs:
       - name: Get Proxy Port
         early-cancel: any-job-failed
         run: |
+          set -euo pipefail
           set -x
-          cd ${{ inputs.rundir }}
-          cat PROXY_PORT | tee -a $OUTPUTS
+
+          TIMEOUT=5
+          RETRY_INTERVAL=3
+          cd "${{ inputs.rundir }}"
+
+          attempt=1
+          while true; do
+              echo "$(date) Attempt $attempt: Checking for PROXY_PORT file..."
+
+              if [ -f PROXY_PORT ]; then
+                  echo "$(date) Success: PROXY_PORT file found!"
+                  cat PROXY_PORT | tee -a "$OUTPUTS"
+                  exit 0
+              elif [ -f job.ended ]; then
+                  echo "$(date) Job was completed but PROXY_PORT was never created. Exiting..."
+                  exit 1
+              else
+                  echo "$(date) PROXY_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
+                  sleep "$RETRY_INTERVAL"
+                  ((attempt++))
+              fi
+          done
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
