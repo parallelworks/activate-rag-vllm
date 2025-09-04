@@ -1,0 +1,332 @@
+permissions:
+  - '*'
+sessions:
+  session:
+    redirect: false
+    openAI: true
+
+jobs:
+  prepare_job_directory:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Preparing Run Directory
+        run: |
+          mkdir -p $(dirname ${{ inputs.rundir }})
+          git clone -b alvaro/v2 https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          cd ${{ inputs.rundir }}
+          git pull
+      - name: Create Environment File
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
+          echo "export BUILD=${{ inputs.build  }}" >> .run.env
+          echo "export RUNTYPE=${{ inputs.runtype  }}" >> .run.env
+          echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
+          echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
+          echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+
+  slurm_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'SLURM' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create SLURM Script
+        early-cancel: any-job-failed
+        run: |
+          cd ${{ inputs.rundir }}
+          echo '#!/bin/bash' > run.sh
+          chmod +x run.sh
+          if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
+            echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          fi
+          echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
+          echo "#SBATCH --chdir=${PWD}" >> run.sh
+          echo "#SBATCH -o ${PWD}/run.out" >> run.sh
+          echo "#SBATCH -e ${PWD}/run.out" >> run.sh
+          if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
+            echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
+          fi
+
+          # Indicates job started running
+          touch job.started >> run.sh
+          
+          cat start_service.sh >> run.sh
+      - name: Submit SLURM Script
+        run: |
+          cd ${{ inputs.rundir }}
+          echo "$(date) Submitting SLURM Job"
+          jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
+          if [ -z "${jobid}" ]; then
+            echo "$(date) Job submission failed"
+            exit 1
+          fi
+          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          jobid=${{ needs.slurm_job.outputs.jobid }}}}
+          target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
+          ssh ${target_hostname} bash cancel.sh
+          scancel ${jobid}
+      - name: Monitor SLURM Job
+        run: |
+          jobid=${{ needs.slurm_job.outputs.jobid }}
+          echo "$(date) Monitoring SLURM job ${jobid}"
+
+          cd ${{ inputs.rundir }}
+          touch run.out
+          tail -f run.out &
+          echo &! > tail.pid
+
+          get_slurm_job_status() {
+              # Get the header line to determine the column index corresponding to the job status
+              if [ -z "${SQUEUE_HEADER}" ]; then
+                  export SQUEUE_HEADER="$(eval squeue | awk 'NR==1')"
+              fi
+              status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
+              status_response=$(eval squeue | awk -v jobid="${jobid}" '$1 == jobid')
+              echo "${SQUEUE_HEADER}"
+              echo "${status_response}"
+              export job_status=$(echo ${status_response} | awk -v id="${jobid}" -v col="$status_column" '{print $col}')
+          }
+
+          while true; do
+            sleep 15
+            get_slurm_job_status
+            if [ -z "${job_status}" ]; then
+              job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
+              echo "$(date) Job exited with status ${job_status}"
+              touch job.ended
+              exit 0
+            fi
+          done
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          kill $(cat tail.pid)
+
+  ssh_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'SSH' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create SSH Script
+        early-cancel: any-job-failed
+        run: |
+          cd ${{ inputs.rundir }}
+          echo '#!/bin/bash' > run.sh
+          chmod +x run.sh
+
+          # Indicates job started running
+          touch job.started >> run.sh
+
+          cat start_service.sh >> run.sh
+      - name: Submit SSH Script
+        run: |
+          cd ${{ inputs.rundir }}
+          bash ./run.sh
+          touch job.ended
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          bash cancel.sh
+
+  create_session:
+    needs:
+      - prepare_job_directory
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Wait for job to start
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          while [ ! -f ${{ inputs.rundir }}/job.started ]; do
+            echo "Waiting for job to start..."
+            sleep 5
+          done
+      - name: Get Hostname
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
+            #jobid=${{ needs.slurm_job.outputs.jobid }}
+            source jobid
+            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
+            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+          fi
+      - name: Get Proxy Port
+        early-cancel: any-job-failed
+        run: |
+          set -euo pipefail
+          set -x
+
+          TIMEOUT=5
+          RETRY_INTERVAL=3
+          cd ${{ inputs.rundir }}
+
+          attempt=1
+          while true; do
+              echo "$(date) Attempt $attempt: Checking for PROXY_PORT file..."
+
+              if [ -f PROXY_PORT ]; then
+                  echo "$(date) Success: PROXY_PORT file found!"
+                  cat PROXY_PORT | tee -a "$OUTPUTS"
+                  exit 0
+              elif [ -f job.ended ]; then
+                  echo "$(date) Job was completed but PROXY_PORT was never created. Exiting..."
+                  exit 1
+              else
+                  echo "$(date) PROXY_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
+                  sleep "$RETRY_INTERVAL"
+                  ((attempt++))
+              fi
+          done
+      - name: Wait for Server To Start
+        early-cancel: any-job-failed
+        run: |
+          TIMEOUT=5
+          RETRY_INTERVAL=3
+          remote_host="${{ needs.create_session.outputs.target_hostname }}"
+          remote_port="${{ needs.create_session.outputs.PROXY_PORT }}"
+
+          # Function to check if server is listening
+          check_server() {
+              curl --silent --connect-timeout "$TIMEOUT" "http://${remote_host}:${remote_port}" >/dev/null 2>&1
+              return $?
+          }
+
+          cd ${{ inputs.rundir }}
+
+          # Main loop
+          attempt=1
+          while true; do
+              echo "$(date) Attempt $attempt: Checking if server is listening on ${remote_host}:${remote_port}..."
+              
+              if check_server; then
+                  echo "$(date) Success: Server is listening on ${remote_host}:${remote_port}!"
+                  exit 0
+              elif [ -f job.ended ]; then
+                  echo "$(date) Job was completed. Exiting... "
+                  exit 0
+              else
+                  echo "$(date) Server not responding. Retrying in ${RETRY_INTERVAL} seconds..."
+                  sleep "$RETRY_INTERVAL"
+                  ((attempt++))
+              fi
+          done
+      - name: Update Session
+        uses: parallelworks/update-session
+        with:
+          remotePort: '${{ needs.create_session.outputs.PROXY_PORT }}'
+          target: '${{ inputs.resource.id }}'
+          name: '${{ sessions.session }}'
+          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+
+
+'on':
+  execute:
+    inputs:
+      resource:
+        type: compute-clusters
+        label: Compute Cluster
+        autoselect: true
+        include-workspace: false
+        tooltip: Resource to run the service
+      execmethod:
+        type: dropdown
+        label: Execution Method
+        default: SSH
+        tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        options:
+          - value: SSH
+            label: SSH
+          - value: SLURM
+            label: SLURM
+      runmode:
+        label: Execution Mode
+        type: dropdown
+        default: singularity
+        hidden: true
+        options:
+          - value: docker
+            label: Docker
+          - value: singularity
+            label: Singularity
+      rundir:
+        label: Run Directory
+        default: ~/pw/activate-rag-vllm
+        type: string
+      runtype:
+        label: Run Type
+        type: dropdown
+        options:
+          - value: all
+            label: vLLM+RAG
+          - value: vllm
+            label: vLLM Only
+      build:
+        label: Build Containers
+        type: boolean
+        default: false
+      hfmodel:
+        label: HF Model
+        default: meta-llama/Llama-3.1-8B-Instruct
+        type: string
+      hftoken:
+        label: HF Token (gated models)
+        optional: true
+        default: ${{ org.HF_TOKEN }}
+        type: password
+      docsdir:
+        label: RAG Directory
+        hidden: ${{ inputs.runtype != 'all' }}
+        optional: true
+        default: ./docs
+        type: string
+      systemprompt:
+        type: string
+        label: System Prompt
+        hidden: ${{ inputs.runtype != 'all' }}
+        textarea: true
+        optional: true
+        default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+      slurm:
+        type: group
+        label: SLURM Directives
+        hidden: ${{ inputs.execmethod != 'SLURM' }}
+        items:
+          partition:
+            type: slurm-partitions
+            label: SLURM partition
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: true
+            resource: ${{ inputs.resource }}
+            tooltip: |
+              Partition to submit the interactive job. Leave empty to let SLURM pick
+              the optimal option.
+          number_of_gpus:
+            type: number
+            label: Number of GPUs
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 4
+            default: 1
+            tooltip: '--gres=gpu:X slurm directive'
+          scheduler_directives:
+            type: editor
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: true
+            tooltip: |
+              Type in additional scheduler directives. 
