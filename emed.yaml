@@ -54,11 +54,13 @@ jobs:
           if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
             echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
           fi
+          
 
           # Indicates job started running
           touch job.started >> run.sh
 
           echo "source /gs/gsfs0/hpc01/rhel8/apps/conda3/etc/profile.d/conda.sh; conda activate base" >> run.sh
+          echo "export PATH=\$HOME/.local/bin:\$PATH" >> run.sh
           
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
