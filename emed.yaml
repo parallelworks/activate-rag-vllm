@@ -16,6 +16,46 @@ jobs:
           git clone -b alvaro/v2-emed https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
+      - name: Download Singularity Containers
+        if: ${{ inputs.build == false && inputs.runmode == singularity }} 
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          REPO="https://github.com/parallelworks/singularity-containers.git"
+
+          if [[ -f rag.sif && -f vllm.sif ]]; then
+            echo "$(date) Containers rag.sif and vllm.sif already exist. Exiting step.
+            exit 0
+          else
+            echo "$(date) Downloading missing containers from ${REPO}"
+          fi
+
+          mkdir singularity-cointainers
+          cd singularity-cointainers
+          git init -q
+          git remote add origin "$REPO"
+
+          # Enable sparse checkout for only rag.sif
+          git config core.sparseCheckout true
+          if [[ ! -f rag.sif ]]; then
+            echo rag.sif >> .git/info/sparse-checkout
+          fi
+          if [[ ! -f vllm.sif ]]; then
+            echo vllm.sif.part_aa >> .git/info/sparse-checkout
+            echo vllm.sif.part_ab >> .git/info/sparse-checkout
+            echo vllm.sif.part_ac >> .git/info/sparse-checkout
+          fi
+          git pull --depth=1 origin canary
+          
+          if [[ ! -f vllm.sif ]]; then
+            cat vllm.sif.part_* > vllm.sif
+          fi
+
+          mv *.sif ../
+          cd ..
+          rm -rf singularity-cointainers
+
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
