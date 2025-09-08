@@ -249,8 +249,9 @@ jobs:
       execmethod:
         type: dropdown
         label: Execution Method
-        default: SSH
+        default: SLURM
         tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        hidden: true
         options:
           - value: SSH
             label: SSH
