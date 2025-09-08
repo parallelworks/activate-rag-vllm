@@ -46,6 +46,8 @@ jobs:
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           fi
           echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
+          echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
+          echo "#SBATCH --mem=${{ inputs.slurm.memory }}" >> run.sh
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH -o ${PWD}/run.out" >> run.sh
           echo "#SBATCH -e ${PWD}/run.out" >> run.sh
@@ -316,6 +318,20 @@ jobs:
             tooltip: |
               Partition to submit the interactive job. Leave empty to let SLURM pick
               the optimal option.
+          cpus_per_task:
+            type: number
+            label: CPUs per task
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 32
+            default: 1
+            tooltip: '--cpus-per-task=value SLURM directive'
+          memory:
+            type: string
+            label: Minimum Total Memory Required
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            default: 8GB
+            tooltip: '--mem=value SLURM directive'
           number_of_gpus:
             type: number
             label: Number of GPUs
