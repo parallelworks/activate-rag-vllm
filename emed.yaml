@@ -28,9 +28,6 @@ jobs:
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
-          # DELETE DEBUG FIXME
-          cat .run.env
-          pwd
 
   slurm_job:
     needs:
