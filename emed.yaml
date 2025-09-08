@@ -13,7 +13,7 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b alvaro/v2 https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b alvaro/v2-emed https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
       - name: Create Environment File
@@ -28,6 +28,8 @@ jobs:
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+          # DELETE DEBUG FIXME
+          cat .run.env
 
   slurm_job:
     needs:
