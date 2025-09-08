@@ -59,6 +59,7 @@ jobs:
           # Indicates job started running
           touch job.started >> run.sh
 
+          echo "module load singularity" >> run.sh
           echo "source /gs/gsfs0/hpc01/rhel8/apps/conda3/etc/profile.d/conda.sh; conda activate base" >> run.sh
           echo "export PATH=\$HOME/.local/bin:\$PATH" >> run.sh
           
