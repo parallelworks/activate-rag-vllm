@@ -30,6 +30,7 @@ jobs:
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           # DELETE DEBUG FIXME
           cat .run.env
+          pwd
 
   slurm_job:
     needs:
