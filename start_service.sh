@@ -2,7 +2,7 @@
 set -x
 
 source .run.env > /dev/null 2>&1
-rm .run.env > /dev/null 2>&1
+#rm .run.env > /dev/null 2>&1
 
 # set these if running manually
 export RUNMODE=${RUNMODE:-docker} # docker or singularity
