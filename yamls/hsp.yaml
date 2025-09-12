@@ -42,18 +42,29 @@ jobs:
           cd ${{ inputs.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
+          echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
+          echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
+          echo "#SBATCH --constraint=${{ inputs.slurm.constraint }}" >> run.sh
           if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           fi
+          echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
+          echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
+          echo "#SBATCH --nodes=1" >> run.sh
+          echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH -o ${PWD}/run.out" >> run.sh
           echo "#SBATCH -e ${PWD}/run.out" >> run.sh
           if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
             echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
           fi
+          
 
           # Indicates job started running
           touch job.started >> run.sh
+
+          echo "module load singularity" >> run.sh
+          echo "source /gs/gsfs0/hpc01/rhel8/apps/conda3/etc/profile.d/conda.sh; conda activate base" >> run.sh
           
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
@@ -246,8 +257,9 @@ jobs:
       execmethod:
         type: dropdown
         label: Execution Method
-        default: SSH
+        default: SLURM
         tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        hidden: true
         options:
           - value: SSH
             label: SSH
@@ -256,6 +268,8 @@ jobs:
       runmode:
         label: Execution Mode
         type: dropdown
+        default: singularity
+        hidden: true
         options:
           - value: docker
             label: Docker
@@ -263,7 +277,7 @@ jobs:
             label: Singularity
       rundir:
         label: Run Directory
-        default: ~/activate-rag-vllm
+        default: ~/pw/activate-rag-vllm
         type: string
       runtype:
         label: Run Type
@@ -304,6 +318,13 @@ jobs:
         label: SLURM Directives
         hidden: ${{ inputs.execmethod != 'SLURM' }}
         items:
+          account:
+            label: SLURM account
+            type: slurm-accounts
+            resource: ${{ inputs.resource }}
+            tooltip: Account to submit the interactive job
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: ${{ .ignore }}
           partition:
             type: slurm-partitions
             label: SLURM partition
@@ -313,9 +334,47 @@ jobs:
             tooltip: |
               Partition to submit the interactive job. Leave empty to let SLURM pick
               the optimal option.
+          qos:
+            label: Quality of Service [QoS]
+            type: slurm-qos
+            resource: ${{ inputs.resource }}
+            tooltip: Select a QOS from the drop down menu
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: ${{ .ignore }}
+          contraint:
+            label: Constraint
+            type: dropdown
+            default: viz
+            options:
+              - value: viz
+                label: viz
+              - value: mla
+                label: mla
+          cpus_per_task:
+            type: number
+            label: CPUs per task
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 32
+            default: 1
+            tooltip: '--cpus-per-task=value SLURM directive'
+          number_of_gpus:
+            type: number
+            label: Number of GPUs
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 4
+            default: 1
+            tooltip: '--gres=gpu:X slurm directive'
           scheduler_directives:
             type: editor
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             optional: true
             tooltip: |
               Type in additional scheduler directives. 
+          time:
+            label: Walltime
+            type: string
+            default: 01:00:00
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.

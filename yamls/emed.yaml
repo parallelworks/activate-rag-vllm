@@ -13,7 +13,7 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b alvaro/v2-emed https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
       - name: Download Singularity Containers
