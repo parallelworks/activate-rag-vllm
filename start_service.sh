@@ -88,6 +88,14 @@ if [ "$RUNMODE" == "docker" ];then
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
+
+    # Disable weight download
+    # Check if cache/huggingface directory exists
+    if [ -d "cache/huggingface" ]; then
+        sed -i 's/#TRANSFORMERS_OFFLINE=1/TRANSFORMERS_OFFLINE=1/' .env
+        echo "$(date) Disabled model weight download"
+    fi
+
     source .env
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
@@ -135,7 +143,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
         echo "$(date) Error: Failed to install singularity-compose"
         exit 1
     fi
-    
+
     cp singularity/* ./ -Rf
     cp env.sh.example env.sh
     
@@ -152,6 +160,14 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
+
+    # Disable weight download
+    # Check if cache/huggingface directory exists
+    if [ -d "cache/huggingface" ]; then
+        sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
+        echo "$(date) Disabled model weight download"
+    fi
+
     source env.sh
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
