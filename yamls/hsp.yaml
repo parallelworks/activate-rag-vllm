@@ -371,7 +371,7 @@ jobs:
             tooltip: Select a QOS from the drop down menu
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             optional: ${{ .ignore }}
-          contraint:
+          constraint:
             label: Constraint
             type: dropdown
             default: viz
