@@ -67,6 +67,7 @@ jobs:
       - name: Create SLURM Script
         early-cancel: any-job-failed
         run: |
+          set -x
           cd ${{ inputs.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
@@ -97,6 +98,7 @@ jobs:
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
         run: |
+          set -x
           cd ${{ inputs.rundir }}
           echo "$(date) Submitting SLURM Job"
           jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
