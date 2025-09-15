@@ -35,6 +35,30 @@ findAvailablePort() {
     fi
 }
 
+start_rootless_docker() {
+    local MAX_RETRIES=20
+    local RETRY_INTERVAL=2
+    local ATTEMPT=1
+
+    dockerd-rootless-setuptool.sh install
+    PATH=/usr/bin:/sbin:/usr/sbin:$PATH dockerd-rootless.sh --exec-opt native.cgroupdriver=cgroupfs > docker-rootless.log 2>&1 & #--data-root /docker-rootless/docker-rootless/
+
+    # Wait for Docker daemon to be ready
+    until docker info > /dev/null 2>&1; do
+        if [ $ATTEMPT -le $MAX_RETRIES ]; then
+            echo "$(date) Attempt $ATTEMPT of $MAX_RETRIES: Waiting for Docker daemon to start..."
+            sleep $RETRY_INTERVAL
+            ((ATTEMPT++))
+        else
+            echo "$(date) ERROR: Docker daemon failed to start after $MAX_RETRIES attempts."
+            return 1
+        fi
+    done
+
+    echo  "$(date): Docker daemon is ready!"
+    return 0
+}
+
 # Create cleanup script
 echo '#!/bin/bash' > cancel.sh
 chmod +x cancel.sh
@@ -64,8 +88,7 @@ if [ "$RUNMODE" == "docker" ];then
     if [ $EXIT_CODE -eq 0 ]; then
         echo "$(date) User has docker access" 
     elif ! sudo -n true 2>/dev/null; then
-        echo "$(date) ERROR: User cannot run docker and has no root access to run sudo docker"
-        exit 1
+        start_rootless_docker
     else
         if command -v nvidia-ctk >/dev/null 2>&1; then
             sudo systemctl start docker
