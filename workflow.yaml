@@ -28,6 +28,34 @@ jobs:
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+      - name: Install Singularity Compose
+        if: ${{ inputs.runmode == 'singularity' }}
+        early-cancel: any-job-failed
+        run: |
+          # Check if singularity-compose is installed globally
+          if ! command -v singularity-compose &> /dev/null; then
+              # Check if virtual environment exists and activate it
+              if [ -d ~/pw/software/singularity-compose ]; then
+                  source ~/pw/software/singularity-compose/bin/activate
+              fi
+              # Check again if singularity-compose is available after activation
+              if ! command -v singularity-compose &> /dev/null; then
+                  echo "$(date) singularity-compose not found, installing..."
+                  
+                  # Create directory for Python environment
+                  mkdir -p ~/pw/software
+                  
+                  # Create virtual environment named singularity-compose and install singularity-compose
+                  python3 -m venv ~/pw/software/singularity-compose
+                  source ~/pw/software/singularity-compose/bin/activate
+                  pip install --upgrade pip
+                  pip install singularity-compose
+              fi
+          fi
+          if ! command -v singularity-compose >/dev/null 2>&1; then
+            echo "$(date) Error: Failed to install singularity-compose"
+            exit 1
+          fi
 
   slurm_job:
     needs:

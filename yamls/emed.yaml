@@ -16,45 +16,34 @@ jobs:
           git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
-      - name: Download Singularity Containers
-        if: ${{ inputs.build == false && inputs.runmode == singularity }} 
+      - name: Install Singularity Compose
+        if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
         run: |
-          set -x
-          cd ${{ inputs.rundir }}
-          REPO="https://github.com/parallelworks/singularity-containers.git"
-
-          if [[ -f rag.sif && -f vllm.sif ]]; then
-            echo "$(date) Containers rag.sif and vllm.sif already exist. Exiting step.
-            exit 0
-          else
-            echo "$(date) Downloading missing containers from ${REPO}"
+          # Check if singularity-compose is installed globally
+          if ! command -v singularity-compose &> /dev/null; then
+              # Check if virtual environment exists and activate it
+              if [ -d ~/pw/software/singularity-compose ]; then
+                  source ~/pw/software/singularity-compose/bin/activate
+              fi
+              # Check again if singularity-compose is available after activation
+              if ! command -v singularity-compose &> /dev/null; then
+                  echo "$(date) singularity-compose not found, installing..."
+                  
+                  # Create directory for Python environment
+                  mkdir -p ~/pw/software
+                  
+                  # Create virtual environment named singularity-compose and install singularity-compose
+                  python3 -m venv ~/pw/software/singularity-compose
+                  source ~/pw/software/singularity-compose/bin/activate
+                  pip install --upgrade pip
+                  pip install singularity-compose
+              fi
           fi
-
-          mkdir singularity-cointainers
-          cd singularity-cointainers
-          git init -q
-          git remote add origin "$REPO"
-
-          # Enable sparse checkout for only rag.sif
-          git config core.sparseCheckout true
-          if [[ ! -f rag.sif ]]; then
-            echo rag.sif >> .git/info/sparse-checkout
+          if ! command -v singularity-compose >/dev/null 2>&1; then
+            echo "$(date) Error: Failed to install singularity-compose"
+            exit 1
           fi
-          if [[ ! -f vllm.sif ]]; then
-            echo vllm.sif.part_aa >> .git/info/sparse-checkout
-            echo vllm.sif.part_ab >> .git/info/sparse-checkout
-            echo vllm.sif.part_ac >> .git/info/sparse-checkout
-          fi
-          git pull --depth=1 origin canary
-          
-          if [[ ! -f vllm.sif ]]; then
-            cat vllm.sif.part_* > vllm.sif
-          fi
-
-          mv *.sif ../
-          cd ..
-          rm -rf singularity-cointainers
 
       - name: Create Environment File
         early-cancel: any-job-failed

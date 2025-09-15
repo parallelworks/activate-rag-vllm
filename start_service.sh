@@ -127,17 +127,15 @@ elif [ "$RUNMODE" == "singularity" ]; then
     fi
 
     # Check if singularity-compose is installed
-    export PATH="$HOME/.local/bin:$PATH"
+    source ~/pw/software/singularity-compose/bin/activate
     if ! command -v singularity-compose >/dev/null 2>&1; then
-        echo "$(date) singularity-compose not found, installing..."
-        pip3 install singularity-compose --user
-        if [ $? -ne 0 ]; then
-            echo "$(date) Error: Failed to install singularity-compose"
-            exit 1
-        fi
-        echo "$(date) singularity-compose installed successfully"
+        source ~/pw/software/singularity-compose/bin/activate
     fi
-
+    if ! command -v singularity-compose >/dev/null 2>&1; then
+        echo "$(date) Error: Failed to install singularity-compose"
+        exit 1
+    fi
+    
     cp singularity/* ./ -Rf
     cp env.sh.example env.sh
     
