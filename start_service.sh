@@ -82,6 +82,9 @@ if [ "$RUNMODE" == "docker" ];then
     fi
     
     # Ensure docker service is started and set docker_compose_cmd
+    # FIXME: REMOVE!
+    start_rootless_docker
+    
     docker ps >/dev/null 2>&1
     EXIT_CODE=$?
 
