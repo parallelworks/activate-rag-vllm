@@ -74,7 +74,7 @@ jobs:
           echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
           echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
           echo "#SBATCH --constraint=${{ inputs.slurm.constraint }}" >> run.sh
-          if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
+          if [[ "${{ inputs.slurm.partition }}" != "undefined" && "${{ inputs.slurm.partition }}" != "" ]]; then
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           fi
           echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
