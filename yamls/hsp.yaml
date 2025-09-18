@@ -17,6 +17,7 @@ jobs:
           cd ${{ inputs.rundir }}
           git pull
           rm -f jobid PROXY_PORT job.started job.ended
+          rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
