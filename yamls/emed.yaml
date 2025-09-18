@@ -15,7 +15,12 @@ jobs:
           mkdir -p $(dirname ${{ inputs.rundir }})
           git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
+          # FIXME: REMOVE BEFORE MERGING
+          git checkout alvaro/v2-onprem
+          git branch --set-upstream-to=origin/alvaro/v2-onprem
           git pull
+          rm -f jobid PROXY_PORT job.started job.ended
+          rm -rf logs
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
@@ -108,6 +113,7 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
+          rm -f jobid PROXY_PORT job.started
       - name: Monitor SLURM Job
         run: |
           jobid=${{ needs.slurm_job.outputs.jobid }}
@@ -168,6 +174,7 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
+          rm -f jobid PROXY_PORT job.started
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
