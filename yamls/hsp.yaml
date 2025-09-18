@@ -55,7 +55,7 @@ jobs:
               fi
           fi
           if ! command -v singularity-compose >/dev/null 2>&1; then
-            echo "$(date) Error: Failed to install singularity-compose"
+            echo "$(date) ERROR: Failed to install singularity-compose"
             exit 1
           fi
 

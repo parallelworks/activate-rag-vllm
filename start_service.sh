@@ -153,7 +153,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     # Check if singularity is installed
     if ! command -v singularity >/dev/null 2>&1; then
-        echo "$(date) Error: singularity is not installed"
+        echo "$(date) ERROR: singularity is not installed"
         exit 1
     fi
 
@@ -163,7 +163,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
         source ~/pw/software/singularity-compose/bin/activate
     fi
     if ! command -v singularity-compose >/dev/null 2>&1; then
-        echo "$(date) Error: Failed to install singularity-compose"
+        echo "$(date) ERROR: Failed to install singularity-compose"
         exit 1
     fi
 
