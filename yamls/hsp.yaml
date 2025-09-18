@@ -16,6 +16,7 @@ jobs:
           git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
+          rm -f jobid PROXY_PORT job.started job.ended
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
@@ -111,6 +112,7 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
+          rm -f jobid PROXY_PORT job.started
       - name: Monitor SLURM Job
         run: |
           jobid=${{ needs.slurm_job.outputs.jobid }}
