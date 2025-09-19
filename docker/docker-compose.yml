@@ -56,6 +56,7 @@ services:
       STREAM_BRIDGE: ${STREAM_BRIDGE:-1}
       DEBUG_SSE: ${DEBUG_SSE:-0}
       IGNORE_CLIENT_STOP: ${IGNORE_CLIENT_STOP:-1}
+      DOCS_DIR: ${DOCS_DIR}
       HF_TOKEN: ${HF_TOKEN}
       HF_HOME: /root/.cache/huggingface
     volumes:
