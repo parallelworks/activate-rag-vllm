@@ -170,7 +170,14 @@ jobs:
           TIMEOUT=5
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.outputs.target_hostname }}"
-          remote_port="8081"
+
+          if [[ "${{ inputs.runtype }}" == "vllm" ]];then
+            remote_port="8000" # direct access to vllm port
+          else
+            remote_port="8081" # access the proxy service
+          fi
+
+          echo "remote_port=${remote_port}" | tee -a $OUTPUTS
 
           # Function to check if server is listening
           check_server() {
@@ -200,7 +207,7 @@ jobs:
       - name: Update Session
         uses: parallelworks/update-session
         with:
-          remotePort: '8081'
+          remotePort: '${{ needs.create_session.outputs.remote_port }}'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
