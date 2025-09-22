@@ -294,7 +294,7 @@ jobs:
         label: Execution Method
         default: SLURM
         tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
-        hidden: true
+        hidden: ${{ 'existing' == inputs.resource.provider }}
         options:
           - value: SSH
             label: SSH
@@ -365,7 +365,8 @@ jobs:
             label: SLURM account
             type: string
             tooltip: Account to submit the interactive job
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
             optional: ${{ .ignore }}
           partition:
             type: slurm-partitions
@@ -381,11 +382,14 @@ jobs:
             type: slurm-qos
             resource: ${{ inputs.resource }}
             tooltip: Select a QOS from the drop down menu
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
             optional: ${{ .ignore }}
+            hidden: ${{ .ignore }}
           constraint:
             label: Constraint
             type: dropdown
+            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
             default: viz
             options:
               - value: viz
@@ -395,7 +399,8 @@ jobs:
           cpus_per_task:
             type: number
             label: CPUs per task
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
             min: 1
             max: 32
             default: 1
@@ -403,7 +408,8 @@ jobs:
           number_of_gpus:
             type: number
             label: Number of GPUs
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
             min: 1
             max: 4
             default: 1
