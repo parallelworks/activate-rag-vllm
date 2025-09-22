@@ -80,7 +80,7 @@ if [ "$RUNMODE" == "docker" ];then
     fi
 
     if [[ "$API_KEY" != "undefined" ]]; then
-        echo "VLLM_API_KEY=$API_KEY" >> .env
+        echo "\nVLLM_API_KEY=$API_KEY" >> .env
     fi
 
     source .env
