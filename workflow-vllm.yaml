@@ -26,6 +26,7 @@ jobs:
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
 
   slurm_job:
     needs:

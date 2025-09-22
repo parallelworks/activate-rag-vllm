@@ -9,6 +9,7 @@ export BUILD=${BUILD:-false} # true or false
 export RUNTYPE=${RUNTYPE:-all} # all or vllm
 export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
 export DOCS_DIR=${DOCS_DIR:-./docs}
+export API_KEY=${API_KEY:-undefined}
 
 echo ""
 echo "Running workflow with the below inputs:"
@@ -17,6 +18,7 @@ echo "  BUILD=$BUILD"
 echo "  RUNTYPE=$RUNTYPE"
 echo "  MODEL_NAME=$MODEL_NAME"
 echo "  DOCS_DIR=$DOCS_DIR"
+echo "  API_KEY=$API_KEY"
 echo ""
 
 install_docker_compose(){
@@ -76,6 +78,11 @@ if [ "$RUNMODE" == "docker" ];then
         sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
         mkdir -p $DOCS_DIR
     fi
+
+    if [[ "$API_KEY" != "undefined" ]]; then
+        echo "VLLM_API_KEY=$API_KEY" >> .env
+    fi
+
     source .env
 
     mkdir -p logs cache cache/chroma
