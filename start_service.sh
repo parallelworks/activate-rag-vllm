@@ -71,10 +71,14 @@ if [ "$RUNMODE" == "docker" ];then
     cp env.example .env
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" .env
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
+    
+    if [[ "$DOCS_DIR" != "undefined"]]
+        sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
+        mkdir -p $DOCS_DIR
+    fi
     source .env
 
-    mkdir -p logs cache cache/chroma $DOCS_DIR
+    mkdir -p logs cache cache/chroma
 
     echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
