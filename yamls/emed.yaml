@@ -19,7 +19,7 @@ jobs:
           git checkout alvaro/v2-onprem
           git branch --set-upstream-to=origin/alvaro/v2-onprem
           git pull
-          rm -f jobid PROXY_PORT job.started job.ended
+          rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
