@@ -26,6 +26,8 @@ jobs:
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
+          echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
 
   slurm_job:
     needs:
@@ -255,10 +257,19 @@ jobs:
         label: HF Model
         default: meta-llama/Llama-3.1-8B-Instruct
         type: string
+      maxmodellen:
+        label: Max Model Length
+        default: 16000
+        type: number
       hftoken:
         label: HF Token (gated models)
         optional: true
         default: ${{ org.HF_TOKEN }}
+        type: password
+      apikey:
+        label: vLLM API Key
+        optional: true
+        tooltip: Required for integration with Cline and other code assist tools.
         type: password
       slurm:
         type: group

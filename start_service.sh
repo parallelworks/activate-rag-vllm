@@ -9,6 +9,8 @@ export BUILD=${BUILD:-false} # true or false
 export RUNTYPE=${RUNTYPE:-all} # all or vllm
 export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
 export DOCS_DIR=${DOCS_DIR:-./docs}
+export API_KEY=${API_KEY:-undefined}
+export MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 
 echo ""
 echo "Running workflow with the below inputs:"
@@ -17,6 +19,8 @@ echo "  BUILD=$BUILD"
 echo "  RUNTYPE=$RUNTYPE"
 echo "  MODEL_NAME=$MODEL_NAME"
 echo "  DOCS_DIR=$DOCS_DIR"
+echo "  API_KEY=$API_KEY"
+echo "  MAX_MODEL_LEN=$MAX_MODEL_LEN"
 echo ""
 
 install_docker_compose(){
@@ -69,13 +73,22 @@ if [ "$RUNMODE" == "docker" ];then
 
     cp docker/* ./ -Rf
     cp env.example .env
+
+    # adjust the env variables based on inputs
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" .env
+    sed -i "s/--max-model-len 8192/--max-model-len $MAX_MODEL_LEN/" .env
     
     if [[ "$DOCS_DIR" != "undefined" ]]; then
         sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
         mkdir -p $DOCS_DIR
     fi
+
+    if [[ "$API_KEY" != "undefined" ]]; then
+        echo "" >> .env
+        echo "VLLM_API_KEY=$API_KEY" >> .env
+    fi
+
     source .env
 
     mkdir -p logs cache cache/chroma
