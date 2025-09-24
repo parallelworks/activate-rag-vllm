@@ -116,6 +116,7 @@ if [ "$RUNMODE" == "docker" ];then
     # Check if cache/huggingface directory exists
     if [ -d "cache/huggingface" ]; then
         sed -i 's/#TRANSFORMERS_OFFLINE=1/TRANSFORMERS_OFFLINE=1/' .env
+        sed -i '/HF_HOME: \/root\/.cache\/huggingface/a\      TRANSFORMERS_OFFLINE: 1' docker-compose.yml
         echo "$(date) Disabled model weight download"
     fi
 
