@@ -2,8 +2,10 @@ Bootstrap: docker
 From: vllm/vllm-openai:latest
 
 %runscript
+mkdir -p /app
 cd /app
 exec /bin/bash -lc "$@"
 %startscript
+mkdir -p /app
 cd /app
 exec /bin/bash -lc "$@"

@@ -27,7 +27,7 @@ echo "Running the rest of the services."
 python3 /app/rag_server.py --port $RAG_PORT --collection activate_rag --embedding_model "${EMBEDDING_MODEL}" >/logs/rag_server.log 2>&1 & p2=$!
 python3 /app/indexer.py --config /app/indexer_config.yaml --poll --rescan-seconds 10 >/logs/indexer.log 2>&1 & p3=$!
 
-MAX_RETRIES=120   # number of attempts
+MAX_RETRIES=520   # number of attempts
 echo "Waiting for VLLM on port $VLLM_SERVER_PORT for $MAX_RETRIES seconds..."
 
 # wait for the vllm service to become available

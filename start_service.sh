@@ -1,7 +1,8 @@
 #!/bin/bash
+set -x
 
 source .run.env > /dev/null 2>&1
-rm .run.env > /dev/null 2>&1
+#rm .run.env > /dev/null 2>&1
 
 # set these if running manually
 export RUNMODE=${RUNMODE:-docker} # docker or singularity
@@ -27,6 +28,39 @@ install_docker_compose(){
     echo "$(date) Downloading docker-compose v2.39.1"
     curl -L "https://github.com/docker/compose/releases/download/v2.39.1/docker-compose-$(uname -s)-$(uname -m)" -o docker-compose
     chmod +x docker-compose
+}
+
+findAvailablePort() {
+    availablePort=$(pw agent open-port)
+    echo ${availablePort}
+    if [ -z "${availablePort}" ]; then
+        echo "$(date) ERROR: No port found. Exiting job"
+        exit 1
+    fi
+}
+
+start_rootless_docker() {
+    local MAX_RETRIES=20
+    local RETRY_INTERVAL=2
+    local ATTEMPT=1
+
+    dockerd-rootless-setuptool.sh install
+    PATH=/usr/bin:/sbin:/usr/sbin:$PATH dockerd-rootless.sh --exec-opt native.cgroupdriver=cgroupfs > docker-rootless.log 2>&1 & #--data-root /docker-rootless/docker-rootless/
+
+    # Wait for Docker daemon to be ready
+    until docker info > /dev/null 2>&1; do
+        if [ $ATTEMPT -le $MAX_RETRIES ]; then
+            echo "$(date) Attempt $ATTEMPT of $MAX_RETRIES: Waiting for Docker daemon to start..."
+            sleep $RETRY_INTERVAL
+            ((ATTEMPT++))
+        else
+            echo "$(date) ERROR: Docker daemon failed to start after $MAX_RETRIES attempts."
+            return 1
+        fi
+    done
+
+    echo  "$(date): Docker daemon is ready!"
+    return 0
 }
 
 # Create cleanup script
@@ -58,8 +92,7 @@ if [ "$RUNMODE" == "docker" ];then
     if [ $EXIT_CODE -eq 0 ]; then
         echo "$(date) User has docker access" 
     elif ! sudo -n true 2>/dev/null; then
-        echo "$(date) ERROR: User cannot run docker and has no root access to run sudo docker"
-        exit 1
+        start_rootless_docker
     else
         if command -v nvidia-ctk >/dev/null 2>&1; then
             sudo systemctl start docker
@@ -74,24 +107,51 @@ if [ "$RUNMODE" == "docker" ];then
     cp docker/* ./ -Rf
     cp env.example .env
 
-    # adjust the env variables based on inputs
+    VLLM_SERVER_PORT=$(findAvailablePort)
+    PROXY_PORT=$(findAvailablePort)
+    echo "PROXY_PORT=${PROXY_PORT}" > PROXY_PORT
+    
+    sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
+    sed -i "s/^PROXY_PORT=.*/PROXY_PORT=${PROXY_PORT}/" .env
+
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" .env
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
     sed -i "s/--max-model-len 8192/--max-model-len $MAX_MODEL_LEN/" .env
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
     
     if [[ "$DOCS_DIR" != "undefined" ]]; then
         sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
         mkdir -p $DOCS_DIR
     fi
-
+    
     if [[ "$API_KEY" != "undefined" ]]; then
         echo "" >> .env
         echo "VLLM_API_KEY=$API_KEY" >> .env
     fi
 
+    # Disable weight download
+    # Check if cache/huggingface directory exists
+    if [ -d "cache/huggingface" ]; then
+        sed -i 's/#TRANSFORMERS_OFFLINE=1/TRANSFORMERS_OFFLINE=1/' .env
+        sed -i '/HF_HOME: \/root\/.cache\/huggingface/a\      TRANSFORMERS_OFFLINE: 1' docker-compose.yml
+        echo "$(date) Disabled model weight download"
+    fi
+
     source .env
 
     mkdir -p logs cache cache/chroma
+
+    stack_name=$(echo ragvllm${PWD} | tr '/' '-')
+    if [ ${#stack_name} -gt 50 ]; then
+        stack_name=${stack_name: -50}
+    fi
+    docker_compose_cmd="${docker_compose_cmd} -p ${stack_name}"
+
+    # Check if any containers are running in the project
+    if [ "$(${docker_compose_cmd} ps -q)" ]; then
+        echo "$(date) ERROR: Stack ${stack_name} is already running. Choose a different run directory or delete stack."
+        exit 1
+    fi
 
     echo "${docker_compose_cmd} down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
@@ -109,11 +169,46 @@ if [ "$RUNMODE" == "docker" ];then
 
 elif [ "$RUNMODE" == "singularity" ]; then
 
+    # Check if singularity is installed
+    if ! command -v singularity >/dev/null 2>&1; then
+        echo "$(date) ERROR: singularity is not installed"
+        exit 1
+    fi
+
+    # Check if singularity-compose is installed
+    source ~/pw/software/singularity-compose/bin/activate
+    if ! command -v singularity-compose >/dev/null 2>&1; then
+        source ~/pw/software/singularity-compose/bin/activate
+    fi
+    if ! command -v singularity-compose >/dev/null 2>&1; then
+        echo "$(date) ERROR: Failed to install singularity-compose"
+        exit 1
+    fi
+
     cp singularity/* ./ -Rf
     cp env.sh.example env.sh
+    
+    VLLM_SERVER_PORT=$(findAvailablePort)
+    RAG_PORT=$(findAvailablePort)
+    PROXY_PORT=$(findAvailablePort)
+    CHROMA_PORT=$(findAvailablePort)
+    echo "PROXY_PORT=${PROXY_PORT}" > PROXY_PORT
+    sed -i "s/^export VLLM_SERVER_PORT=.*/export VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" env.sh
+    sed -i "s/^export RAG_PORT=.*/export RAG_PORT=${RAG_PORT}/" env.sh
+    sed -i "s/^export PROXY_PORT=.*/export PROXY_PORT=${PROXY_PORT}/" env.sh
+    sed -i "s/^export CHROMA_PORT=.*/export CHROMA_PORT=${CHROMA_PORT}/" env.sh
+
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|MODEL_NAME=$MODEL_NAME|" env.sh
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" env.sh
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
+
+    # Disable weight download
+    # Check if cache/huggingface directory exists
+    if [ -d "cache/huggingface" ]; then
+        sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
+        echo "$(date) Disabled model weight download"
+    fi
+
     source env.sh
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
@@ -123,7 +218,12 @@ elif [ "$RUNMODE" == "singularity" ]; then
         ln -s $DOCS_DIR ./docs
     fi
 
-    # pip3 install singularity-compose 
+    # If build is true check that user has root access
+    #if [ "$BUILD" = "true" ] && ! sudo -n true 2>/dev/null; then
+    #    echo "$(date) ERROR: User needs root access to build singularity containers"
+    #    exit 1
+    #fi
+    echo "singularity-compose down" >> cancel.sh
     if [ "$RUNTYPE" == "all" ];then
         [ "$BUILD" = "true" ] && singularity-compose build
         DOCS_DIR=$DOCS_DIR singularity-compose up
@@ -131,5 +231,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
         [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
     fi
+    # Follow the logs
+    tail -f logs/*
 
 fi

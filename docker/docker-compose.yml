@@ -6,7 +6,6 @@ services:
 
   vllm:
     image: vllm/vllm-openai:latest
-    container_name: vllm
     gpus: all
     environment:
       NVIDIA_VISIBLE_DEVICES: all
@@ -21,13 +20,13 @@ services:
     command: >
       --model ${MODEL_NAME}
       --host 0.0.0.0
-      --port 8000
+      --port ${VLLM_SERVER_PORT}
       ${VLLM_EXTRA_ARGS}
     ports:
-      - "${VLLM_SERVER_PORT}:8000"
+      - "${VLLM_SERVER_PORT}:${VLLM_SERVER_PORT}"
     networks: [ragnet]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sSf http://localhost:8000/v1/models >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -sSf http://localhost:${VLLM_SERVER_PORT}/v1/models >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 100
@@ -38,7 +37,6 @@ services:
       context: .
       dockerfile: Dockerfile.rag
     image: parallelworks/activate-rag-vllm:latest
-    container_name: rag
     environment:
       RAG_URL: ${RAG_URL}
       VLLM_URL: ${VLLM_URL}

@@ -13,25 +13,14 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
+          # FIXME: REMOVE BEFORE MERGING
+          git checkout alvaro/v2-onprem
+          git branch --set-upstream-to=origin/alvaro/v2-onprem
           git pull
           rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
-      - name: Create Environment File
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ inputs.rundir }}
-          echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
-          echo "export BUILD=${{ inputs.build  }}" >> .run.env
-          echo "export RUNTYPE=${{ inputs.runtype  }}" >> .run.env
-          echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
-          echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
-          echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
-          echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
-          echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
-          
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
@@ -61,6 +50,19 @@ jobs:
             exit 1
           fi
 
+      - name: Create Environment File
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
+          echo "export BUILD=${{ inputs.build  }}" >> .run.env
+          echo "export RUNTYPE=${{ inputs.runtype  }}" >> .run.env
+          echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
+          echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
+          echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+
   slurm_job:
     needs:
       - prepare_job_directory
@@ -71,27 +73,31 @@ jobs:
       - name: Create SLURM Script
         early-cancel: any-job-failed
         run: |
-          set -x
           cd ${{ inputs.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
           if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           fi
+          echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
+          echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
+          echo "#SBATCH --mem=${{ inputs.slurm.memory }}" >> run.sh
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH -o ${PWD}/run.out" >> run.sh
           echo "#SBATCH -e ${PWD}/run.out" >> run.sh
           if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
             echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
           fi
+          
 
           # Indicates job started running
           touch job.started >> run.sh
+
+          echo "module load singularity" >> run.sh
           
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
         run: |
-          set -x
           cd ${{ inputs.rundir }}
           echo "$(date) Submitting SLURM Job"
           jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
@@ -269,6 +275,7 @@ jobs:
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
 
+
 'on':
   execute:
     inputs:
@@ -281,8 +288,9 @@ jobs:
       execmethod:
         type: dropdown
         label: Execution Method
-        default: SSH
+        default: SLURM
         tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        hidden: true
         options:
           - value: SSH
             label: SSH
@@ -291,6 +299,8 @@ jobs:
       runmode:
         label: Execution Mode
         type: dropdown
+        default: singularity
+        hidden: true
         options:
           - value: docker
             label: Docker
@@ -298,7 +308,7 @@ jobs:
             label: Singularity
       rundir:
         label: Run Directory
-        default: ~/activate-rag-vllm
+        default: ~/pw/activate-rag-vllm
         type: string
       runtype:
         label: Run Type
@@ -316,10 +326,6 @@ jobs:
         label: HF Model
         default: meta-llama/Llama-3.1-8B-Instruct
         type: string
-      maxmodellen:
-        label: Max Model Length
-        default: 16000
-        type: number
       hftoken:
         label: HF Token (gated models)
         optional: true
@@ -352,6 +358,28 @@ jobs:
             tooltip: |
               Partition to submit the interactive job. Leave empty to let SLURM pick
               the optimal option.
+          cpus_per_task:
+            type: number
+            label: CPUs per task
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 32
+            default: 1
+            tooltip: '--cpus-per-task=value SLURM directive'
+          memory:
+            type: string
+            label: Minimum Total Memory Required
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            default: 8GB
+            tooltip: '--mem=value SLURM directive'
+          number_of_gpus:
+            type: number
+            label: Number of GPUs
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 4
+            default: 1
+            tooltip: '--gres=gpu:X slurm directive'
           scheduler_directives:
             type: editor
             ignore: ${{ inputs.execmethod != 'SLURM' }}
