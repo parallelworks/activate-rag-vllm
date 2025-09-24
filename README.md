@@ -8,6 +8,12 @@ This Compose stack runs from the [github repo here](https://github.com/parallelw
 - **Enhanced Proxy** exposing **/v1/chat/completions**, **/v1/completions**, **/v1/embeddings**, **/v1/models**
 - **Open WebUI** (optional) pointing to the Proxy
 
+See a turnkey demonstration of the workflow running on ACTIVATE at the link below:
+
+<a href="https://www.youtube.com/watch?v=6LiwXEOkuUc">
+<img target="_blank" src="https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1" width="350">
+</a>
+
 ## Quickstart
 ```bash
 export HF_TOKEN=hf_xyz

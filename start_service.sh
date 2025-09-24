@@ -10,6 +10,8 @@ export BUILD=${BUILD:-false} # true or false
 export RUNTYPE=${RUNTYPE:-all} # all or vllm
 export MODEL_NAME=${MODEL_NAME:-meta-llama/Llama-3.1-8B-Instruct}
 export DOCS_DIR=${DOCS_DIR:-./docs}
+export API_KEY=${API_KEY:-undefined}
+export MAX_MODEL_LEN=${MAX_MODEL_LEN:-8192}
 
 echo ""
 echo "Running workflow with the below inputs:"
@@ -18,6 +20,8 @@ echo "  BUILD=$BUILD"
 echo "  RUNTYPE=$RUNTYPE"
 echo "  MODEL_NAME=$MODEL_NAME"
 echo "  DOCS_DIR=$DOCS_DIR"
+echo "  API_KEY=$API_KEY"
+echo "  MAX_MODEL_LEN=$MAX_MODEL_LEN"
 echo ""
 
 install_docker_compose(){
@@ -102,15 +106,28 @@ if [ "$RUNMODE" == "docker" ];then
 
     cp docker/* ./ -Rf
     cp env.example .env
+
     VLLM_SERVER_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
     echo "PROXY_PORT=${PROXY_PORT}" > PROXY_PORT
+    
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
     sed -i "s/^PROXY_PORT=.*/PROXY_PORT=${PROXY_PORT}/" .env
 
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
+    sed -i "s/--max-model-len 8192/--max-model-len $MAX_MODEL_LEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
+    
+    if [[ "$DOCS_DIR" != "undefined" ]]; then
+        sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
+        mkdir -p $DOCS_DIR
+    fi
+    
+    if [[ "$API_KEY" != "undefined" ]]; then
+        echo "" >> .env
+        echo "VLLM_API_KEY=$API_KEY" >> .env
+    fi
 
     # Disable weight download
     # Check if cache/huggingface directory exists
@@ -122,7 +139,7 @@ if [ "$RUNMODE" == "docker" ];then
 
     source .env
 
-    mkdir -p logs cache cache/chroma $DOCS_DIR
+    mkdir -p logs cache cache/chroma
 
     stack_name=$(echo ragvllm${PWD} | tr '/' '-')
     if [ ${#stack_name} -gt 50 ]; then

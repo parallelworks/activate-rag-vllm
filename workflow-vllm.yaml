@@ -12,12 +12,9 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
-          mkdir -p $(dirname ${{ inputs.rundir }})
           git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
-          rm -f jobid PROXY_PORT job.started job.ended run.out
-          rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
@@ -29,37 +26,8 @@ jobs:
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
-          echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+          echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
-          
-      - name: Install Singularity Compose
-        if: ${{ inputs.runmode == 'singularity' }}
-        early-cancel: any-job-failed
-        run: |
-          # Check if singularity-compose is installed globally
-          if ! command -v singularity-compose &> /dev/null; then
-              # Check if virtual environment exists and activate it
-              if [ -d ~/pw/software/singularity-compose ]; then
-                  source ~/pw/software/singularity-compose/bin/activate
-              fi
-              # Check again if singularity-compose is available after activation
-              if ! command -v singularity-compose &> /dev/null; then
-                  echo "$(date) singularity-compose not found, installing..."
-                  
-                  # Create directory for Python environment
-                  mkdir -p ~/pw/software
-                  
-                  # Create virtual environment named singularity-compose and install singularity-compose
-                  python3 -m venv ~/pw/software/singularity-compose
-                  source ~/pw/software/singularity-compose/bin/activate
-                  pip install --upgrade pip
-                  pip install singularity-compose
-              fi
-          fi
-          if ! command -v singularity-compose >/dev/null 2>&1; then
-            echo "$(date) Error: Failed to install singularity-compose"
-            exit 1
-          fi
 
   slurm_job:
     needs:
@@ -71,7 +39,6 @@ jobs:
       - name: Create SLURM Script
         early-cancel: any-job-failed
         run: |
-          set -x
           cd ${{ inputs.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
@@ -91,7 +58,6 @@ jobs:
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
         run: |
-          set -x
           cd ${{ inputs.rundir }}
           echo "$(date) Submitting SLURM Job"
           jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
@@ -107,7 +73,6 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
-          rm -f jobid PROXY_PORT job.started
       - name: Monitor SLURM Job
         run: |
           jobid=${{ needs.slurm_job.outputs.jobid }}
@@ -168,7 +133,6 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
-          rm -f jobid PROXY_PORT job.started
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
@@ -183,8 +147,8 @@ jobs:
       - name: Wait for job to start
         early-cancel: any-job-failed
         run: |
-          set -x
-          while [ ! -f ${{ inputs.rundir }}/job.started ]; do
+          cd ${{ inputs.rundir }}
+          while [ ! -f job.started ]; do
             echo "Waiting for job to start..."
             sleep 5
           done
@@ -201,40 +165,20 @@ jobs:
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
           fi
-      - name: Get Proxy Port
-        early-cancel: any-job-failed
-        run: |
-          set -euo pipefail
-          set -x
-
-          TIMEOUT=5
-          RETRY_INTERVAL=3
-          cd ${{ inputs.rundir }}
-
-          attempt=1
-          while true; do
-              echo "$(date) Attempt $attempt: Checking for PROXY_PORT file..."
-
-              if [ -f PROXY_PORT ]; then
-                  echo "$(date) Success: PROXY_PORT file found!"
-                  cat PROXY_PORT | tee -a "$OUTPUTS"
-                  exit 0
-              elif [ -f job.ended ]; then
-                  echo "$(date) Job was completed but PROXY_PORT was never created. Exiting..."
-                  exit 1
-              else
-                  echo "$(date) PROXY_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
-                  sleep "$RETRY_INTERVAL"
-                  ((attempt++))
-              fi
-          done
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
           TIMEOUT=5
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.outputs.target_hostname }}"
-          remote_port="${{ needs.create_session.outputs.PROXY_PORT }}"
+
+          if [[ "${{ inputs.runtype }}" == "vllm" ]];then
+            remote_port="8000" # direct access to vllm port
+          else
+            remote_port="8081" # access the proxy service
+          fi
+
+          echo "remote_port=${remote_port}" | tee -a $OUTPUTS
 
           # Function to check if server is listening
           check_server() {
@@ -264,7 +208,7 @@ jobs:
       - name: Update Session
         uses: parallelworks/update-session
         with:
-          remotePort: '${{ needs.create_session.outputs.PROXY_PORT }}'
+          remotePort: '${{ needs.create_session.outputs.remote_port }}'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
@@ -302,12 +246,9 @@ jobs:
         type: string
       runtype:
         label: Run Type
-        type: dropdown
-        options:
-          - value: all
-            label: vLLM+RAG
-          - value: vllm
-            label: vLLM Only
+        type: string
+        default: vllm
+        hidden: true
       build:
         label: Build Containers
         type: boolean
@@ -325,19 +266,11 @@ jobs:
         optional: true
         default: ${{ org.HF_TOKEN }}
         type: password
-      docsdir:
-        label: RAG Directory
-        hidden: ${{ inputs.runtype != 'all' }}
+      apikey:
+        label: vLLM API Key
         optional: true
-        default: ./docs
-        type: string
-      systemprompt:
-        type: string
-        label: System Prompt
-        hidden: ${{ inputs.runtype != 'all' }}
-        textarea: true
-        optional: true
-        default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+        tooltip: Required for integration with Cline and other code assist tools.
+        type: password
       slurm:
         type: group
         label: SLURM Directives
