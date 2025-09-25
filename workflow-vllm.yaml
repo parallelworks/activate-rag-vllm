@@ -147,8 +147,8 @@ jobs:
       - name: Wait for job to start
         early-cancel: any-job-failed
         run: |
-          cd ${{ inputs.rundir }}
-          while [ ! -f job.started ]; do
+          set -x
+          while [ ! -f ${{ inputs.rundir }}/job.started ]; do
             echo "Waiting for job to start..."
             sleep 5
           done
@@ -165,20 +165,40 @@ jobs:
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
           fi
+      - name: Get Session Port
+        early-cancel: any-job-failed
+        run: |
+          set -euo pipefail
+          set -x
+
+          TIMEOUT=5
+          RETRY_INTERVAL=3
+          cd ${{ inputs.rundir }}
+
+          attempt=1
+          while true; do
+              echo "$(date) Attempt $attempt: Checking for SESSION_PORT file..."
+
+              if [ -f SESSION_PORT ]; then
+                  echo "$(date) Success: SESSION_PORT file found!"
+                  cat SESSION_PORT | tee -a "$OUTPUTS"
+                  exit 0
+              elif [ -f job.ended ]; then
+                  echo "$(date) Job was completed but SESSION_PORT was never created. Exiting..."
+                  exit 1
+              else
+                  echo "$(date) SESSION_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
+                  sleep "$RETRY_INTERVAL"
+                  ((attempt++))
+              fi
+          done
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
           TIMEOUT=5
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.outputs.target_hostname }}"
-
-          if [[ "${{ inputs.runtype }}" == "vllm" ]];then
-            remote_port="8000" # direct access to vllm port
-          else
-            remote_port="8081" # access the proxy service
-          fi
-
-          echo "remote_port=${remote_port}" | tee -a $OUTPUTS
+          remote_port="${{ needs.create_session.outputs.SESSION_PORT }}"
 
           # Function to check if server is listening
           check_server() {
@@ -208,7 +228,7 @@ jobs:
       - name: Update Session
         uses: parallelworks/update-session
         with:
-          remotePort: '${{ needs.create_session.outputs.remote_port }}'
+          remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
