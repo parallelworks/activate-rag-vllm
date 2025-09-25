@@ -109,7 +109,12 @@ if [ "$RUNMODE" == "docker" ];then
 
     VLLM_SERVER_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
-    echo "PROXY_PORT=${PROXY_PORT}" > PROXY_PORT
+
+    if [ "$RUNTYPE" == "vllm" ];then
+        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
+    else
+        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT
+    fi
     
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
     sed -i "s/^PROXY_PORT=.*/PROXY_PORT=${PROXY_PORT}/" .env
