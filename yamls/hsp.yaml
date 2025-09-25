@@ -13,10 +13,10 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b ${{ advanced_settings.repository_branch }} ${{ advanced_settings.repository }} ${{ inputs.rundir }}
+          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
-          git checkout ${{ advanced_settings.repository_branch }}
-          git branch --set-upstream-to=origin/${{ advanced_settings.repository_branch }}
+          git checkout ${{ inputs.advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
           rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
