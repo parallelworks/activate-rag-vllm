@@ -13,8 +13,10 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b ${{ advanced_settings.repository_branch }} ${{ advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
+          git checkout ${{ advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ advanced_settings.repository_branch }}
           git pull
           rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
@@ -201,6 +203,10 @@ jobs:
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
           fi
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
+          fi
       - name: Get Proxy Port
         early-cancel: any-job-failed
         run: |
@@ -358,3 +364,16 @@ jobs:
             optional: true
             tooltip: |
               Type in additional scheduler directives. 
+      advanced_settings:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main

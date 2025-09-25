@@ -13,11 +13,10 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b ${{ advanced_settings.repository_branch }} ${{ advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
-          # FIXME: REMOVE BEFORE MERGING
-          git checkout alvaro/v2-onprem
-          git branch --set-upstream-to=origin/alvaro/v2-onprem
+          git checkout ${{ advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ advanced_settings.repository_branch }}
           git pull
           rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
@@ -238,6 +237,10 @@ jobs:
                   ((attempt++))
               fi
           done
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
+          fi
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
@@ -426,3 +429,16 @@ jobs:
             default: 01:00:00
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.
+      advanced_settings:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main
