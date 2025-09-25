@@ -12,9 +12,12 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
+          mkdir -p $(dirname ${{ inputs.rundir }})
           git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git pull
+          rm -f jobid SESSION_PORT job.started job.ended run.out
+          rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
