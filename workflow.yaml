@@ -12,6 +12,7 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
+          set -x
           mkdir -p $(dirname ${{ inputs.rundir }})
           git clone -b ${{ advanced_settings.repository_branch }} ${{ advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
