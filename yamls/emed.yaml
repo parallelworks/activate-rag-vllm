@@ -209,7 +209,8 @@ jobs:
             fi
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+            target_hostname=$(hostname)
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           fi
           if [ -z "${target_hostname}" ]; then
             echo "$(date) Failed to get target hostname"
