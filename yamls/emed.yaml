@@ -13,11 +13,10 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b ${{ advanced_settings.repository_branch }} ${{ advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
-          # FIXME: REMOVE BEFORE MERGING
-          git checkout alvaro/v2-onprem
-          git branch --set-upstream-to=origin/alvaro/v2-onprem
+          git checkout ${{ advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ advanced_settings.repository_branch }}
           git pull
           rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
@@ -203,9 +202,18 @@ jobs:
             #jobid=${{ needs.slurm_job.outputs.jobid }}
             source jobid
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
+            # Add a retry for AECM
+            if [ -z "${target_hostname}" ]; then
+              sleep 30
+              target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
+            fi
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+          fi
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
           fi
       - name: Get Proxy Port
         early-cancel: any-job-failed
@@ -386,3 +394,16 @@ jobs:
             optional: true
             tooltip: |
               Type in additional scheduler directives. 
+      advanced_settings:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main
