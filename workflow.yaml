@@ -89,7 +89,7 @@ jobs:
           fi
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
           
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
@@ -163,7 +163,7 @@ jobs:
           chmod +x run.sh
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
