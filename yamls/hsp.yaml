@@ -209,7 +209,12 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+            target_hostname=$(hostname)
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          fi
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
           fi
       - name: Get Proxy Port
         early-cancel: any-job-failed
@@ -238,10 +243,6 @@ jobs:
                   ((attempt++))
               fi
           done
-          if [ -z "${target_hostname}" ]; then
-            echo "$(date) Failed to get target hostname"
-            exit 1
-          fi
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
