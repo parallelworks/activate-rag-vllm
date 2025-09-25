@@ -13,11 +13,10 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b alvaro/v2-onprem https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
-          # FIXME: REMOVE BEFORE MERGING
-          git checkout alvaro/v2-onprem
-          git branch --set-upstream-to=origin/alvaro/v2-onprem
+          git checkout ${{ inputs.advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
           rm -f jobid PROXY_PORT job.started job.ended run.out
           rm -rf logs
@@ -32,6 +31,7 @@ jobs:
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
@@ -96,7 +96,7 @@ jobs:
           
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
                     
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
@@ -170,7 +170,7 @@ jobs:
           chmod +x run.sh
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
@@ -209,7 +209,12 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+            target_hostname=$(hostname)
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          fi
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
           fi
       - name: Get Proxy Port
         early-cancel: any-job-failed
@@ -335,6 +340,11 @@ jobs:
         optional: true
         default: ${{ org.HF_TOKEN }}
         type: password
+      apikey:
+        label: vLLM API Key
+        optional: true
+        tooltip: Required for integration with Cline and other code assist tools.
+        type: password
       docsdir:
         label: RAG Directory
         hidden: ${{ inputs.runtype != 'all' }}
@@ -426,3 +436,16 @@ jobs:
             default: 01:00:00
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.
+      advanced_settings:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main

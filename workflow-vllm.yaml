@@ -12,9 +12,14 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
-          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          mkdir -p $(dirname ${{ inputs.rundir }})
+          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
+          git checkout ${{ inputs.advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
+          rm -f jobid PROXY_PORT job.started job.ended run.out
+          rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
@@ -28,6 +33,34 @@ jobs:
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
+      - name: Install Singularity Compose
+        if: ${{ inputs.runmode == 'singularity' }}
+        early-cancel: any-job-failed
+        run: |
+          # Check if singularity-compose is installed globally
+          if ! command -v singularity-compose &> /dev/null; then
+              # Check if virtual environment exists and activate it
+              if [ -d ~/pw/software/singularity-compose ]; then
+                  source ~/pw/software/singularity-compose/bin/activate
+              fi
+              # Check again if singularity-compose is available after activation
+              if ! command -v singularity-compose &> /dev/null; then
+                  echo "$(date) singularity-compose not found, installing..."
+                  
+                  # Create directory for Python environment
+                  mkdir -p ~/pw/software
+                  
+                  # Create virtual environment named singularity-compose and install singularity-compose
+                  python3 -m venv ~/pw/software/singularity-compose
+                  source ~/pw/software/singularity-compose/bin/activate
+                  pip install --upgrade pip
+                  pip install singularity-compose
+              fi
+          fi
+          if ! command -v singularity-compose >/dev/null 2>&1; then
+            echo "$(date) Error: Failed to install singularity-compose"
+            exit 1
+          fi
 
   slurm_job:
     needs:
@@ -53,7 +86,7 @@ jobs:
           fi
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
           
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
@@ -73,6 +106,7 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
+          rm -f jobid PROXY_PORT job.started
       - name: Monitor SLURM Job
         run: |
           jobid=${{ needs.slurm_job.outputs.jobid }}
@@ -125,7 +159,7 @@ jobs:
           chmod +x run.sh
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
@@ -133,10 +167,12 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
+          rm -f jobid PROXY_PORT job.started
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
           bash cancel.sh
+
 
   create_session:
     needs:
@@ -171,14 +207,7 @@ jobs:
           TIMEOUT=5
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.outputs.target_hostname }}"
-
-          if [[ "${{ inputs.runtype }}" == "vllm" ]];then
-            remote_port="8000" # direct access to vllm port
-          else
-            remote_port="8081" # access the proxy service
-          fi
-
-          echo "remote_port=${remote_port}" | tee -a $OUTPUTS
+          remote_port="${{ needs.create_session.outputs.PROXY_PORT }}"
 
           # Function to check if server is listening
           check_server() {
