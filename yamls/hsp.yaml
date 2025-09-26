@@ -114,14 +114,16 @@ jobs:
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          jobid=${{ needs.slurm_job.outputs.jobid }}
+          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          source jobid
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
           rm -f jobid PROXY_PORT job.started
       - name: Monitor SLURM Job
         run: |
-          jobid=${{ needs.slurm_job.outputs.jobid }}
+          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          source jobid
           echo "$(date) Monitoring SLURM job ${jobid}"
 
           cd ${{ inputs.rundir }}
