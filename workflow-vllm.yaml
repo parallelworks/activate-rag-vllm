@@ -102,7 +102,7 @@ jobs:
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          jobid=${{ needs.slurm_job.outputs.jobid }}}}
+          jobid=${{ needs.slurm_job.outputs.jobid }}
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
