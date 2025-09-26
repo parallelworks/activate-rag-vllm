@@ -18,7 +18,7 @@ jobs:
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
-          rm -f jobid PROXY_PORT job.started job.ended run.out
+          rm -f jobid SESSION_PORT job.started job.ended run.out
           rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
@@ -107,7 +107,7 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
-          rm -f jobid PROXY_PORT job.started
+          rm -f jobid SESSION_PORT job.started
       - name: Monitor SLURM Job
         run: |
           #jobid=${{ needs.slurm_job.outputs.jobid }}
@@ -169,7 +169,7 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
-          rm -f jobid PROXY_PORT job.started
+          rm -f jobid SESSION_PORT job.started
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
@@ -201,15 +201,47 @@ jobs:
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+            target_hostname=$(hostname)
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           fi
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
+          fi
+      - name: Get Proxy Port
+        early-cancel: any-job-failed
+        run: |
+          set -euo pipefail
+          set -x
+
+          TIMEOUT=5
+          RETRY_INTERVAL=3
+          cd ${{ inputs.rundir }}
+
+          attempt=1
+          while true; do
+              echo "$(date) Attempt $attempt: Checking for SESSION_PORT file..."
+
+              if [ -f SESSION_PORT ]; then
+                  echo "$(date) Success: SESSION_PORT file found!"
+                  cat SESSION_PORT | tee -a "$OUTPUTS"
+                  exit 0
+              elif [ -f job.ended ]; then
+                  echo "$(date) Job was completed but SESSION_PORT was never created. Exiting..."
+                  exit 1
+              else
+                  echo "$(date) SESSION_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
+                  sleep "$RETRY_INTERVAL"
+                  ((attempt++))
+              fi
+          done
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
           TIMEOUT=5
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.outputs.target_hostname }}"
-          remote_port="${{ needs.create_session.outputs.PROXY_PORT }}"
+          remote_port="${{ needs.create_session.outputs.SESSION_PORT }}"
 
           # Function to check if server is listening
           check_server() {
