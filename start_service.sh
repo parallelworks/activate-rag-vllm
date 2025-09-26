@@ -201,7 +201,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
-
+    sed -i "s/--max-model-len 8192/--max-model-len $MAX_MODEL_LEN/" env.sh
     # Disable weight download
     # Check if cache/huggingface directory exists
     if [ -d "cache/huggingface" ]; then

@@ -62,6 +62,7 @@ jobs:
           echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+          echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
 
   slurm_job:
     needs:
@@ -336,6 +337,10 @@ jobs:
         label: HF Model
         default: meta-llama/Llama-3.1-8B-Instruct
         type: string
+      maxmodellen:
+        label: Max Model Length
+        default: 16000
+        type: number
       hftoken:
         label: HF Token (gated models)
         optional: true
