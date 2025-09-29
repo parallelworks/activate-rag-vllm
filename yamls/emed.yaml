@@ -63,7 +63,7 @@ jobs:
           echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
-          echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
+          echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
 
   slurm_job:
     needs:
@@ -119,11 +119,14 @@ jobs:
           rm -f jobid SESSION_PORT job.started
       - name: Monitor SLURM Job
         run: |
+          cd ${{ inputs.rundir }}
+          
           #jobid=${{ needs.slurm_job.outputs.jobid }}
           max_retries=10
           count=0
 
           while [ $count -lt $max_retries ]; do
+            ls
             source jobid
             if [ -z "${jobid}" ]; then
               echo "$(date) Job ID is empty. Retry $((count+1))/$max_retries"
@@ -352,10 +355,11 @@ jobs:
         label: HF Model
         default: meta-llama/Llama-3.1-8B-Instruct
         type: string
-      maxmodellen:
-        label: Max Model Length
-        default: 16000
-        type: number
+      vllm_extra_args:
+        label: VLLM Extra Args
+        default: "--dtype float16 --max-model-len 4096 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
+        placeholder: "--dtype float16 --max-model-len 4096 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
+        type: string
       hftoken:
         label: HF Token (gated models)
         optional: true
