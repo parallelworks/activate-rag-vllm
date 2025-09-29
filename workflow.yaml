@@ -211,7 +211,7 @@ jobs:
             echo "$(date) Failed to get target hostname"
             exit 1
           fi
-      - name: Get Proxy Port
+      - name: Get Session Port
         early-cancel: any-job-failed
         run: |
           set -euo pipefail
