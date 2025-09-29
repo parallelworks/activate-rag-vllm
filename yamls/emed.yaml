@@ -12,6 +12,7 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
+          set -x
           mkdir -p $(dirname ${{ inputs.rundir }})
           git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
@@ -119,7 +120,19 @@ jobs:
       - name: Monitor SLURM Job
         run: |
           #jobid=${{ needs.slurm_job.outputs.jobid }}
-          source jobid
+          max_retries=10
+          count=0
+
+          while [ $count -lt $max_retries ]; do
+            source jobid
+            if [ -z "${jobid}" ]; then
+              echo "$(date) Job ID is empty. Retry $((count+1))/$max_retries"
+              count=$((count+1))
+              sleep 5
+            else
+              break
+            fi
+          done
           echo "$(date) Monitoring SLURM job ${jobid}"
 
           cd ${{ inputs.rundir }}
