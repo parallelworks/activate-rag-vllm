@@ -119,11 +119,14 @@ jobs:
           rm -f jobid SESSION_PORT job.started
       - name: Monitor SLURM Job
         run: |
+          cd ${{ inputs.rundir }}
+          
           #jobid=${{ needs.slurm_job.outputs.jobid }}
           max_retries=10
           count=0
 
           while [ $count -lt $max_retries ]; do
+            ls
             source jobid
             if [ -z "${jobid}" ]; then
               echo "$(date) Job ID is empty. Retry $((count+1))/$max_retries"
