@@ -158,6 +158,87 @@ jobs:
           cd ${{ inputs.rundir }}
           kill $(cat tail.pid)
 
+  pbs_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'PBS' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create PBS Script
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "${{ inputs.pbs.scheduler_directives }}" > run.sh
+          echo "#PBS  -A ${{ inputs.pbs.account }}" >> run.sh
+          echo "#PBS -o ${PWD}/run.out" >> run.sh
+          echo "#PBS -j oe" >> run.sh
+          echo "#PBS -o ${PWD}/run.out" >> run.sh
+
+          # Indicates job started running
+          echo "touch job.started" >> run.sh
+                    
+          cat start_service.sh >> run.sh
+          chmod +x run.sh
+      - name: Submit PBS Script
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "$(date) Submitting SLURM Job"
+          jobid=$(qsub run.sh)
+          if [ -z "${jobid}" ]; then
+            echo "$(date) Job submission failed"
+            exit 1
+          fi
+          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          source jobid
+          target_hostname=$(qstat -f "${jobid}" | awk -F= '/exec_host/ {print $2}' | cut -d'+' -f1 | cut -d'/' -f1)
+          ssh ${target_hostname} bash cancel.sh
+          qdel ${jobid}
+          rm -f jobid SESSION_PORT job.started
+      - name: Monitor PBS Job
+        run: |
+          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          source jobid
+          echo "$(date) Monitoring PBS job ${jobid}"
+
+          cd ${{ inputs.rundir }}
+          touch run.out
+          tail -f run.out &
+          echo &! > tail.pid
+
+          get_pbs_job_status() {
+              # Get the header line to determine the column index corresponding to the job status
+              if [ -z "${QSTAT_HEADER}" ]; then
+                  export QSTAT_HEADER="$(qstat | awk 'NR==1')"
+              fi
+              status_response=$(qstat 2>/dev/null | grep "\<${jobid}\>")
+              echo "${QSTAT_HEADER}"
+              echo "${status_response}"
+              export job_status="$(qstat -f ${jobid} 2>/dev/null  | grep job_state | cut -d'=' -f2 | tr -d ' ')"
+          }
+
+          while true; do
+            sleep 15
+            get_pbs_job_status
+            if [[ "${job_status}" == "C" ]]; then
+                break
+            elif [ -z "${job_status}" ]; then
+                break
+            fi
+          done
+          touch job.ended
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          kill $(cat tail.pid)
+
+
   ssh_job:
     needs:
       - prepare_job_directory
@@ -301,13 +382,15 @@ jobs:
         type: dropdown
         label: Execution Method
         default: SLURM
-        tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM or PBS queue
         hidden: ${{ 'existing' == inputs.resource.provider }}
         options:
           - value: SSH
             label: SSH
           - value: SLURM
             label: SLURM
+          - value: PBS
+            label: PBS
       runmode:
         label: Execution Mode
         type: dropdown
@@ -444,6 +527,28 @@ jobs:
             default: 01:00:00
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.
+      pbs:
+        type: group
+        label: PBS Directives
+        hidden: ${{ inputs.execmethod != 'PBS' }}
+        items:
+          account:
+            label: Account
+            type: string
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+          scheduler_directives:
+            label: Scheduler Directives
+            type: editor
+            tooltip: Type the PBS scheduler directives
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+            default: |
+              #!/bin/bash
+              #PBS -q HIE
+              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
+              #PBS -l walltime=01:00:00
+              #PBS -V
       advanced_settings:
         type: group
         label: Advanced Settings
