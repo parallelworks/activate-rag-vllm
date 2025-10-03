@@ -197,7 +197,7 @@ jobs:
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          #jobid=${{ needs.pbs_job.outputs.jobid }}
           source jobid
           target_hostname=$(qstat -f "${jobid}" | awk -F= '/exec_host/ {print $2}' | cut -d'+' -f1 | cut -d'/' -f1)
           ssh ${target_hostname} bash cancel.sh
@@ -205,7 +205,7 @@ jobs:
           rm -f jobid SESSION_PORT job.started
       - name: Monitor PBS Job
         run: |
-          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          #jobid=${{ needs.pbs_job.outputs.jobid }}
           source jobid
           echo "$(date) Monitoring PBS job ${jobid}"
 
@@ -293,6 +293,11 @@ jobs:
             #jobid=${{ needs.slurm_job.outputs.jobid }}
             source jobid
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          elif [[ ${{ inputs.execmethod }} == "PBS" ]]; then
+            #jobid=${{ needs.pbs_job.outputs.jobid }}
+            source jobid 
+            target_hostname=$(qstat -f "${jobid}" | awk -F= '/exec_host/ {print $2}' | cut -d'+' -f1 | cut -d'/' -f1)
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             target_hostname=$(hostname)
