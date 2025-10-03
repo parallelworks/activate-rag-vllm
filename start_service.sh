@@ -136,7 +136,7 @@ if [ "$RUNMODE" == "docker" ];then
 
     # Disable weight download
     # Check if cache/huggingface directory exists
-    if [ -d "cache/huggingface" ]; then
+    if [[ "${TRANSFORMERS_OFFLINE}" == "1" ]]; then
         sed -i 's/#TRANSFORMERS_OFFLINE=1/TRANSFORMERS_OFFLINE=1/' .env
         sed -i '/HF_HOME: \/root\/.cache\/huggingface/a\      TRANSFORMERS_OFFLINE: 1' docker-compose.yml
         echo "$(date) Disabled model weight download"
@@ -214,8 +214,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
     # Disable weight download
-    # Check if cache/huggingface directory exists
-    if [ -d "cache/huggingface" ]; then
+    if [[ "${TRANSFORMERS_OFFLINE}" == "1" ]]; then
         sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
         echo "$(date) Disabled model weight download"
     fi

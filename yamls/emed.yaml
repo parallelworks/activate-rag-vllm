@@ -64,6 +64,7 @@ jobs:
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
+          echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
 
   slurm_job:
     needs:
