@@ -144,7 +144,6 @@ jobs:
   create_session:
     needs:
       - prepare_job_directory
-      - slurm_job
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
