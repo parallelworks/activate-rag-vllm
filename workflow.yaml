@@ -199,7 +199,6 @@ jobs:
           set -x
           cd ${{ inputs.rundir }}
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
-            #jobid=${{ needs.slurm_job.outputs.jobid }}
             source jobid
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
