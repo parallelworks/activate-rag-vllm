@@ -13,8 +13,10 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
+          git checkout ${{ inputs.advanced_settings.repository_branch }}
+          git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
           rm -f jobid SESSION_PORT job.started job.ended run.out
           rm -rf logs
@@ -29,9 +31,10 @@ jobs:
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
           echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
+          echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
-          echo "export MAX_MODEL_LEN=${{ inputs.maxmodellen  }}" >> .run.env
-          
+          echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
+
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
@@ -86,7 +89,7 @@ jobs:
           fi
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
           
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
@@ -103,14 +106,16 @@ jobs:
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          jobid=${{ needs.slurm_job.outputs.jobid }}}}
+          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          source jobid
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
-          rm -f jobid PROXY_PORT job.started
+          rm -f jobid SESSION_PORT job.started
       - name: Monitor SLURM Job
         run: |
-          jobid=${{ needs.slurm_job.outputs.jobid }}
+          #jobid=${{ needs.slurm_job.outputs.jobid }}
+          source jobid
           echo "$(date) Monitoring SLURM job ${jobid}"
 
           cd ${{ inputs.rundir }}
@@ -160,7 +165,7 @@ jobs:
           chmod +x run.sh
 
           # Indicates job started running
-          touch job.started >> run.sh
+          echo "touch job.started" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
@@ -168,7 +173,7 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
-          rm -f jobid PROXY_PORT job.started
+          rm -f jobid SESSION_PORT job.started
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
@@ -194,12 +199,16 @@ jobs:
           set -x
           cd ${{ inputs.rundir }}
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
-            #jobid=${{ needs.slurm_job.outputs.jobid }}
             source jobid
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            echo "target_hostname=$(hostname)" | tee -a $OUTPUTS
+            target_hostname=$(hostname)
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          fi
+          if [ -z "${target_hostname}" ]; then
+            echo "$(date) Failed to get target hostname"
+            exit 1
           fi
       - name: Get Session Port
         early-cancel: any-job-failed
@@ -316,14 +325,20 @@ jobs:
         label: HF Model
         default: meta-llama/Llama-3.1-8B-Instruct
         type: string
-      maxmodellen:
-        label: Max Model Length
-        default: 16000
-        type: number
+      vllm_extra_args:
+        label: VLLM Extra Args
+        default: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --trust_remote_code"
+        placeholder: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
+        type: string
       hftoken:
         label: HF Token (gated models)
         optional: true
         default: ${{ org.HF_TOKEN }}
+        type: password
+      apikey:
+        label: vLLM API Key
+        optional: true
+        tooltip: Required for integration with Cline and other code assist tools.
         type: password
       docsdir:
         label: RAG Directory
@@ -358,3 +373,16 @@ jobs:
             optional: true
             tooltip: |
               Type in additional scheduler directives. 
+      advanced_settings:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main

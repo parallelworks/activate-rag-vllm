@@ -121,7 +121,7 @@ if [ "$RUNMODE" == "docker" ];then
 
     sed -i "s/^[#[:space:]]*HF_TOKEN=.*/HF_TOKEN=$HF_TOKEN/" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
-    sed -i "s/--max-model-len 8192/--max-model-len $MAX_MODEL_LEN/" .env
+    sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
     
     if [[ "$DOCS_DIR" != "undefined" ]]; then
@@ -198,7 +198,13 @@ elif [ "$RUNMODE" == "singularity" ]; then
     RAG_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
     CHROMA_PORT=$(findAvailablePort)
-    echo "PROXY_PORT=${PROXY_PORT}" > PROXY_PORT
+
+    if [ "$RUNTYPE" == "all" ];then
+        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT
+    else
+        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
+    fi
+
     sed -i "s/^export VLLM_SERVER_PORT=.*/export VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" env.sh
     sed -i "s/^export RAG_PORT=.*/export RAG_PORT=${RAG_PORT}/" env.sh
     sed -i "s/^export PROXY_PORT=.*/export PROXY_PORT=${PROXY_PORT}/" env.sh
@@ -207,7 +213,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
-
+    sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
     # Disable weight download
     # Check if cache/huggingface directory exists
     if [ -d "cache/huggingface" ]; then
