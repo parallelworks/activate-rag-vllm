@@ -6,3 +6,11 @@ env.sh
 logs
 etc.hosts
 resolv.conf
+PROXY_PORT
+SESSION_PORT
+*.jinja
+job.started
+job.ended
+cancel.sh
+run.sh
+.run.env

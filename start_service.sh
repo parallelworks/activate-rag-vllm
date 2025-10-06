@@ -110,10 +110,10 @@ if [ "$RUNMODE" == "docker" ];then
     VLLM_SERVER_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
 
-    if [ "$RUNTYPE" == "all" ];then
-        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT
-    else
+    if [ "$RUNTYPE" == "vllm" ];then
         echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
+    else
+        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT
     fi
     
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
@@ -136,6 +136,7 @@ if [ "$RUNMODE" == "docker" ];then
 
     # Disable weight download
     # Check if cache/huggingface directory exists
+    # TODO - only disable online if the actual weight doesn't exist because this fails when changing models
     if [ -d "cache/huggingface" ]; then
         sed -i 's/#TRANSFORMERS_OFFLINE=1/TRANSFORMERS_OFFLINE=1/' .env
         sed -i '/HF_HOME: \/root\/.cache\/huggingface/a\      TRANSFORMERS_OFFLINE: 1' docker-compose.yml

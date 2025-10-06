@@ -13,7 +13,7 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
+          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
@@ -179,14 +179,15 @@ jobs:
   create_session:
     needs:
       - prepare_job_directory
+      - slurm_job
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Wait for job to start
         early-cancel: any-job-failed
         run: |
-          cd ${{ inputs.rundir }}
-          while [ ! -f job.started ]; do
+          set -x
+          while [ ! -f ${{ inputs.rundir }}/job.started ]; do
             echo "Waiting for job to start..."
             sleep 5
           done
@@ -202,10 +203,6 @@ jobs:
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             target_hostname=$(hostname)
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-          fi
-          if [ -z "${target_hostname}" ]; then
-            echo "$(date) Failed to get target hostname"
-            exit 1
           fi
       - name: Get Session Port
         early-cancel: any-job-failed
@@ -270,7 +267,7 @@ jobs:
       - name: Update Session
         uses: parallelworks/update-session
         with:
-          remotePort: '${{ needs.create_session.outputs.remote_port }}'
+          remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
