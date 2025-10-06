@@ -13,7 +13,7 @@ jobs:
       - name: Preparing Run Directory
         run: |
           mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone https://github.com/parallelworks/activate-rag-vllm.git ${{ inputs.rundir }}
+          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
           cd ${{ inputs.rundir }}
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
@@ -351,3 +351,16 @@ jobs:
             optional: true
             tooltip: |
               Type in additional scheduler directives. 
+      advanced_settings:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main
