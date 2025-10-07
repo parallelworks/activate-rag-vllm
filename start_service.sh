@@ -147,7 +147,8 @@ if [ "$RUNMODE" == "docker" ];then
 
     mkdir -p logs cache cache/chroma
 
-    stack_name=$(echo ragvllm${PWD} | tr '/' '-')
+    stack_name=$(echo "ragvllm${PWD}" | tr '/' '-' | tr '.' '-' | tr '[:upper:]' '[:lower:]')
+
     if [ ${#stack_name} -gt 50 ]; then
         stack_name=${stack_name: -50}
     fi
