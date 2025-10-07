@@ -317,8 +317,8 @@ jobs:
         type: string
       vllm_extra_args:
         label: VLLM Extra Args
-        default: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --trust_remote_code"
-        placeholder: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
+        default: "--dtype float16 --max-model-len 16000 --gpu-memory-utilization=0.95 --trust_remote_code"
+        placeholder: "--dtype float16 --max-model-len 16000 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
         type: string
       hftoken:
         label: HF Token (gated models)
