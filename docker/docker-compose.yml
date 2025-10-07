@@ -5,7 +5,7 @@ networks:
 services:
 
   vllm:
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:v0.10.0
     gpus: all
     environment:
       NVIDIA_VISIBLE_DEVICES: all
