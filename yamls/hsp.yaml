@@ -180,6 +180,8 @@ jobs:
           echo "#PBS -o ${PWD}/run.out" >> run.sh
           echo "#PBS -j oe" >> run.sh
           echo "#PBS -o ${PWD}/run.out" >> run.sh
+          echo "cd ${{ inputs.rundir }}" >> run.sh
+
           # Indicates job started running
           echo "touch job.started" >> run.sh
           echo "hostname >> HOSTNAME" >> run.sh
