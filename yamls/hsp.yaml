@@ -389,12 +389,13 @@ jobs:
         label: Execution Method
         default: SLURM
         tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
-        hidden: ${{ 'existing' == inputs.resource.provider }}
         options:
           - value: SSH
             label: SSH
           - value: SLURM
             label: SLURM
+          - value: PBS
+            label: PBS
       runmode:
         label: Execution Mode
         type: dropdown
