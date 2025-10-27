@@ -551,7 +551,7 @@ jobs:
             default: |
               #!/bin/bash
               #PBS -q HIE
-              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
+              #PBS -l select=1:ncpus=128:mpiprocs=1:ngpus=1
               #PBS -l walltime=01:00:00
               #PBS -V
       advanced_settings:
