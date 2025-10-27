@@ -204,16 +204,16 @@ jobs:
           cd ${{ inputs.rundir }}
           #jobid=${{ needs.pbs_job.outputs.jobid }}
           source jobid
-          target_hostname=$(qstat -f "${jobid}" | awk -F= '/exec_host/ {print $2}' | cut -d'+' -f1 | cut -d'/' -f1)
+          target_hostname=$(cat HOSTNAME)
           ssh ${target_hostname} bash cancel.sh
           qdel ${jobid}
           rm -f jobid SESSION_PORT job.started HOSTNAME
       - name: Monitor PBS Job
         run: |
           #jobid=${{ needs.pbs_job.outputs.jobid }}
+          cd ${{ inputs.rundir }}
           source jobid
           echo "$(date) Monitoring PBS job ${jobid}"
-          cd ${{ inputs.rundir }}
           touch run.out
           tail -f run.out &
           echo &! > tail.pid
