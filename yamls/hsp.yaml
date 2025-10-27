@@ -532,6 +532,28 @@ jobs:
             default: 01:00:00
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.
+      pbs:
+        type: group
+        label: PBS Directives
+        hidden: ${{ inputs.execmethod != 'PBS' }}
+        items:
+          account:
+            label: Account
+            type: string
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+          scheduler_directives:
+            label: Scheduler Directives
+            type: editor
+            tooltip: Type the PBS scheduler directives
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+            default: |
+              #!/bin/bash
+              #PBS -q HIE
+              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
+              #PBS -l walltime=01:00:00
+              #PBS -V
       advanced_settings:
         type: group
         label: Advanced Settings
