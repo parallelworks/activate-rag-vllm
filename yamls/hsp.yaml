@@ -100,7 +100,8 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
-                    
+          echo "hostname >> HOSTNAME" >> run.sh
+          
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
         run: |
@@ -180,7 +181,8 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
-                    
+          echo "hostname >> HOSTNAME" >> run.sh
+
           cat start_service.sh >> run.sh
           chmod +x run.sh
       - name: Submit PBS Script
@@ -189,6 +191,7 @@ jobs:
           cd ${{ inputs.rundir }}
           echo "$(date) Submitting SLURM Job"
           jobid=$(qsub run.sh)
+          jobid=$(echo "$jobid" | cut -d'.' -f1)
           if [ -z "${jobid}" ]; then
             echo "$(date) Job submission failed"
             exit 1
@@ -257,6 +260,7 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
@@ -297,7 +301,7 @@ jobs:
           elif [[ ${{ inputs.execmethod }} == "PBS" ]]; then
             #jobid=${{ needs.pbs_job.outputs.jobid }}
             source jobid 
-            target_hostname=$(qstat -f "${jobid}" | awk -F= '/exec_host/ {print $2}' | cut -d'+' -f1 | cut -d'/' -f1)
+            target_hostname=$(cat HOSTNAME)
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             target_hostname=$(hostname)
