@@ -190,6 +190,7 @@ jobs:
           set -x
           cd ${{ inputs.rundir }}
           echo "$(date) Submitting SLURM Job"
+          cat run.sh
           jobid=$(qsub run.sh)
           jobid=$(echo "$jobid" | cut -d'.' -f1)
           if [ -z "${jobid}" ]; then
