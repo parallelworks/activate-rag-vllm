@@ -223,6 +223,8 @@ elif [ "$RUNMODE" == "singularity" ]; then
     fi
 
     source env.sh
+    mkdir -p ${CUDA_CACHE_PATH} ${TORCH_EXTENSIONS_DIR} ${FLASHINFER_JIT_DIR}
+    chmod -R 777 ${TMPDIR}
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
 
