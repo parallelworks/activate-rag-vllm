@@ -19,7 +19,7 @@ jobs:
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
-          rm -f jobid SESSION_PORT job.started job.ended run.out
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
           rm -rf logs
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
@@ -64,6 +64,7 @@ jobs:
           echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
+          echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
 
   slurm_job:
     needs:
@@ -94,6 +95,7 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
 
           echo "module load singularity" >> run.sh
           
@@ -116,7 +118,7 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
-          rm -f jobid SESSION_PORT job.started
+          rm -f jobid SESSION_PORT job.started HOSTNAME
       - name: Monitor SLURM Job
         run: |
           cd ${{ inputs.rundir }}
@@ -186,6 +188,7 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
@@ -193,7 +196,7 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
-          rm -f jobid SESSION_PORT job.started
+          rm -f jobid SESSION_PORT job.started HOSTNAME
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}

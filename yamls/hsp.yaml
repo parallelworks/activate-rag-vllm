@@ -18,7 +18,7 @@ jobs:
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
-          rm -f jobid SESSION_PORT job.started job.ended run.out
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
           rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
@@ -34,6 +34,8 @@ jobs:
           echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
+          echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
+
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
@@ -98,6 +100,9 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
+
+          echo "module load singularity" >> run.sh
                     
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
@@ -119,7 +124,7 @@ jobs:
           target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
           ssh ${target_hostname} bash cancel.sh
           scancel ${jobid}
-          rm -f jobid SESSION_PORT job.started
+          rm -f jobid SESSION_PORT  HOSTNAME
       - name: Monitor SLURM Job
         run: |
           #jobid=${{ needs.slurm_job.outputs.jobid }}
@@ -158,6 +163,87 @@ jobs:
           cd ${{ inputs.rundir }}
           kill $(cat tail.pid)
 
+  pbs_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'PBS' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create PBS Script
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "${{ inputs.pbs.scheduler_directives }}" > run.sh
+          echo "#PBS  -A ${{ inputs.pbs.account }}" >> run.sh
+          echo "#PBS -o ${PWD}/run.out" >> run.sh
+          echo "#PBS -j oe" >> run.sh
+          echo "#PBS -o ${PWD}/run.out" >> run.sh
+          echo "cd ${{ inputs.rundir }}" >> run.sh
+
+          # Indicates job started running
+          echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
+          cat start_service.sh >> run.sh
+          chmod +x run.sh
+      - name: Submit PBS Script
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "$(date) Submitting SLURM Job"
+          jobid=$(qsub run.sh)
+          jobid=$(echo "$jobid" | cut -d'.' -f1)
+          if [ -z "${jobid}" ]; then
+            echo "$(date) Job submission failed"
+            exit 1
+          fi
+          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          #jobid=${{ needs.pbs_job.outputs.jobid }}
+          source jobid
+          target_hostname=$(cat HOSTNAME)
+          ssh ${target_hostname} bash cancel.sh
+          qdel ${jobid}
+          rm -f jobid SESSION_PORT job.started HOSTNAME
+      - name: Monitor PBS Job
+        run: |
+          #jobid=${{ needs.pbs_job.outputs.jobid }}
+          cd ${{ inputs.rundir }}
+          source jobid
+          echo "$(date) Monitoring PBS job ${jobid}"
+          touch run.out
+          tail -f run.out &
+          echo &! > tail.pid
+          get_pbs_job_status() {
+              # Get the header line to determine the column index corresponding to the job status
+              if [ -z "${QSTAT_HEADER}" ]; then
+                  export QSTAT_HEADER="$(qstat | awk 'NR==1')"
+              fi
+              status_response=$(qstat 2>/dev/null | grep "\<${jobid}\>")
+              echo "${QSTAT_HEADER}"
+              echo "${status_response}"
+              export job_status="$(qstat -f ${jobid} 2>/dev/null  | grep job_state | cut -d'=' -f2 | tr -d ' ')"
+          }
+          while true; do
+            sleep 15
+            get_pbs_job_status
+            if [[ "${job_status}" == "C" ]]; then
+                break
+            elif [ -z "${job_status}" ]; then
+                break
+            fi
+          done
+          touch job.ended
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          kill $(cat tail.pid)
+
+
+
   ssh_job:
     needs:
       - prepare_job_directory
@@ -174,6 +260,7 @@ jobs:
 
           # Indicates job started running
           echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
 
           cat start_service.sh >> run.sh
       - name: Submit SSH Script
@@ -181,7 +268,7 @@ jobs:
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
-          rm -f jobid SESSION_PORT job.started
+          rm -f jobid SESSION_PORT job.started HOSTNAME
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
@@ -209,6 +296,9 @@ jobs:
           if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
             source jobid
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
+            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+          elif [[ ${{ inputs.execmethod }} == "PBS" ]]; then
+            target_hostname=$(cat HOSTNAME)
             echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
             target_hostname=$(hostname)
@@ -301,12 +391,13 @@ jobs:
         label: Execution Method
         default: SLURM
         tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
-        hidden: ${{ 'existing' == inputs.resource.provider }}
         options:
           - value: SSH
             label: SSH
           - value: SLURM
             label: SLURM
+          - value: PBS
+            label: PBS
       runmode:
         label: Execution Mode
         type: dropdown
@@ -443,6 +534,28 @@ jobs:
             default: 01:00:00
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.
+      pbs:
+        type: group
+        label: PBS Directives
+        hidden: ${{ inputs.execmethod != 'PBS' }}
+        items:
+          account:
+            label: Account
+            type: string
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+          scheduler_directives:
+            label: Scheduler Directives
+            type: editor
+            tooltip: Type the PBS scheduler directives
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+            default: |
+              #!/bin/bash
+              #PBS -q HIE
+              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
+              #PBS -l walltime=01:00:00
+              #PBS -V
       advanced_settings:
         type: group
         label: Advanced Settings
