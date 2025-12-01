@@ -127,8 +127,7 @@ jobs:
           rm -f jobid SESSION_PORT  HOSTNAME
       - name: Monitor SLURM Job
         run: |
-          #jobid=${{ needs.slurm_job.outputs.jobid }}
-          source jobid
+          jobid=${{ needs.slurm_job.outputs.jobid }}
           echo "$(date) Monitoring SLURM job ${jobid}"
 
           cd ${{ inputs.rundir }}
@@ -149,7 +148,7 @@ jobs:
           }
 
           while true; do
-            sleep 15
+            sleep 30
             get_slurm_job_status
             if [ -z "${job_status}" ]; then
               job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
