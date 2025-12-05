@@ -460,17 +460,10 @@ jobs:
         label: SLURM Directives
         hidden: ${{ inputs.execmethod != 'SLURM' }}
         items:
-          account_:
+          account:
             label: SLURM account
             type: slurm-accounts
             resource: ${{ inputs.resource }}
-            tooltip: Account to submit the interactive job
-            ignore: true
-            hidden: true
-            optional: ${{ .ignore }}
-          account:
-            label: SLURM account
-            type: string
             tooltip: Account to submit the interactive job
             ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
             hidden: ${{ .ignore }}
