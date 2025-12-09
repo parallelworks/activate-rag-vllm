@@ -370,8 +370,8 @@ jobs:
       - name: Select Local Port
         early-cancel: any-job-failed
         run: |
-          local_port=$(pw agent open-port)
-          echo "local_port=${local_port}"  | tee -a $OUTPUTS
+          LOCAL_PORT=$(pw agent open-port)
+          echo "LOCAL_PORT=${LOCAL_PORT}"  | tee -a $OUTPUTS
       - name: Update Continue YAML
         early-cancel: any-job-failed
         run: |
