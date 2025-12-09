@@ -410,7 +410,7 @@ jobs:
               read_currently_open_file: true
               apiKey: "${API_KEY}"
           HERE
-                  exit 0
+                  sleep inf
               fi
           fi
           cat >> ${CONFIG_FILE} <<HERE
