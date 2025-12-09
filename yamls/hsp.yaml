@@ -388,6 +388,7 @@ jobs:
       - name: Update Continue YAML
         early-cancel: any-job-failed
         run: |
+          set -x
           if [ ! -d "${HOME}/.continue/" ]; then
               echo "(date) Directory ${HOME}/.continue/ does not exist"
               exit 0
