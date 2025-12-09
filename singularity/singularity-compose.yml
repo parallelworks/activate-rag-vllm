@@ -20,8 +20,8 @@ instances:
     volumes:
       - ./logs:/logs
       - ./cache:/root/.cache
-      - ${MODEL_NAME}:${MODEL_NAME}
       - ./env.sh:/.singularity.d/env/env.sh
+      - ${MODEL_NAME}:${MODEL_NAME}
 
   rag:
     build:

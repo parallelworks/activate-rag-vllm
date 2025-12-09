@@ -374,6 +374,7 @@ jobs:
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+          localPort: '${{ inputs.localport }}'
 
 
 'on':
@@ -455,6 +456,11 @@ jobs:
         textarea: true
         optional: true
         default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+      localport:
+        label: User Workspace Port
+        default: '5555'
+        tooltip: Port that runs within the user workspace and used to connect to the code assist and chat interfaces.
+        type: string
       slurm:
         type: group
         label: SLURM Directives
