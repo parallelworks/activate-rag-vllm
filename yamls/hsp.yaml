@@ -425,6 +425,7 @@ jobs:
               read_currently_open_file: true
               apiKey: "${API_KEY}"
           HERE
+          sleep inf
         cleanup: |
           if [ ! -d "${HOME}/.continue/" ]; then
               echo "(date) Directory ${HOME}/.continue/ does not exist"
