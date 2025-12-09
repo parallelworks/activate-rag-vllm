@@ -21,7 +21,7 @@ instances:
       - ./logs:/logs
       - ./cache:/root/.cache
       - ./env.sh:/.singularity.d/env/env.sh
-      - ${MODEL_NAME}:${MODEL_NAME}
+      - __MODEL_NAME__:__MODEL_NAME__
 
   rag:
     build:
