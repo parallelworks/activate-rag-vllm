@@ -429,6 +429,7 @@ jobs:
           HERE
           sleep inf
         cleanup: |
+          set -x
           if [ ! -d "${HOME}/.continue/" ]; then
               echo "(date) Directory ${HOME}/.continue/ does not exist"
               exit 0
