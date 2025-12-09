@@ -425,12 +425,12 @@ jobs:
         default: false
       hfmodel:
         label: HF Model
-        default: meta-llama/Llama-3.1-8B-Instruct
+        default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
         type: string
       vllm_extra_args:
         label: VLLM Extra Args
-        default: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --trust_remote_code"
-        placeholder: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
+        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --max-model-len=2048 --gpu-memory-utilization 0.85"
+        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --max-model-len=2048 --gpu-memory-utilization 0.85"
         type: string
       hftoken:
         label: HF Token (gated models)
