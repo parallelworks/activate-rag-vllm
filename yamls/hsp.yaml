@@ -425,7 +425,7 @@ jobs:
         default: false
       hfmodel:
         label: HF Model
-        default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
+        default: /p/work1/mshaxted/Llama-3_3-Nemotron-Super-49B-v1_5
         type: string
       vllm_extra_args:
         label: VLLM Extra Args
