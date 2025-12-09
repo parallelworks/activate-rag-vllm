@@ -415,10 +415,10 @@ jobs:
         label: Run Type
         type: dropdown
         options:
-          - value: all
-            label: vLLM+RAG
           - value: vllm
             label: vLLM Only
+          - value: all
+            label: vLLM+RAG
       build:
         label: Build Containers
         type: boolean
