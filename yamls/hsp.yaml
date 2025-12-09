@@ -429,8 +429,8 @@ jobs:
         type: string
       vllm_extra_args:
         label: VLLM Extra Args
-        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --max-model-len=2048 --gpu-memory-utilization 0.85"
-        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --max-model-len=2048 --gpu-memory-utilization 0.85"
+        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
+        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
         type: string
       hftoken:
         label: HF Token (gated models)
