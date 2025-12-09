@@ -372,6 +372,19 @@ jobs:
         run: |
           LOCAL_PORT=$(pw agent open-port)
           echo "LOCAL_PORT=${LOCAL_PORT}"  | tee -a $OUTPUTS
+      - name: Update Session
+        uses: parallelworks/update-session
+        with:
+          localPort: '${{ needs.create_session.outputs.LOCAL_PORT }}'
+          remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
+          target: '${{ inputs.resource.id }}'
+          name: '${{ sessions.session }}'
+          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+
+  update_continue_config:
+    needs:
+      - create_session
+    steps:
       - name: Update Continue YAML
         early-cancel: any-job-failed
         run: |
@@ -434,14 +447,7 @@ jobs:
 
             # Start of a new block resets remove flag automatically on next iteration
           ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
-      - name: Update Session
-        uses: parallelworks/update-session
-        with:
-          localPort: '${{ needs.create_session.outputs.LOCAL_PORT }}'
-          remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
-          target: '${{ inputs.resource.id }}'
-          name: '${{ sessions.session }}'
-          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+
 
 
 'on':
