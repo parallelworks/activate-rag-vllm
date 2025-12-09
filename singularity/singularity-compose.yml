@@ -20,6 +20,7 @@ instances:
     volumes:
       - ./logs:/logs
       - ./cache:/root/.cache
+      - /p/work1/mshaxted/Llama-3_3-Nemotron-Super-49B-v1_5:/models/Llama-3_3-Nemotron-Super-49B-v1_5
       - ./env.sh:/.singularity.d/env/env.sh
 
   rag:
