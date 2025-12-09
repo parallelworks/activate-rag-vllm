@@ -402,15 +402,16 @@ jobs:
 
           if [[ -f "${CONFIG_FILE}" ]]; then
               if grep -q '^models:' "$CONFIG_FILE"; then
-                  echo "$(date) File exists and contains 'models:'."
-          cat >> ${CONFIG_FILE} <<HERE
-            - name: ${MODEL_NAME}-${PW_JOB_ID}
-              provider: vllm
-              model: ${MODEL_NAME}
-              apiBase: http://localhost:${LOCAL_PORT}/v1
-              read_currently_open_file: true
-              apiKey: "${API_KEY}"
-          HERE
+                  echo "$(date) File exists and contains 'models:'. Adding new models..."
+                  cat ${CONFIG_FILE}
+                  echo " - name: ${MODEL_NAME}-${PW_JOB_ID}" >> ${CONFIG_FILE}
+                  echo "   provider: vllm" >> ${CONFIG_FILE}
+                  echo "   model: ${MODEL_NAME}" >> ${CONFIG_FILE}
+                  echo "   apiBase: http://localhost:${LOCAL_PORT}/v1" >> ${CONFIG_FILE}
+                  echo "   read_currently_open_file: true" >> ${CONFIG_FILE}
+                  echo "   apiKey: "${API_KEY}"" >> ${CONFIG_FILE}
+                  echo; echo
+                  cat ${CONFIG_FILE}
                   sleep inf
               fi
           fi
