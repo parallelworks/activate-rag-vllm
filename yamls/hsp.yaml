@@ -367,9 +367,77 @@ jobs:
                   ((attempt++))
               fi
           done
+      - name: Select Local Port
+        early-cancel: any-job-failed
+        run: |
+          local_port=$(pw agent open-port)
+          echo "local_port=${local_port}"  | tee -a $OUTPUTS
+      - name: Update Continue YAML
+        early-cancel: any-job-failed
+        run: |
+          if [ ! -d "${HOME}/.continue/" ]; then
+              echo "(date) Directory ${HOME}/.continue/ does not exist"
+              exit 0
+          fi
+
+          CONFIG_FILE="${HOME}/.continue/config.yaml"
+
+          MODEL_NAME=${{ inputs.hfmodel  }}
+          API_KEY=${{ inputs.apikey  }}
+          LOCAL_PORT='${{ needs.create_session.outputs.LOCAL_PORT }}'
+
+          if [[ -f "${CONFIG_FILE}" ]]; then
+              if grep -q '^models:' "$CONFIG_FILE"; then
+                  echo "$(date) File exists and contains 'models:'."
+          cat >> ${CONFIG_FILE} <<HERE
+            - name: ${MODEL_NAME}-${PW_JOB_ID}
+              provider: vllm
+              model: ${MODEL_NAME}
+              apiBase: http://localhost:${LOCAL_PORT}/v1
+              read_currently_open_file: true
+              apiKey: "${API_KEY}"
+          HERE
+                  exit 0
+              fi
+          fi
+          cat >> ${CONFIG_FILE} <<HERE
+          name: Local Config
+          version: 1.0.0
+          schema: v1
+          models:
+            - name: ${MODEL_NAME}-${PW_JOB_ID}
+              provider: vllm
+              model: ${MODEL_NAME}
+              apiBase: http://localhost:${LOCAL_PORT}/v1
+              read_currently_open_file: true
+              apiKey: "${API_KEY}"
+          HERE
+        cleanup: |
+          if [ ! -d "${HOME}/.continue/" ]; then
+              echo "(date) Directory ${HOME}/.continue/ does not exist"
+              exit 0
+          fi
+
+          CONFIG_FILE="${HOME}/.continue/config.yaml"
+          MODEL_NAME=${{ inputs.hfmodel  }}
+
+          TARGET_NAME=${MODEL_NAME}-${PW_JOB_ID}
+          awk -v target="$TARGET_NAME" '
+            # Detect start of a model block
+            /^  - name:/ {
+                # Check if this block is the one we should remove
+                remove = ($0 ~ target)
+            }
+
+            # Print only if we are NOT inside a block that should be removed
+            !remove
+
+            # Start of a new block resets remove flag automatically on next iteration
+          ' "$CONFIG_FILE" > "$CONFIG_FILE.tmp" && mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
       - name: Update Session
         uses: parallelworks/update-session
         with:
+          localPort: '${{ needs.create_session.outputs.LOCAL_PORT }}'
           remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
