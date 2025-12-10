@@ -154,7 +154,7 @@ jobs:
               job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
               echo "$(date) Job exited with status ${job_status}"
               touch job.ended
-              exit 0
+              break
             fi
           done
         cleanup: |
