@@ -224,8 +224,8 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
-    
-    sed -i "s|__MODEL_NAME__|${MODEL_NAME}|" singularity-compose.yml
+
+    sed -i "s|__MODEL_NAME__|${MODEL_NAME}|g" singularity-compose.yml
 
     # Disable weight download
     # Check if cache/huggingface directory exists
