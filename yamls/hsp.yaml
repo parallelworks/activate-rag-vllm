@@ -82,11 +82,9 @@ jobs:
           chmod +x run.sh
           echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
           echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
-          echo "#SBATCH --constraint=${{ inputs.slurm.constraint }}" >> run.sh
           if [[ "${{ inputs.slurm.partition }}" != "undefined" && "${{ inputs.slurm.partition }}" != "" ]]; then
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           fi
-          echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
           echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
           echo "#SBATCH --nodes=1" >> run.sh
           echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
@@ -491,17 +489,6 @@ jobs:
             ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
             optional: ${{ .ignore }}
             hidden: ${{ .ignore }}
-          constraint:
-            label: Constraint
-            type: dropdown
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
-            hidden: ${{ .ignore }}
-            default: viz
-            options:
-              - value: viz
-                label: viz
-              - value: mla
-                label: mla
           cpus_per_task:
             type: number
             label: CPUs per task
@@ -511,21 +498,14 @@ jobs:
             max: 32
             default: 1
             tooltip: '--cpus-per-task=value SLURM directive'
-          number_of_gpus:
-            type: number
-            label: Number of GPUs
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
-            hidden: ${{ .ignore }}
-            min: 1
-            max: 4
-            default: 1
-            tooltip: '--gres=gpu:X slurm directive'
           scheduler_directives:
             type: editor
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             optional: true
-            tooltip: |
-              Type in additional scheduler directives. 
+            tooltip: Type in additional scheduler directives. 
+            default: |
+              #SBATCH --constraint=mla
+              #SBATCH --gres=gpu:4 
           time:
             label: Walltime
             type: string
