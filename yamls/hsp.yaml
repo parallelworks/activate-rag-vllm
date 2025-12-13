@@ -90,6 +90,8 @@ jobs:
             fi
           fi
 
+          echo Singularity container pull step complete.
+
   slurm_job:
     needs:
       - prepare_job_directory
