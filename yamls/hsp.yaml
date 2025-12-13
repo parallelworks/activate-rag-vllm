@@ -136,7 +136,17 @@ jobs:
           echo "touch job.started" >> run.sh
           echo "hostname >> HOSTNAME" >> run.sh
 
-          echo "module load singularity" >> run.sh
+          # load singularity via module if not already in path
+          cat << 'EOF' >> run.sh
+          # Ensure Singularity is available
+          if ! command -v singularity >/dev/null 2>&1; then
+            if command -v module >/dev/null 2>&1; then
+              module load singularity || module load apptainer
+            else
+              echo "ERROR: singularity/apptainer not found" >&2
+            fi
+          fi
+          EOF
                     
           cat start_service.sh >> run.sh
       - name: Submit SLURM Script
