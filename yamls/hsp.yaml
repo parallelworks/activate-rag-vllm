@@ -71,12 +71,23 @@ jobs:
         run: |
           set -x
           cd ${{ inputs.rundir }}
-          echo pulling vllm.sif from ${{ inputs.container_bucket }}
-          pw bucket cp ${{ inputs.container_bucket }}/vllm.sif ./
+          
+          # vllm container
+          if [[ ! -f "vllm.sif" ]]; then
+            echo "vllm.sif not found, pulling from ${{ inputs.container_bucket }}"
+            pw bucket cp "${{ inputs.container_bucket }}/vllm.sif" ./
+          else
+            echo "vllm.sif already exists, skipping pull"
+          fi
 
+          # rag container (only for runmode=all)
           if [[ "${{ inputs.runmode }}" == "all" ]]; then
-            echo pulling rag.sif from ${{ inputs.container_bucket }}
-            pw bucket cp ${{ inputs.container_bucket }}/rag.sif ./
+            if [[ ! -f "rag.sif" ]]; then
+              echo "rag.sif not found, pulling from ${{ inputs.container_bucket }}"
+              pw bucket cp "${{ inputs.container_bucket }}/rag.sif" ./
+            else
+              echo "rag.sif already exists, skipping pull"
+            fi
           fi
 
   slurm_job:
