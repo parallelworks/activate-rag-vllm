@@ -444,7 +444,7 @@ jobs:
         hidden: ${{ inputs.runmode != 'singularity' && inputs.pull == true }}
         type: string
         default: pw://mshaxted/codeassist
-        help: PW singularity container bucket that holds vllm.sif and rag.sif containers
+        tooltip: PW singularity container bucket that holds vllm.sif and rag.sif containers
       hfmodel:
         label: HF Model
         default: /p/work1/${USER}/Llama-3_3-Nemotron-Super-49B-v1_5
