@@ -65,6 +65,19 @@ jobs:
             echo "$(date) ERROR: Failed to install singularity-compose"
             exit 1
           fi
+      - name: Pull Singularity Containers
+        if: ${{ inputs.runmode == 'singularity' && inputs.pull == true }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo pulling vllm.sif from ${{ inputs.container_bucket }}
+          pw bucket cp ${{ inputs.container_bucket }}/vllm.sif ./
+
+          if [[ "${{ inputs.runmode }}" == "all" ]]; then
+            echo pulling rag.sif from ${{ inputs.container_bucket }}
+            pw bucket cp ${{ inputs.container_bucket }}/rag.sif ./
+          fi
 
   slurm_job:
     needs:
@@ -422,6 +435,16 @@ jobs:
         label: Build Containers
         type: boolean
         default: false
+      pull:
+        label: Pull Containers
+        type: boolean
+        default: true
+      container_bucket:
+        label: Container Bucket (.sif)
+        hidden: ${{ inputs.runmode != 'singularity' }}
+        type: string
+        default: pw://mshaxted/codeassist
+        help: PW singularity container bucket that holds vllm.sif and rag.sif containers
       hfmodel:
         label: HF Model
         default: /p/work1/${USER}/Llama-3_3-Nemotron-Super-49B-v1_5
