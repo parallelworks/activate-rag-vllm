@@ -35,6 +35,7 @@ jobs:
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
           echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
+          echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
 
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
@@ -91,6 +92,15 @@ jobs:
           fi
 
           echo Singularity container pull step complete.
+      - name: Pull Tiktoken Encodings
+        if: ${{ inputs.advanced_settings.tiktoken_encodings == true }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          mkdir -p cache/tiktoken_encodings
+          wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
+          wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 
   slurm_job:
     needs:
@@ -586,3 +596,8 @@ jobs:
             type: string
             label: Repository Branch
             default: nemotron
+          tiktoken_encodings:
+            label: Pull Tiktoken Encodings
+            tooltip: For GPT-OSS pull the tiktoken encodings.
+            type: boolean
+            default: false
