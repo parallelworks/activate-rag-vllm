@@ -441,7 +441,7 @@ jobs:
         default: true
       container_bucket:
         label: Container Bucket (.sif)
-        hidden: ${{ inputs.runmode != 'singularity' }}
+        hidden: ${{ inputs.runmode != 'singularity' && inputs.pull == true }}
         type: string
         default: pw://mshaxted/codeassist
         help: PW singularity container bucket that holds vllm.sif and rag.sif containers
