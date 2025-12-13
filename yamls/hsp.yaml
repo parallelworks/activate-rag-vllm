@@ -65,6 +65,32 @@ jobs:
             echo "$(date) ERROR: Failed to install singularity-compose"
             exit 1
           fi
+      - name: Pull Singularity Containers
+        if: ${{ inputs.runmode == 'singularity' && inputs.pull == true }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          
+          # vllm container
+          if [[ ! -f "vllm.sif" ]]; then
+            echo "vllm.sif not found, pulling from ${{ inputs.container_bucket }}"
+            pw bucket cp "${{ inputs.container_bucket }}/vllm.sif" ./
+          else
+            echo "vllm.sif already exists, skipping pull"
+          fi
+
+          # rag container (only for runmode=all)
+          if [[ "${{ inputs.runmode }}" == "all" ]]; then
+            if [[ ! -f "rag.sif" ]]; then
+              echo "rag.sif not found, pulling from ${{ inputs.container_bucket }}"
+              pw bucket cp "${{ inputs.container_bucket }}/rag.sif" ./
+            else
+              echo "rag.sif already exists, skipping pull"
+            fi
+          fi
+
+          echo Singularity container pull step complete.
 
   slurm_job:
     needs:
@@ -82,11 +108,9 @@ jobs:
           chmod +x run.sh
           echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
           echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
-          echo "#SBATCH --constraint=${{ inputs.slurm.constraint }}" >> run.sh
           if [[ "${{ inputs.slurm.partition }}" != "undefined" && "${{ inputs.slurm.partition }}" != "" ]]; then
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
           fi
-          echo "#SBATCH --gres=gpu:${{ inputs.slurm.number_of_gpus }}" >> run.sh
           echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
           echo "#SBATCH --nodes=1" >> run.sh
           echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
@@ -154,7 +178,7 @@ jobs:
               job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
               echo "$(date) Job exited with status ${job_status}"
               touch job.ended
-              exit 0
+              break
             fi
           done
         cleanup: |
@@ -374,6 +398,7 @@ jobs:
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+          localPort: '${{ inputs.localport }}'
 
 
 'on':
@@ -415,22 +440,33 @@ jobs:
         label: Run Type
         type: dropdown
         options:
-          - value: all
-            label: vLLM+RAG
           - value: vllm
             label: vLLM Only
+          - value: all
+            label: vLLM+RAG
       build:
         label: Build Containers
         type: boolean
         default: false
+      pull:
+        label: Pull Containers
+        hidden: ${{ inputs.runmode == 'docker' }}
+        type: boolean
+        default: true
+      container_bucket:
+        label: Container Bucket (.sif)
+        hidden: ${{ inputs.runmode != 'singularity' || inputs.pull != true }}
+        type: string
+        default: pw://mshaxted/codeassist
+        tooltip: PW singularity container bucket that holds vllm.sif and rag.sif containers
       hfmodel:
         label: HF Model
-        default: meta-llama/Llama-3.1-8B-Instruct
+        default: /p/work1/${USER}/Llama-3_3-Nemotron-Super-49B-v1_5
         type: string
       vllm_extra_args:
         label: VLLM Extra Args
-        default: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --trust_remote_code"
-        placeholder: "--dtype float16 --max-model-len 16384 --gpu-memory-utilization=0.95 --max-num-seqs 1 --trust_remote_code"
+        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
+        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
         type: string
       hftoken:
         label: HF Token (gated models)
@@ -455,6 +491,11 @@ jobs:
         textarea: true
         optional: true
         default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+      localport:
+        label: User Workspace Port
+        default: '5555'
+        tooltip: Port that runs within the user workspace and used to connect to the code assist and chat interfaces.
+        type: string
       slurm:
         type: group
         label: SLURM Directives
@@ -485,17 +526,6 @@ jobs:
             ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
             optional: ${{ .ignore }}
             hidden: ${{ .ignore }}
-          constraint:
-            label: Constraint
-            type: dropdown
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
-            hidden: ${{ .ignore }}
-            default: viz
-            options:
-              - value: viz
-                label: viz
-              - value: mla
-                label: mla
           cpus_per_task:
             type: number
             label: CPUs per task
@@ -505,21 +535,16 @@ jobs:
             max: 32
             default: 1
             tooltip: '--cpus-per-task=value SLURM directive'
-          number_of_gpus:
-            type: number
-            label: Number of GPUs
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
-            hidden: ${{ .ignore }}
-            min: 1
-            max: 4
-            default: 1
-            tooltip: '--gres=gpu:X slurm directive'
           scheduler_directives:
             type: editor
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             optional: true
-            tooltip: |
-              Type in additional scheduler directives. 
+            tooltip: Type in additional scheduler directives. 
+            default: |
+              #SBATCH --gres=gpu:4 
+
+              ##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems
+
           time:
             label: Walltime
             type: string
@@ -560,4 +585,4 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: main
+            default: nemotron
