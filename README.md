@@ -1,4 +1,4 @@
-# ACTIVATE — vLLM + RAG + Proxy
+# ACTIVATE — vLLM + RAG
 
 This Compose stack runs from the [github repo here](https://github.com/parallelworks/activate-rag-vllm) and executes the below services in Docker or Singularity modes:
 
@@ -14,7 +14,24 @@ See a turnkey demonstration of the workflow running on ACTIVATE at the link belo
 <img target="_blank" src="https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1" width="350">
 </a>
 
-## Quickstart
+## Workflow Instructions
+
+Pull down the weights of your choice into a known directory. For example we recommend using git lfs to pull down weights as this is more widely open to firewalls and is relatively fast at pulls:
+
+```
+cd /mymodeldir/
+git lfs install
+git clone https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+```
+
+The workflow will provide a field to also pull down a prebuilt vllm singularity container if running in this mode, but you can also pull this down manually for example using the authenticated pw cli:
+
+```
+cd ~/pw/activate-rag-vllm
+pw buckets cp pw://mshaxted/codeassist/vllm.sif ./
+```
+
+## Manual Quickstart
 ```bash
 export HF_TOKEN=hf_xyz
 export RUNMODE=docker # or singularity
