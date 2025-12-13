@@ -437,6 +437,7 @@ jobs:
         default: false
       pull:
         label: Pull Containers
+        hidden: ${{ inputs.runmode == 'docker' }}
         type: boolean
         default: true
       container_bucket:
