@@ -528,8 +528,10 @@ jobs:
             optional: true
             tooltip: Type in additional scheduler directives. 
             default: |
-              #SBATCH --constraint=mla
               #SBATCH --gres=gpu:4 
+
+              ##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems
+
           time:
             label: Walltime
             type: string
