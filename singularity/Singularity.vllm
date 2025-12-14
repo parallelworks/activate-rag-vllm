@@ -1,11 +1,52 @@
 Bootstrap: docker
 From: vllm/vllm-openai:latest
 
+%post
+    set -eux
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        clang lld llvm \
+        build-essential \
+        git ca-certificates curl \
+        pkg-config cmake ninja-build
+    rm -rf /var/lib/apt/lists/*
+
+    # Pick a Python interpreter that actually exists in the base image
+    if command -v python >/dev/null 2>&1; then
+        PY=python
+    elif command -v python3 >/dev/null 2>&1; then
+        PY=python3
+    elif [ -x /opt/conda/bin/python ]; then
+        PY=/opt/conda/bin/python
+    else
+        echo "No Python interpreter found (python/python3/conda)."; exit 1
+    fi
+
+    # Prefer clang for any builds happening inside the container
+    echo "export CC=clang"  >> /etc/profile.d/clang.sh
+    echo "export CXX=clang++" >> /etc/profile.d/clang.sh
+
+    # Upgrade packaging tooling
+    $PY -m pip install -U pip setuptools wheel
+
+    # Ensure Transformers has the ministral3 config mapping
+    $PY -m pip uninstall -y transformers || true
+    $PY -m pip install -U git+https://github.com/huggingface/transformers
+
+    $PY - << 'PY'
+import transformers
+from transformers.models.auto import CONFIG_MAPPING
+print("Transformers:", transformers.__version__)
+print("ministral3 in CONFIG_MAPPING:", "ministral3" in CONFIG_MAPPING)
+PY
+
 %runscript
-mkdir -p /app
-cd /app
-exec /bin/bash -lc "$@"
+    mkdir -p /app
+    cd /app
+    exec /bin/bash -lc "$@"
+
 %startscript
-mkdir -p /app
-cd /app
-exec /bin/bash -lc "$@"
+    mkdir -p /app
+    cd /app
+    exec /bin/bash -lc "$@"
