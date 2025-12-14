@@ -20,6 +20,7 @@ instances:
     volumes:
       - ./logs:/logs
       - ./cache:/root/.cache
+      - ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions
       - ./env.sh:/.singularity.d/env/env.sh
       - __MODEL_PATH__:/__MODEL_BASE__
 
