@@ -245,6 +245,10 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     mkdir -p logs cache cache/chroma $DOCS_DIR
 
+    # fixing updated vllm sagemarker sessions issue
+    mkdir -p cache/sagemaker_sessions
+    chmod 700 cache/sagemaker_sessions
+
     # singularity-compose does not support env variables in the yml config file
     if [ "$DOCS_DIR" != "./docs" ];then
         ln -s $DOCS_DIR ./docs
