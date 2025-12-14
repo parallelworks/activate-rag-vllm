@@ -36,6 +36,7 @@ jobs:
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
           echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
           echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
+          echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
 
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
@@ -607,7 +608,36 @@ jobs:
             label: Repository Branch
             default: nemotron
           tiktoken_encodings:
-            label: Pull Tiktoken Encodings
+            label: Pull Encodings
             tooltip: For GPT-OSS pull the tiktoken encodings.
             type: boolean
             default: false
+          vllm_attention_backend:
+            type: dropdown
+            label: VLLM Attention Backend
+            default: TRITON_ATTN
+            tooltip: Select the attention backend implementation used by vLLM
+            options:
+              - value: FLASH_ATTN
+              - value: TRITON_ATTN
+              - value: ROCM_ATTN
+              - value: ROCM_AITER_MLA
+              - value: ROCM_AITER_TRITON_MLA
+              - value: ROCM_AITER_FA
+              - value: ROCM_AITER_MLA_SPARSE
+              - value: TORCH_SDPA
+              - value: FLASHINFER
+              - value: FLASHINFER_MLA
+              - value: TRITON_MLA
+              - value: CUTLASS_MLA
+              - value: FLASHMLA
+              - value: FLASHMLA_SPARSE
+              - value: FLASH_ATTN_MLA
+              - value: PALLAS
+              - value: IPEX
+              - value: NO_ATTENTION
+              - value: FLEX_ATTENTION
+              - value: TREE_ATTN
+              - value: ROCM_AITER_UNIFIED_ATTN
+              - value: CPU_ATTN
+              - value: CUSTOM
