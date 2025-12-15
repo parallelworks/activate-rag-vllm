@@ -203,7 +203,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     cp singularity/* ./ -Rf
     cp env.sh.example env.sh
-    
+
     VLLM_SERVER_PORT=$(findAvailablePort)
     RAG_PORT=$(findAvailablePort)
     PROXY_PORT=$(findAvailablePort)
@@ -248,6 +248,9 @@ elif [ "$RUNMODE" == "singularity" ]; then
     # fixing updated vllm sagemarker sessions issue
     mkdir -p cache/sagemaker_sessions
     chmod 700 cache/sagemaker_sessions
+
+    mkdir -p /dev/shm/sagemaker_sessions
+    chmod 700 /dev/shm/sagemaker_sessions
 
     # singularity-compose does not support env variables in the yml config file
     if [ "$DOCS_DIR" != "./docs" ];then
