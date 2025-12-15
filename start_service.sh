@@ -267,7 +267,18 @@ elif [ "$RUNMODE" == "singularity" ]; then
         [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
         singularity-compose up "${RUNTYPE}1"
     fi
-    # Follow the logs
-    tail -f logs/*
+
+    # Only follow logs if up succeeded
+    # Make tail die when this script dies (and don't explode if logs don't exist yet)
+    shopt -s nullglob
+    logs=(logs/*)
+    if ((${#logs[@]} > 0)); then
+        tail -F "${logs[@]}" &
+        tail_pid=$!
+        trap 'kill "$tail_pid" >/dev/null 2>&1 || true; cleanup' EXIT
+        wait "$tail_pid"
+    else
+        echo "No logs found under logs/. Skipping tail."
+    fi
 
 fi
