@@ -108,7 +108,7 @@ jobs:
     needs:
       - prepare_job_directory
     steps:
-      - uses: marketplace/script_submitter
+      - uses: marketplace/script_submitter/v3.3
         with:
           resource: ${{ inputs.resource }}
           shebang: '#!/bin/bash'
