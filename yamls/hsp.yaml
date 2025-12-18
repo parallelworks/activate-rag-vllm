@@ -378,6 +378,10 @@ jobs:
             optional: true
             tooltip: |
               Type in additional scheduler directives. 
+            default: |
+              #SBATCH --gres=gpu:4 
+
+              ##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems
       pbs:
         type: group
         label: PBS Directives
@@ -397,6 +401,12 @@ jobs:
             type: editor
             tooltip: Type the PBS scheduler directives
             ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+            default: |
+              #!/bin/bash
+              #PBS -q HIE
+              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
+              #PBS -l walltime=01:00:00
+              #PBS -V
       advanced_settings:
         type: group
         label: Advanced Settings
