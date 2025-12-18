@@ -76,6 +76,12 @@ start_rootless_docker() {
 echo '#!/bin/bash' > cancel.sh
 chmod +x cancel.sh
 
+
+# Indicates job started running
+echo "touch job.started" >> run.sh
+echo "hostname > HOSTNAME" >> run.sh
+
+
 if [ "$RUNMODE" == "docker" ];then
 
     # Ensure docker service is installed
@@ -184,6 +190,16 @@ if [ "$RUNMODE" == "docker" ];then
     ${docker_compose_cmd} logs -f
 
 elif [ "$RUNMODE" == "singularity" ]; then
+
+    # load singularity via module if not already in path
+    # Ensure Singularity is available
+    if ! command -v singularity >/dev/null 2>&1; then
+        if command -v module >/dev/null 2>&1; then
+            module load singularity || module load apptainer
+        else
+            echo "ERROR: singularity/apptainer not found" >&2
+        fi
+    fi
 
     # Check if singularity is installed
     if ! command -v singularity >/dev/null 2>&1; then

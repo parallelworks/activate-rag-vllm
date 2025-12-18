@@ -18,7 +18,7 @@ jobs:
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
-          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
+          rm -f SESSION_PORT job.started job.ended run.out HOSTNAME
           rm -rf logs
       - name: Create Environment File
         early-cancel: any-job-failed
@@ -103,220 +103,32 @@ jobs:
           wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
           wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 
-  slurm_job:
+
+  vllm_runner:
     needs:
       - prepare_job_directory
-    if: ${{ inputs.execmethod == 'SLURM' }}
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - name: Create SLURM Script
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ inputs.rundir }}
-          echo '#!/bin/bash' > run.sh
-          chmod +x run.sh
-          echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
-          echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
-          if [[ "${{ inputs.slurm.partition }}" != "undefined" && "${{ inputs.slurm.partition }}" != "" ]]; then
-            echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
-          fi
-          echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
-          echo "#SBATCH --nodes=1" >> run.sh
-          echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
-          echo "#SBATCH --chdir=${PWD}" >> run.sh
-          echo "#SBATCH -o ${PWD}/run.out" >> run.sh
-          echo "#SBATCH -e ${PWD}/run.out" >> run.sh
-          if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
-            echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
-          fi
-          
-
-          # Indicates job started running
-          echo "touch job.started" >> run.sh
-          echo "hostname >> HOSTNAME" >> run.sh
-
-          # load singularity via module if not already in path
-          cat << 'EOF' >> run.sh
-          # Ensure Singularity is available
-          if ! command -v singularity >/dev/null 2>&1; then
-            if command -v module >/dev/null 2>&1; then
-              module load singularity || module load apptainer
-            else
-              echo "ERROR: singularity/apptainer not found" >&2
-            fi
-          fi
-          EOF
-                    
-          cat start_service.sh >> run.sh
-      - name: Submit SLURM Script
-        run: |
-          set -x
-          cd ${{ inputs.rundir }}
-          echo "$(date) Submitting SLURM Job"
-          jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
-          if [ -z "${jobid}" ]; then
-            echo "$(date) Job submission failed"
-            exit 1
-          fi
-          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
-        cleanup: |
-          set -x
-          cd ${{ inputs.rundir }}
-          #jobid=${{ needs.slurm_job.outputs.jobid }}
-          source jobid
-          target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
-          ssh ${target_hostname} bash cancel.sh
-          scancel ${jobid}
-          rm -f jobid SESSION_PORT  HOSTNAME
-      - name: Monitor SLURM Job
-        run: |
-          jobid=${{ needs.slurm_job.outputs.jobid }}
-          echo "$(date) Monitoring SLURM job ${jobid}"
-
-          cd ${{ inputs.rundir }}
-          touch run.out
-          tail -f run.out &
-          echo &! > tail.pid
-
-          get_slurm_job_status() {
-              # Get the header line to determine the column index corresponding to the job status
-              if [ -z "${SQUEUE_HEADER}" ]; then
-                  export SQUEUE_HEADER="$(eval squeue | awk 'NR==1')"
-              fi
-              status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
-              status_response=$(eval squeue | awk -v jobid="${jobid}" '$1 == jobid')
-              echo "${SQUEUE_HEADER}"
-              echo "${status_response}"
-              export job_status=$(echo ${status_response} | awk -v id="${jobid}" -v col="$status_column" '{print $col}')
-          }
-
-          while true; do
-            sleep 30
-            get_slurm_job_status
-            if [ -z "${job_status}" ]; then
-              job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
-              echo "$(date) Job exited with status ${job_status}"
-              touch job.ended
-              break
-            fi
-          done
-        cleanup: |
-          set -x
-          cd ${{ inputs.rundir }}
-          kill $(cat tail.pid)
-
-  pbs_job:
-    needs:
-      - prepare_job_directory
-    if: ${{ inputs.execmethod == 'PBS' }}
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    steps:
-      - name: Create PBS Script
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ inputs.rundir }}
-          echo "${{ inputs.pbs.scheduler_directives }}" > run.sh
-          echo "#PBS  -A ${{ inputs.pbs.account }}" >> run.sh
-          echo "#PBS -o ${PWD}/run.out" >> run.sh
-          echo "#PBS -j oe" >> run.sh
-          echo "#PBS -o ${PWD}/run.out" >> run.sh
-          echo "cd ${{ inputs.rundir }}" >> run.sh
-
-          # Indicates job started running
-          echo "touch job.started" >> run.sh
-          echo "hostname >> HOSTNAME" >> run.sh
-          cat start_service.sh >> run.sh
-          chmod +x run.sh
-      - name: Submit PBS Script
-        run: |
-          set -x
-          cd ${{ inputs.rundir }}
-          echo "$(date) Submitting SLURM Job"
-          jobid=$(qsub run.sh)
-          jobid=$(echo "$jobid" | cut -d'.' -f1)
-          if [ -z "${jobid}" ]; then
-            echo "$(date) Job submission failed"
-            exit 1
-          fi
-          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
-        cleanup: |
-          set -x
-          cd ${{ inputs.rundir }}
-          #jobid=${{ needs.pbs_job.outputs.jobid }}
-          source jobid
-          target_hostname=$(cat HOSTNAME)
-          ssh ${target_hostname} bash cancel.sh
-          qdel ${jobid}
-          rm -f jobid SESSION_PORT job.started HOSTNAME
-      - name: Monitor PBS Job
-        run: |
-          #jobid=${{ needs.pbs_job.outputs.jobid }}
-          cd ${{ inputs.rundir }}
-          source jobid
-          echo "$(date) Monitoring PBS job ${jobid}"
-          touch run.out
-          tail -f run.out &
-          echo &! > tail.pid
-          get_pbs_job_status() {
-              # Get the header line to determine the column index corresponding to the job status
-              if [ -z "${QSTAT_HEADER}" ]; then
-                  export QSTAT_HEADER="$(qstat | awk 'NR==1')"
-              fi
-              status_response=$(qstat 2>/dev/null | grep "\<${jobid}\>")
-              echo "${QSTAT_HEADER}"
-              echo "${status_response}"
-              export job_status="$(qstat -f ${jobid} 2>/dev/null  | grep job_state | cut -d'=' -f2 | tr -d ' ')"
-          }
-          while true; do
-            sleep 15
-            get_pbs_job_status
-            if [[ "${job_status}" == "C" ]]; then
-                break
-            elif [ -z "${job_status}" ]; then
-                break
-            fi
-          done
-          touch job.ended
-        cleanup: |
-          set -x
-          cd ${{ inputs.rundir }}
-          kill $(cat tail.pid)
-
-
-
-  ssh_job:
-    needs:
-      - prepare_job_directory
-    if: ${{ inputs.execmethod == 'SSH' }}
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    steps:
-      - name: Create SSH Script
-        early-cancel: any-job-failed
-        run: |
-          cd ${{ inputs.rundir }}
-          echo '#!/bin/bash' > run.sh
-          chmod +x run.sh
-
-          # Indicates job started running
-          echo "touch job.started" >> run.sh
-          echo "hostname >> HOSTNAME" >> run.sh
-
-          cat start_service.sh >> run.sh
-      - name: Submit SSH Script
-        run: |
-          cd ${{ inputs.rundir }}
-          bash ./run.sh
-          touch job.ended
-          rm -f jobid SESSION_PORT job.started HOSTNAME
-        cleanup: |
-          set -x
-          cd ${{ inputs.rundir }}
-          bash cancel.sh
+      - uses: marketplace/script_submitter
+        with:
+          resource: ${{ inputs.resource }}
+          shebang: '#!/bin/bash'
+          rundir: ${{ inputs.rundir }}
+          use_existing_script: true
+          script_path: "${{ inputs.rundir }}/start_template.sh"
+          scheduler: ${{ inputs.scheduler }}
+          slurm:
+            is_disabled: ${{ inputs.slurm.is_disabled }}
+            account: ${{ inputs.slurm.account }}
+            partition: ${{ inputs.slurm.partition }}
+            qos: ${{ inputs.slurm.qos }}
+            number_of_nodes: ${{ inputs.slurm.number_of_nodes }}
+            cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
+            scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
+            time: ${{ inputs.slurm.time }}
+          pbs:
+            is_disabled: ${{ inputs.pbs.is_disabled }}
+            account: ${{ inputs.pbs.account }}
+            scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
 
   create_session:
     needs:
@@ -333,21 +145,14 @@ jobs:
             sleep 5
           done
       - name: Get Hostname
+        if: ${{ inputs.pbs.is_disabled == false }}
         early-cancel: any-job-failed
         run: |
           set -x
           cd ${{ inputs.rundir }}
-          if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
-            source jobid
-            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
-            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-          elif [[ ${{ inputs.execmethod }} == "PBS" ]]; then
-            target_hostname=$(cat HOSTNAME)
-            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-          elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
-            target_hostname=$(hostname)
-            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-          fi
+          target_hostname=$(cat HOSTNAME)
+          echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+
           if [ -z "${target_hostname}" ]; then
             echo "$(date) Failed to get target hostname"
             exit 1
@@ -431,18 +236,15 @@ jobs:
         autoselect: true
         include-workspace: false
         tooltip: Resource to run the service
-      execmethod:
-        type: dropdown
-        label: Execution Method
-        default: SLURM
-        tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
-        options:
-          - value: SSH
-            label: SSH
-          - value: SLURM
-            label: SLURM
-          - value: PBS
-            label: PBS
+      scheduler:
+        type: boolean
+        default: false
+        label: Schedule Job?
+        hidden: ${{ inputs.resource.schedulerType == '' }}
+        ignore: ${{ .hidden }}
+        tooltip: |
+          Yes → Job is submitted to the scheduler using sbatch, qsub, etc
+          No  → Job is executed in the controller or login node instead
       runmode:
         label: Execution Mode
         type: dropdown
@@ -520,124 +322,78 @@ jobs:
       slurm:
         type: group
         label: SLURM Directives
-        hidden: ${{ inputs.execmethod != 'SLURM' }}
+        hidden: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
         items:
+          is_disabled:
+            type: boolean
+            hidden: true
+            default: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+            label: Is SLURM disabled?
           account:
             label: SLURM account
             type: slurm-accounts
             resource: ${{ inputs.resource }}
-            tooltip: Account to submit the interactive job
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
-            hidden: ${{ .ignore }}
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
             optional: ${{ .ignore }}
+            tooltip: Select an account from the drop down menu.
           partition:
             type: slurm-partitions
             label: SLURM partition
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
             optional: true
             resource: ${{ inputs.resource }}
-            tooltip: |
-              Partition to submit the interactive job. Leave empty to let SLURM pick
-              the optimal option.
+            tooltip: Select a partition from the drop down menu.
           qos:
             label: Quality of Service [QoS]
             type: slurm-qos
             resource: ${{ inputs.resource }}
-            tooltip: Select a QOS from the drop down menu
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
+            tooltip: Select a QOS from the drop down menu.
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
             optional: ${{ .ignore }}
-            hidden: ${{ .ignore }}
+          number_of_nodes:
+            type: number
+            label: Number of Nodes
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+            min: 1
+            max: 50
+            default: 1
+            tooltip: '--nodes= SLURM directive to set the number of nodes'
           cpus_per_task:
             type: number
             label: CPUs per task
-            ignore: ${{ inputs.execmethod != 'SLURM' || 'existing' != inputs.resource.provider }}
-            hidden: ${{ .ignore }}
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
             min: 1
-            max: 32
+            max: 500
             default: 1
-            tooltip: '--cpus-per-task=value SLURM directive'
-          scheduler_directives:
-            type: editor
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
-            optional: true
-            tooltip: Type in additional scheduler directives. 
-            default: |
-              #SBATCH --gres=gpu:4 
-
-              ##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems
-
+            tooltip: '--cpus-per-task= SLURM directive to set the number of CPUs per task'
           time:
             label: Walltime
             type: string
-            default: 01:00:00
-            ignore: ${{ inputs.execmethod != 'SLURM' }}
-            tooltip: e.g. 01:00:00 - Amount of time slurm will honor the interactive session.
+            default: '01:00:00'
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+            tooltip: '--time= SLURM directive to set the maximum wall-clock time limit for the job'
+          scheduler_directives:
+            type: editor
+            ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+            optional: true
+            tooltip: |
+              Type in additional scheduler directives. 
       pbs:
         type: group
         label: PBS Directives
-        hidden: ${{ inputs.execmethod != 'PBS' }}
+        hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
         items:
+          is_disabled:
+            type: boolean
+            hidden: true
+            default: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+            label: Is PBS disabled?
           account:
             label: Account
             type: string
-            ignore: ${{ inputs.execmethod != 'PBS' }}
-            optional: ${{ inputs.execmethod != 'PBS' }}
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
           scheduler_directives:
             label: Scheduler Directives
             type: editor
             tooltip: Type the PBS scheduler directives
-            ignore: ${{ inputs.execmethod != 'PBS' }}
-            optional: ${{ inputs.execmethod != 'PBS' }}
-            default: |
-              #!/bin/bash
-              #PBS -q HIE
-              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
-              #PBS -l walltime=01:00:00
-              #PBS -V
-      advanced_settings:
-        type: group
-        label: Advanced Settings
-        collapsed: true
-        items:
-          repository:
-            type: string
-            label: Repository
-            default: https://github.com/parallelworks/activate-rag-vllm.git
-          repository_branch:
-            type: string
-            label: Repository Branch
-            default: nemotron
-          tiktoken_encodings:
-            label: Pull Encodings
-            tooltip: For GPT-OSS pull the tiktoken encodings.
-            type: boolean
-            default: false
-          vllm_attention_backend:
-            type: dropdown
-            label: VLLM Attention Backend
-            default: TRITON_ATTN
-            tooltip: Select the attention backend implementation used by vLLM
-            options:
-              - value: FLASH_ATTN
-              - value: TRITON_ATTN
-              - value: ROCM_ATTN
-              - value: ROCM_AITER_MLA
-              - value: ROCM_AITER_TRITON_MLA
-              - value: ROCM_AITER_FA
-              - value: ROCM_AITER_MLA_SPARSE
-              - value: TORCH_SDPA
-              - value: FLASHINFER
-              - value: FLASHINFER_MLA
-              - value: TRITON_MLA
-              - value: CUTLASS_MLA
-              - value: FLASHMLA
-              - value: FLASHMLA_SPARSE
-              - value: FLASH_ATTN_MLA
-              - value: PALLAS
-              - value: IPEX
-              - value: NO_ATTENTION
-              - value: FLEX_ATTENTION
-              - value: TREE_ATTN
-              - value: ROCM_AITER_UNIFIED_ATTN
-              - value: CPU_ATTN
-              - value: CUSTOM
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
