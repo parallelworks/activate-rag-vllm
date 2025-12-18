@@ -114,7 +114,7 @@ jobs:
           shebang: '#!/bin/bash'
           rundir: ${{ inputs.rundir }}
           use_existing_script: true
-          script_path: "${{ inputs.rundir }}/start_template.sh"
+          script_path: "${{ inputs.rundir }}/start_service.sh"
           scheduler: ${{ inputs.scheduler }}
           slurm:
             is_disabled: ${{ inputs.slurm.is_disabled }}
