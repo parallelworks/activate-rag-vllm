@@ -238,7 +238,7 @@ jobs:
         tooltip: Resource to run the service
       scheduler:
         type: boolean
-        default: false
+        default: true
         label: Schedule Job?
         hidden: ${{ inputs.resource.schedulerType == '' }}
         ignore: ${{ .hidden }}
