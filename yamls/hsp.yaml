@@ -129,7 +129,7 @@ jobs:
             is_disabled: ${{ inputs.pbs.is_disabled }}
             account: ${{ inputs.pbs.account }}
             scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
-      - name: Create Environment File
+      - name: Notify job ended
         early-cancel: any-job-failed
         run: |
           set -x
