@@ -152,7 +152,6 @@ jobs:
             sleep 5
           done
       - name: Get Hostname
-        if: ${{ inputs.pbs.is_disabled == false }}
         early-cancel: any-job-failed
         run: |
           set -x
