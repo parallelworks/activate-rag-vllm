@@ -335,7 +335,7 @@ jobs:
                 hidden: ${{ .ignore }}
                 min: 1
                 max: 4
-                default: 1
+                default: 4
                 tooltip: '--gres=gpu:X slurm directive'
               gres_gpu_hpc4:
                 type: number
@@ -345,7 +345,7 @@ jobs:
                 optional: ${{ .hidden }}
                 min: 1
                 max: 4
-                default: 1
+                default: 4
                 tooltip: '--gres=gpu:X slurm directive'
               time:
                 label: Walltime
@@ -409,7 +409,7 @@ jobs:
             default: true
           hfmodel:
             label: HF Model
-            default: /p/work1/${USER}/Llama-3_3-Nemotron-Super-49B-v1_5
+            default: /gs/gsfs0/home/avidaltorr/pw/software/Llama-3_3-Nemotron-Super-49B-v1_5
             type: string
           vllm_extra_args:
             label: VLLM Extra Args
@@ -450,14 +450,6 @@ jobs:
             label: Advanced Settings
             collapsed: true
             items:
-              repository:
-                type: string
-                label: Repository
-                default: https://github.com/parallelworks/activate-rag-vllm.git
-              repository_branch:
-                type: string
-                label: Repository Branch
-                default: nemotron
               tiktoken_encodings:
                 label: Pull Encodings
                 tooltip: For GPT-OSS pull the tiktoken encodings.
