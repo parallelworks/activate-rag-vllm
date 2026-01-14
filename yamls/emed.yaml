@@ -4,85 +4,82 @@ sessions:
   session:
     redirect: false
     openAI: true
-
-
 jobs:
   preprocessing:
-      working-directory: ${{ inputs.service.rundir }}
-      ssh:
-        remoteHost: ${{ inputs.cluster.resource.ip }}
-      steps:
-        - name: Checkout
-          uses: parallelworks/checkout
-          with:
-            repo: https://github.com/parallelworks/activate-rag-vllm.git
-            branch: nemotron-aecm
-        - name: Create Environment File
-          early-cancel: any-job-failed
-          run: |
-            # FIXME: remove when issue 11915 is fixed
-            cp -rfT ${PW_PARENT_JOB_DIR}/ ./
-            rm -f SESSION_PORT job.started job.ended run.out HOSTNAME
-            rm -rf logs
-            cat > .run.env << 'EOF'
-            export RUNMODE="${{ inputs.service.runmode }}"
-            export BUILD="${{ inputs.service.build }}"
-            export RUNTYPE="${{ inputs.service.runtype }}"
-            export SYSTEM_PROMPT="${{ inputs.service.systemprompt }}"
-            export HF_TOKEN="${{ inputs.service.hftoken }}"
-            export MODEL_NAME="${{ inputs.service.hfmodel }}"
-            export API_KEY="${{ inputs.service.apikey }}"
-            export DOCS_DIR="${{ inputs.service.docsdir }}"
-            export VLLM_EXTRA_ARGS="${{ inputs.service.vllm_extra_args }}"
-            export TRANSFORMERS_OFFLINE=1
-            export TIKTOKEN_ENCODINGS_BASE="/root/.cache/tiktoken_encodings"
-            export VLLM_ATTENTION_BACKEND="${{ inputs.service.advanced_settings.vllm_attention_backend }}"
-            EOF
-        - name: Controller Preprocessing
-          run: |
-            set -x
-            export service_runmode=${{ inputs.service.runmode }}
-            bash controller.sh
-        - name: Create Service Script
-          run: |
-            set -x
-            # Write code common to all services
-            cat > start_service_mod.sh << 'EOF'
+    working-directory: ${{ inputs.service.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.cluster.resource.ip }}
+    steps:
+      - name: Checkout
+        uses: parallelworks/checkout
+        with:
+          repo: ${{ inputs.service.advanced_settings.repository }}
+          branch: ${{ inputs.service.advanced_settings.repository_branch }}
+      - name: Create Environment File
+        early-cancel: any-job-failed
+        run: |
+          # FIXME: remove when issue 11915 is fixed
+          cp -rfT ${PW_PARENT_JOB_DIR}/ ./
+          rm -f SESSION_PORT job.started job.ended run.out HOSTNAME
+          rm -rf logs
+          cat > .run.env << 'EOF'
+          export RUNMODE="${{ inputs.service.runmode }}"
+          export BUILD="${{ inputs.service.build }}"
+          export RUNTYPE="${{ inputs.service.runtype }}"
+          export SYSTEM_PROMPT="${{ inputs.service.systemprompt }}"
+          export HF_TOKEN="${{ inputs.service.hftoken }}"
+          export MODEL_NAME="${{ inputs.service.hfmodel }}"
+          export API_KEY="${{ inputs.service.apikey }}"
+          export DOCS_DIR="${{ inputs.service.docsdir }}"
+          export VLLM_EXTRA_ARGS="${{ inputs.service.vllm_extra_args }}"
+          export TRANSFORMERS_OFFLINE=1
+          export TIKTOKEN_ENCODINGS_BASE="/root/.cache/tiktoken_encodings"
+          export VLLM_ATTENTION_BACKEND="${{ inputs.service.advanced_settings.vllm_attention_backend }}"
+          EOF
+      - name: Controller Preprocessing
+        run: |
+          set -x
+          export service_runmode=${{ inputs.service.runmode }}
+          bash controller.sh
+      - name: Create Service Script
+        run: |
+          set -x
+          # Write code common to all services
+          cat > start_service_mod.sh << 'EOF'
 
-            if [ -z "${service_port}" ]; then
-              service_port=$(pw agent open-port)
-            fi
+          if [ -z "${service_port}" ]; then
+            service_port=$(pw agent open-port)
+          fi
 
-            if [ -z "${service_port}" ]; then
-              echo "$(date) ERROR: No service port found"
-              exit 1            
-            fi
-            echo ${service_port} > SESSION_PORT
-            hostname > HOSTNAME
+          if [ -z "${service_port}" ]; then
+            echo "$(date) ERROR: No service port found"
+            exit 1            
+          fi
+          echo ${service_port} > SESSION_PORT
+          hostname > HOSTNAME
 
-            cleanup() {
-                echo "$(date) Cleaning up..."
-                kill -- -$$
-            }
+          cleanup() {
+              echo "$(date) Cleaning up..."
+              kill -- -$$
+          }
 
-            trap cleanup EXIT INT TERM
+          trap cleanup EXIT INT TERM
 
-            echo
-            echo
-            echo "$(date) STARTING SERVICE"
-            echo
-            touch job.started
-            EOF
-            pwd
-            cat start_service_mod.sh
-            cat start_service.sh >> start_service_mod.sh
-
+          echo
+          echo
+          echo "$(date) STARTING SERVICE"
+          echo
+          touch job.started
+          EOF
+          pwd
+          cat start_service_mod.sh
+          cat start_service.sh >> start_service_mod.sh
   session_runner:
     working-directory: ${{ inputs.service.rundir }}
     needs:
       - preprocessing
     ssh:
-        remoteHost: ${{ inputs.cluster.resource.ip }}
+      remoteHost: ${{ inputs.cluster.resource.ip }}
     steps:
       - uses: marketplace/script_submitter/v3.5
         early-cancel: any-job-failed
@@ -91,7 +88,7 @@ jobs:
           shebang: '#!/bin/bash'
           rundir: ${{ inputs.service.rundir }}
           use_existing_script: true
-          script_path: "${{ inputs.service.rundir }}/start_service_mod.sh"
+          script_path: ${{ inputs.service.rundir }}/start_service_mod.sh
           scheduler: ${{ inputs.cluster.scheduler }}
           slurm:
             is_disabled: ${{ inputs.cluster.slurm.is_disabled }}
@@ -114,8 +111,6 @@ jobs:
           pwd
           touch job.ended
           ls -lat job.ended
-
-
   wait_for_job_start:
     working-directory: ${{ inputs.service.rundir }}
     needs:
@@ -147,7 +142,6 @@ jobs:
             exit 1
           fi
           sleep 5
-
   cleanup:
     working-directory: ${{ inputs.service.rundir }}
     if: ${{ always }}
@@ -179,7 +173,6 @@ jobs:
           if [ -f cancel.sh ]; then
             ${sshcmd} 'bash -s' < ${PWD}/cancel.sh
           fi
-
   create_session:
     working-directory: ${{ inputs.service.rundir }}
     needs:
@@ -232,17 +225,14 @@ jobs:
               fi
           done
           sleep 5
-
       - name: Update Session
         uses: parallelworks/update-session
         with:
-          target: '${{ inputs.cluster.resource.id }}'
-          name: '${{ sessions.session }}'
-          remoteHost: '${{ needs.wait_for_job_start.outputs.HOSTNAME }}'
-          remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
-          localPort: '${{ inputs.service.localport }}' # Chosen at random if empty
-
-
+          target: ${{ inputs.cluster.resource.id }}
+          name: ${{ sessions.session }}
+          remoteHost: ${{ needs.wait_for_job_start.outputs.HOSTNAME }}
+          remotePort: ${{ needs.create_session.outputs.SESSION_PORT }}
+          localPort: ${{ inputs.service.localport }}
 'on':
   execute:
     inputs:
@@ -413,8 +403,8 @@ jobs:
             type: string
           vllm_extra_args:
             label: VLLM Extra Args
-            default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
-            placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
+            default: '--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85'
+            placeholder: '--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85'
             type: string
           hftoken:
             label: HF Token (gated models)
@@ -444,12 +434,19 @@ jobs:
             default: '5555'
             tooltip: Port that runs within the user workspace and used to connect to the code assist and chat interfaces.
             type: string
-
           advanced_settings:
             type: group
             label: Advanced Settings
             collapsed: true
             items:
+              repository:
+                type: string
+                label: Repository
+                default: https://github.com/parallelworks/activate-rag-vllm.git
+              repository_branch:
+                type: string
+                label: Repository Branch
+                default: nemotron-aecm
               tiktoken_encodings:
                 label: Pull Encodings
                 tooltip: For GPT-OSS pull the tiktoken encodings.
@@ -458,7 +455,7 @@ jobs:
               vllm_attention_backend:
                 type: dropdown
                 label: VLLM Attention Backend
-                default: TRITON_ATTN
+                default: FLASH_ATTN
                 tooltip: Select the attention backend implementation used by vLLM
                 options:
                   - value: FLASH_ATTN
