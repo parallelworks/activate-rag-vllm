@@ -313,7 +313,7 @@ jobs:
               mem:
                 type: string
                 label: Minimum total memory required
-                default: 8GB
+                default: 32GB
                 tooltip: '--mem=value slurm directive'
                 hidden: ${{ 'existing' != inputs.cluster.resource.provider }}
                 ignore: ${{ .hidden }}
