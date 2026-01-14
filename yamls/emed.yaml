@@ -72,8 +72,6 @@ jobs:
             touch job.started
             EOF
             cat start_service.sh >> start_service_mod.sh
-            # TRANSITION CODE
-            sed -i 's/findAvailablePort/pw agent open-port/' start_service_mod.sh
 
   session_runner:
     working-directory: ${{ inputs.service.rundir }}
