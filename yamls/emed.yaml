@@ -400,12 +400,12 @@ jobs:
             default: false
           pull:
             label: Pull Containers
-            hidden: ${{ inputs.runmode == 'docker' }}
+            hidden: ${{ inputs.service.runmode == 'docker' }}
             type: boolean
             default: true
           container_bucket:
             label: Container Bucket (.sif)
-            hidden: ${{ inputs.runmode != 'singularity' || inputs.pull != true }}
+            hidden: ${{ inputs.service.runmode != 'singularity' || inputs.pull != true }}
             type: string
             default: pw://mshaxted/codeassist
             tooltip: PW singularity container bucket that holds vllm.sif and rag.sif containers
@@ -430,14 +430,14 @@ jobs:
             type: password
           docsdir:
             label: RAG Directory
-            hidden: ${{ inputs.runtype != 'all' }}
+            hidden: ${{ inputs.service.runtype != 'all' }}
             optional: true
             default: ./docs
             type: string
           systemprompt:
             type: string
             label: System Prompt
-            hidden: ${{ inputs.runtype != 'all' }}
+            hidden: ${{ inputs.service.runtype != 'all' }}
             textarea: true
             optional: true
             default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
