@@ -29,16 +29,16 @@ fi
 if ! [ -z "${service_container_bucket}" ]; then
     # vllm container
     if [[ ! -f "vllm.sif" ]]; then
-        echo "$(date) vllm.sif not found, pulling from ${{ inputs.container_bucket }}"
-        pw bucket cp "${{ inputs.container_bucket }}/vllm.sif" ./
+        echo "$(date) vllm.sif not found, pulling from ${service_container_bucket}"
+        pw bucket cp "${service_container_bucket}/vllm.sif" ./
     else
         echo "$(date) vllm.sif already exists, skipping pull"
     fi
     # rag container (only for runmode=all)
-    if [[ "${{ inputs.runmode }}" == "all" ]]; then
+    if [[ "${service_runmode}" == "all" ]]; then
         if [[ ! -f "rag.sif" ]]; then
-            echo "$(date) rag.sif not found, pulling from ${{ inputs.container_bucket }}"
-            pw bucket cp "${{ inputs.container_bucket }}/rag.sif" ./
+            echo "$(date) rag.sif not found, pulling from ${service_container_bucket}"
+            pw bucket cp "${service_container_bucket}/rag.sif" ./
         else
             echo "$(date) rag.sif already exists, skipping pull"
         fi

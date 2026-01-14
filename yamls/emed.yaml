@@ -21,7 +21,7 @@ jobs:
           early-cancel: any-job-failed
           run: |
             # FIXME: remove when issue 11915 is fixed
-            cp -rfT ${PW_PARENT_JOB_DIR}/* .
+            cp -rfT ${PW_PARENT_JOB_DIR}/ ./
             cat > .run.env << 'EOF'
             export RUNMODE="${{ inputs.service.runmode }}"
             export BUILD="${{ inputs.service.build }}"
