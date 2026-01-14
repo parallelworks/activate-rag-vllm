@@ -71,7 +71,7 @@ jobs:
             echo
             touch job.started
             EOF
-            cat ${{ inputs.service.name }}/start-template-v3.sh >> start_service_mod.sh
+            cat start_service.sh >> start_service_mod.sh
             # TRANSITION CODE
             sed -i 's/findAvailablePort/pw agent open-port/' start_service_mod.sh
 
