@@ -20,6 +20,8 @@ jobs:
         - name: Create Environment File
           early-cancel: any-job-failed
           run: |
+            # FIXME: remove when issue 11915 is fixed
+            cp -rfT ${PW_PARENT_JOB_DIR}/* .
             cat > .run.env << 'EOF'
             export RUNMODE="${{ inputs.service.runmode }}"
             export BUILD="${{ inputs.service.build }}"
@@ -371,7 +373,6 @@ jobs:
       service:
         type: group
         label: Service
-        hidden: true
         items:
           runmode:
             label: Execution Mode
@@ -385,7 +386,7 @@ jobs:
                 label: Singularity
           rundir:
             label: Run Directory
-            default: ~/pw/activate-rag-vllm
+            default: ~/pw/activate-rag-vllm2
             type: string
           runtype:
             label: Run Type
