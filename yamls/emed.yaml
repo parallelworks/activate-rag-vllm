@@ -21,6 +21,8 @@ jobs:
           early-cancel: any-job-failed
           run: |
             # FIXME: remove when issue 11915 is fixed
+            rm -f SESSION_PORT job.started job.ended run.out HOSTNAME
+            rm -rf logs
             cp -rfT ${PW_PARENT_JOB_DIR}/ ./
             cat > .run.env << 'EOF'
             export RUNMODE="${{ inputs.service.runmode }}"
@@ -40,12 +42,12 @@ jobs:
           run: |
             set -x
             export service_runmode=${{ inputs.service.runmode }}
-            export service_container_bucket=${{ inputs.service.container_bucket }}
             bash controller.sh
         - name: Create Service Script
           run: |
+            set -x
             # Write code common to all services
-            cat <<'EOF' >> start_service_mod.sh
+            cat > start_service_mod.sh << 'EOF'
 
             if [ -z "${service_port}" ]; then
               service_port=$(pw agent open-port)
@@ -71,6 +73,8 @@ jobs:
             echo
             touch job.started
             EOF
+            pwd
+            cat start_service_mod.sh
             cat start_service.sh >> start_service_mod.sh
 
   session_runner:
@@ -384,7 +388,7 @@ jobs:
                 label: Singularity
           rundir:
             label: Run Directory
-            default: ~/pw/activate-rag-vllm2
+            default: ${HOME}/pw/activate-rag-vllm2
             type: string
           runtype:
             label: Run Type
@@ -403,12 +407,6 @@ jobs:
             hidden: ${{ inputs.service.runmode == 'docker' }}
             type: boolean
             default: true
-          container_bucket:
-            label: Container Bucket (.sif)
-            hidden: ${{ inputs.service.runmode != 'singularity' || inputs.pull != true }}
-            type: string
-            default: pw://mshaxted/codeassist
-            tooltip: PW singularity container bucket that holds vllm.sif and rag.sif containers
           hfmodel:
             label: HF Model
             default: /p/work1/${USER}/Llama-3_3-Nemotron-Super-49B-v1_5
