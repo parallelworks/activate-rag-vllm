@@ -30,15 +30,6 @@ install_docker_compose(){
     chmod +x docker-compose
 }
 
-findAvailablePort() {
-    availablePort=$(pw agent open-port)
-    echo ${availablePort}
-    if [ -z "${availablePort}" ]; then
-        echo "$(date) ERROR: No port found. Exiting job"
-        exit 1
-    fi
-}
-
 start_rootless_docker() {
     local MAX_RETRIES=20
     local RETRY_INTERVAL=2
@@ -116,13 +107,15 @@ if [ "$RUNMODE" == "docker" ];then
     cp docker/* ./ -Rf
     cp env.example .env
 
-    VLLM_SERVER_PORT=$(findAvailablePort)
-    PROXY_PORT=$(findAvailablePort)
-
-    if [ "$RUNTYPE" == "vllm" ];then
+    if [ "$RUNTYPE" == "all" ];then
+        VLLM_SERVER_PORT=$(pw agent open-port)
+        PROXY_PORT=${service_port}
+        # TRANSITION CODE
         echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
     else
-        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT
+        PROXY_PORT=$(pw agent open-port)
+        VLLM_SERVER_PORT=${service_port}
+        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
     fi
     
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
@@ -204,15 +197,17 @@ elif [ "$RUNMODE" == "singularity" ]; then
     cp singularity/* ./ -Rf
     cp env.sh.example env.sh
 
-    VLLM_SERVER_PORT=$(findAvailablePort)
-    RAG_PORT=$(findAvailablePort)
-    PROXY_PORT=$(findAvailablePort)
-    CHROMA_PORT=$(findAvailablePort)
+    RAG_PORT=$(pw agent open-port)
+    CHROMA_PORT=$(pw agent open-port)
 
     if [ "$RUNTYPE" == "all" ];then
-        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT
+        VLLM_SERVER_PORT=$(pw agent open-port)
+        PROXY_PORT=${service_port}
+        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT 
     else
-        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
+        PROXY_PORT=$(pw agent open-port)
+        VLLM_SERVER_PORT=${service_port}
+        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT 
     fi
 
     sed -i "s/^export VLLM_SERVER_PORT=.*/export VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" env.sh
