@@ -1,64 +1,275 @@
 # ACTIVATE — vLLM + RAG
 
-This Compose stack runs from the [github repo here](https://github.com/parallelworks/activate-rag-vllm) and executes the below services in Docker or Singularity modes:
+Deploy GPU-accelerated language model inference with optional RAG (Retrieval-Augmented Generation) capabilities. Optimized for HPC environments using Singularity, with Docker support for local development.
 
-- **vLLM** model server (OpenAI-compatible)
-- **RAG** retrieval API (Chroma)
-- **Indexer** (filesystem → Chroma, auto-updates)
-- **Enhanced Proxy** exposing **/v1/chat/completions**, **/v1/completions**, **/v1/embeddings**, **/v1/models**
-- **Open WebUI** (optional) pointing to the Proxy
+[![Demo Video](https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1)](https://www.youtube.com/watch?v=6LiwXEOkuUc)
 
-See a turnkey demonstration of the workflow running on ACTIVATE at the link below:
+## Features
 
-<a href="https://www.youtube.com/watch?v=6LiwXEOkuUc">
-<img target="_blank" src="https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1" width="350">
-</a>
+- **vLLM** - High-performance OpenAI-compatible inference server
+- **RAG** - Retrieval-augmented generation with ChromaDB
+- **Auto-Indexer** - Automatic document indexing with file watching
+- **Enhanced Proxy** - OpenAI-compatible API with RAG integration
+- **Multi-Scheduler** - Support for SLURM, PBS, and SSH execution
+- **Flexible Model Sourcing** - Local models or HuggingFace downloads
 
-## Workflow Instructions
+## Quick Start
 
-Pull down the weights of your choice into a known directory. For example we recommend using git lfs to pull down weights as this is more widely open to firewalls and is relatively fast at pulls:
+### Option 1: ParallelWorks Workflow (Recommended for HPC)
 
+1. Deploy the workflow from the ParallelWorks marketplace
+2. Select your compute cluster and scheduler (SLURM/PBS/SSH)
+3. Choose model source:
+   - **Local Path**: Point to pre-downloaded model weights
+   - **HuggingFace**: Download automatically (requires network access)
+4. Configure vLLM options and submit
+
+### Option 2: Local Development
+
+```bash
+# Clone the repository
+git clone -b refactor https://github.com/parallelworks/activate-rag-vllm.git
+cd activate-rag-vllm
+
+# Run the interactive configuration wizard
+./scripts/configure.sh
+
+# Start the service
+./start_service.sh
 ```
-cd /mymodeldir/
+
+### Option 3: Manual Configuration
+
+```bash
+# Set environment variables
+export RUNMODE=singularity  # or docker
+export RUNTYPE=all          # or vllm (inference only)
+export MODEL_NAME=/path/to/your/model
+export HF_TOKEN=hf_xxx      # if using gated models
+
+# Start the service
+./start_service.sh
+```
+
+## Model Setup
+
+### Using Pre-Downloaded Models (Recommended for HPC)
+
+Models should be pre-staged to a known location. Use git-lfs for reliable downloads:
+
+```bash
+# Create model directory
+mkdir -p /path/to/models && cd /path/to/models
+
+# Install git-lfs if needed
 git lfs install
-git clone https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+
+# Clone model (example: Llama-3.1-8B)
+git clone https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct
+
+# For gated models, authenticate first
+git clone https://user:${HF_TOKEN}@huggingface.co/meta-llama/Llama-3.1-8B-Instruct
 ```
 
-The workflow will provide a field to also pull down a prebuilt vllm singularity container if running in this mode, but you can also pull this down manually for example using the authenticated pw cli:
+### Using HuggingFace Hub
 
-```
-cd ~/pw/activate-rag-vllm
-pw buckets cp pw://mshaxted/codeassist/vllm.sif ./
-```
+When using the "HuggingFace Hub" model source:
+1. Provide your HuggingFace token (for gated models like Llama)
+2. Specify the model ID (e.g., `meta-llama/Llama-3.1-8B-Instruct`)
+3. Set a cache directory with sufficient disk space
 
-## Manual Quickstart
+The workflow will automatically download the model on first run.
+
+## Container Setup
+
+### Singularity (HPC)
+
+Pre-built containers can be pulled from a bucket:
+
 ```bash
-export HF_TOKEN=hf_xyz
-export RUNMODE=docker # or singularity
-export BUILD=true
-export RUNTYPE=all # or vllm only
-
-# run the service
-./run.sh
+# Using ParallelWorks CLI
+pw bucket cp pw://mshaxted/codeassist/vllm.sif ./
+pw bucket cp pw://mshaxted/codeassist/rag.sif ./
 ```
 
-## Files you might care about
-- `docker-compose.yml` — stack definition
-- `Dockerfile.rag` — builds the RAG + Indexer + Proxy image
-- `rag_proxy.py` — enhanced OpenAI-compatible proxy with streaming + extra endpoints
-- `rag_server.py` — RAG search API
-- `indexer.py`, `indexer_config.yaml` — auto indexer for filesystem changes
-- `docs/` — mount point for your documents
-- `cache/` — workload specific data storage
+Or build locally (requires sudo/fakeroot):
 
-## Smoke tests
 ```bash
-# Health
-curl http://localhost:${PROXY_PORT}/health | jq
-
-# Chat (non-stream)
-curl -sS http://localhost:${PROXY_PORT}/v1/chat/completions  -H 'content-type: application/json'  -d '{"model":"'"${MODEL_NAME}"'","messages":[{"role":"user","content":"Summarize the docs."}], "max_tokens":200}' | jq
-
-# Chat (stream)
-curl -N http://localhost:${PROXY_PORT}/v1/chat/completions  -H 'content-type: application/json'  -d '{"model":"'"${MODEL_NAME}"'","messages":[{"role":"user","content":"Hello"}], "stream": true}'
+cd singularity
+singularity-compose build
 ```
+
+### Docker (Local Development)
+
+```bash
+# Pull pre-built images
+docker pull parallelworks/activate-rag-vllm:latest
+
+# Or build locally
+cd docker
+docker compose build
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RUNMODE` | `singularity` | Container runtime (`singularity` or `docker`) |
+| `RUNTYPE` | `all` | Deployment type (`all` for vLLM+RAG, `vllm` for inference only) |
+| `MODEL_NAME` | - | Model path or HuggingFace ID |
+| `VLLM_EXTRA_ARGS` | - | Additional vLLM server arguments |
+| `HF_TOKEN` | - | HuggingFace token for gated models |
+| `API_KEY` | - | Optional API key for vLLM server |
+| `DOCS_DIR` | `./docs` | Directory for RAG documents |
+
+### vLLM Configuration
+
+Common `VLLM_EXTRA_ARGS` options:
+
+```bash
+# For 4-GPU setup with bfloat16
+--dtype bfloat16 --tensor-parallel-size 4 --gpu-memory-utilization 0.85
+
+# For single GPU with reduced memory
+--dtype float16 --max-model-len 4096 --gpu-memory-utilization 0.8
+
+# Full example
+export VLLM_EXTRA_ARGS="--dtype bfloat16 --tensor-parallel-size 4 --async-scheduling --max-model-len 16384 --gpu-memory-utilization 0.85 --trust_remote_code"
+```
+
+## API Endpoints
+
+Once running, the service exposes OpenAI-compatible endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/chat/completions` | Chat completions (with RAG if enabled) |
+| `POST /v1/completions` | Text completions |
+| `GET /v1/models` | List available models |
+| `POST /v1/embeddings` | Generate embeddings |
+| `GET /health` | Health check |
+
+### Testing the API
+
+```bash
+# Health check
+curl http://localhost:8081/health | jq
+
+# Chat completion
+curl -X POST http://localhost:8081/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-model-name",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 100
+  }' | jq
+
+# Streaming chat
+curl -N http://localhost:8081/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-model-name",
+    "messages": [{"role": "user", "content": "Explain RAG"}],
+    "stream": true
+  }'
+```
+
+## Project Structure
+
+```
+activate-rag-vllm/
+├── workflow.yaml              # ParallelWorks workflow definition
+├── start_service.sh           # Main service entrypoint
+├── rag_proxy.py               # OpenAI-compatible proxy with RAG
+├── rag_server.py              # RAG search API server
+├── indexer.py                 # Document auto-indexer
+├── lib/                       # Shared bash/python utilities
+│   ├── functions.sh           # Common bash functions
+│   ├── model_manager.sh       # Model download/validation
+│   ├── preflight.sh           # Pre-flight checks
+│   └── config_validator.py    # Configuration validation
+├── configs/                   # Configuration presets
+│   └── hpc-presets.yaml       # HPC environment configs
+├── scripts/                   # Utility scripts
+│   └── configure.sh           # Interactive setup wizard
+├── singularity/               # Singularity deployment
+│   ├── singularity-compose.yml
+│   ├── Singularity.vllm
+│   └── Singularity.rag
+├── docker/                    # Docker deployment
+│   ├── docker-compose.yml
+│   └── Dockerfile.rag
+└── docs/                      # RAG documents directory
+```
+
+## HPC-Specific Notes
+
+### SLURM
+
+```bash
+# Example SLURM directives
+#SBATCH --gres=gpu:4
+#SBATCH --partition=gpu
+#SBATCH --time=04:00:00
+#SBATCH --constraint=mla  # For Navy/AFRL DSRC systems
+```
+
+### PBS
+
+```bash
+# Example PBS directives
+#PBS -q gpu
+#PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=4
+#PBS -l walltime=04:00:00
+```
+
+### Offline Mode
+
+For air-gapped HPC environments:
+1. Pre-download model weights to a shared location
+2. Pre-pull Singularity containers
+3. Set `TRANSFORMERS_OFFLINE=1` in your environment
+4. Download tiktoken encodings if using GPT-based tokenizers
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"CUDA out of memory"**
+   - Reduce `--gpu-memory-utilization` (e.g., 0.7)
+   - Reduce `--max-model-len`
+   - Use `--tensor-parallel-size` to distribute across GPUs
+
+2. **"Model not found"**
+   - Verify the model path exists and contains `config.json`
+   - Check if model download completed successfully
+   - For gated models, ensure HF_TOKEN is set
+
+3. **"Singularity not found"**
+   - Load the module: `module load singularity` or `module load apptainer`
+
+4. **Port already in use**
+   - The service will automatically find available ports
+   - Check for existing instances: `singularity-compose down`
+
+### Logs
+
+```bash
+# View service logs
+tail -f logs/vllm.out
+tail -f logs/rag.out
+
+# View all logs
+tail -F logs/*
+```
+
+## Contributing
+
+See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for development roadmap and architecture details.
+
+## License
+
+See [LICENSE.md](LICENSE.md)
+
