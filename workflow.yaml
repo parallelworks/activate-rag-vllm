@@ -18,27 +18,52 @@ jobs:
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
-          rm -f jobid SESSION_PORT job.started job.ended run.out
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
           rm -rf logs
+      
       - name: Create Environment File
         early-cancel: any-job-failed
         run: |
           set -x
           cd ${{ inputs.rundir }}
-          echo "export RUNMODE=${{ inputs.runmode  }}" > .run.env
-          echo "export BUILD=${{ inputs.build  }}" >> .run.env
-          echo "export RUNTYPE=${{ inputs.runtype  }}" >> .run.env
+          
+          # Core configuration
+          echo "export RUNMODE=${{ inputs.runmode }}" > .run.env
+          echo "export BUILD=${{ inputs.build }}" >> .run.env
+          echo "export RUNTYPE=${{ inputs.runtype }}" >> .run.env
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
-          echo "export HF_TOKEN=${{ inputs.hftoken  }}" >> .run.env
-          echo "export MODEL_NAME=${{ inputs.hfmodel  }}" >> .run.env
-          echo "export API_KEY=${{ inputs.apikey  }}" >> .run.env
+          echo "export HF_TOKEN=${{ inputs.hftoken }}" >> .run.env
+          echo "export API_KEY=${{ inputs.apikey }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
+          
+          # Model configuration
+          echo "export MODEL_SOURCE=${{ inputs.model.source }}" >> .run.env
+          if [[ "${{ inputs.model.source }}" == "local" ]]; then
+            echo "export MODEL_NAME=${{ inputs.model.local_path }}" >> .run.env
+            echo "export MODEL_PATH=${{ inputs.model.local_path }}" >> .run.env
+            echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
+          else
+            echo "export MODEL_NAME=${{ inputs.model.hf_model_id }}" >> .run.env
+            echo "export HF_MODEL_ID=${{ inputs.model.hf_model_id }}" >> .run.env
+            echo "export MODEL_CACHE_BASE=${{ inputs.model.cache_dir }}" >> .run.env
+          fi
+          
+          # vLLM attention backend
+          if [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]]; then
+            echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
+          fi
+          
+          # Tiktoken encodings path
+          if [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]]; then
+            echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
+          fi
 
       - name: Install Singularity Compose
         if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
         run: |
+          set -x
           # Check if singularity-compose is installed globally
           if ! command -v singularity-compose &> /dev/null; then
               # Check if virtual environment exists and activate it
@@ -52,7 +77,7 @@ jobs:
                   # Create directory for Python environment
                   mkdir -p ~/pw/software
                   
-                  # Create virtual environment named singularity-compose and install singularity-compose
+                  # Create virtual environment and install singularity-compose
                   python3 -m venv ~/pw/software/singularity-compose
                   source ~/pw/software/singularity-compose/bin/activate
                   pip install --upgrade pip
@@ -60,10 +85,114 @@ jobs:
               fi
           fi
           if ! command -v singularity-compose >/dev/null 2>&1; then
-            echo "$(date) Error: Failed to install singularity-compose"
+            echo "$(date) ERROR: Failed to install singularity-compose"
             exit 1
           fi
+      
+      - name: Pull Singularity Containers
+        if: ${{ inputs.runmode == 'singularity' && inputs.container.pull == true }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          
+          # vllm container
+          if [[ ! -f "vllm.sif" ]]; then
+            echo "vllm.sif not found, pulling from ${{ inputs.container.bucket }}"
+            pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" ./
+          else
+            echo "vllm.sif already exists, skipping pull"
+          fi
 
+          # rag container (only for runtype=all)
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            if [[ ! -f "rag.sif" ]]; then
+              echo "rag.sif not found, pulling from ${{ inputs.container.bucket }}"
+              pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./
+            else
+              echo "rag.sif already exists, skipping pull"
+            fi
+          fi
+
+          echo "Singularity container pull step complete."
+      
+      - name: Download HuggingFace Model
+        if: ${{ inputs.model.source == 'huggingface' }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          
+          MODEL_ID="${{ inputs.model.hf_model_id }}"
+          CACHE_DIR="${{ inputs.model.cache_dir }}"
+          HF_TOKEN="${{ inputs.hftoken }}"
+          
+          # Create cache directory
+          mkdir -p "$CACHE_DIR"
+          
+          # Sanitize model ID for directory name (replace / with __)
+          SAFE_MODEL_ID="${MODEL_ID//\//__}"
+          TARGET_DIR="$CACHE_DIR/$SAFE_MODEL_ID"
+          
+          # Check if model already exists
+          if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
+            echo "Model already cached at $TARGET_DIR"
+            # Update .run.env with resolved path
+            echo "export MODEL_PATH=$TARGET_DIR" >> .run.env
+            echo "export MODEL_NAME=$TARGET_DIR" >> .run.env
+            exit 0
+          fi
+          
+          echo "Downloading model $MODEL_ID to $TARGET_DIR"
+          mkdir -p "$TARGET_DIR"
+          
+          # Prefer git-lfs for HPC environments
+          if command -v git >/dev/null 2>&1 && git lfs version >/dev/null 2>&1; then
+            echo "Using git-lfs to clone model..."
+            
+            REPO_URL="https://huggingface.co/$MODEL_ID"
+            if [[ -n "$HF_TOKEN" ]]; then
+              REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+            fi
+            
+            git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+          elif command -v huggingface-cli >/dev/null 2>&1; then
+            echo "Using huggingface-cli to download model..."
+            
+            HF_CMD="huggingface-cli download $MODEL_ID --local-dir $TARGET_DIR"
+            if [[ -n "$HF_TOKEN" ]]; then
+              HF_CMD="$HF_CMD --token $HF_TOKEN"
+            fi
+            eval "$HF_CMD"
+          else
+            echo "ERROR: Neither git-lfs nor huggingface-cli available"
+            exit 1
+          fi
+          
+          # Verify download
+          if [[ ! -f "$TARGET_DIR/config.json" ]]; then
+            echo "ERROR: Model download incomplete - missing config.json"
+            exit 1
+          fi
+          
+          # Update .run.env with resolved path
+          echo "export MODEL_PATH=$TARGET_DIR" >> .run.env
+          echo "export MODEL_NAME=$TARGET_DIR" >> .run.env
+          echo "Model download complete: $TARGET_DIR"
+
+      - name: Pull Tiktoken Encodings
+        if: ${{ inputs.advanced_settings.tiktoken_encodings == true }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          mkdir -p cache/tiktoken_encodings
+          wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
+          wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+
+  # ============================================================================
+  # SLURM Job
+  # ============================================================================
   slurm_job:
     needs:
       - prepare_job_directory
@@ -78,20 +207,50 @@ jobs:
           cd ${{ inputs.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
-          if [[ "${{ inputs.slurm.partition }}" != "undefined" ]]; then
+          
+          # SLURM directives
+          if [[ -n "${{ inputs.slurm.account }}" && "${{ inputs.slurm.account }}" != "undefined" ]]; then
+            echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
+          fi
+          if [[ -n "${{ inputs.slurm.qos }}" && "${{ inputs.slurm.qos }}" != "undefined" ]]; then
+            echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
+          fi
+          if [[ -n "${{ inputs.slurm.partition }}" && "${{ inputs.slurm.partition }}" != "undefined" ]]; then
             echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          fi
+          if [[ -n "${{ inputs.slurm.cpus_per_task }}" ]]; then
+            echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
+          fi
+          echo "#SBATCH --nodes=1" >> run.sh
+          if [[ -n "${{ inputs.slurm.time }}" ]]; then
+            echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
           fi
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH -o ${PWD}/run.out" >> run.sh
           echo "#SBATCH -e ${PWD}/run.out" >> run.sh
-          if [[ "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
+          
+          # Additional scheduler directives
+          if [[ -n "${{ inputs.slurm.scheduler_directives }}" && "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
             echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
           fi
-
-          # Indicates job started running
+          
+          # Job started marker
           echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
+          
+          # Load singularity module if needed
+          cat << 'EOF' >> run.sh
+          
+          # Ensure Singularity is available
+          if ! command -v singularity >/dev/null 2>&1; then
+            if command -v module >/dev/null 2>&1; then
+              module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true
+            fi
+          fi
+          EOF
           
           cat start_service.sh >> run.sh
+      
       - name: Submit SLURM Script
         run: |
           set -x
@@ -102,34 +261,36 @@ jobs:
             echo "$(date) Job submission failed"
             exit 1
           fi
-          echo "jobid=${jobid}"  | tee -a $OUTPUTS | tee -a jobid
+          echo "jobid=${jobid}" | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          #jobid=${{ needs.slurm_job.outputs.jobid }}
-          source jobid
-          target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
-          ssh ${target_hostname} bash cancel.sh
-          scancel ${jobid}
-          rm -f jobid SESSION_PORT job.started
+          source jobid 2>/dev/null || true
+          if [[ -n "$jobid" ]]; then
+            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null)
+            if [[ -n "$target_hostname" ]]; then
+              ssh ${target_hostname} "cd ${{ inputs.rundir }} && bash cancel.sh" 2>/dev/null || true
+            fi
+            scancel ${jobid} 2>/dev/null || true
+          fi
+          rm -f jobid SESSION_PORT job.started HOSTNAME
+      
       - name: Monitor SLURM Job
         run: |
-          #jobid=${{ needs.slurm_job.outputs.jobid }}
-          source jobid
+          source jobid 2>/dev/null || true
           echo "$(date) Monitoring SLURM job ${jobid}"
 
           cd ${{ inputs.rundir }}
           touch run.out
           tail -f run.out &
-          echo &! > tail.pid
+          echo $! > tail.pid
 
           get_slurm_job_status() {
-              # Get the header line to determine the column index corresponding to the job status
               if [ -z "${SQUEUE_HEADER}" ]; then
-                  export SQUEUE_HEADER="$(eval squeue | awk 'NR==1')"
+                  export SQUEUE_HEADER="$(squeue 2>/dev/null | awk 'NR==1')"
               fi
               status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
-              status_response=$(eval squeue | awk -v jobid="${jobid}" '$1 == jobid')
+              status_response=$(squeue 2>/dev/null | awk -v jobid="${jobid}" '$1 == jobid')
               echo "${SQUEUE_HEADER}"
               echo "${status_response}"
               export job_status=$(echo ${status_response} | awk -v id="${jobid}" -v col="$status_column" '{print $col}')
@@ -139,7 +300,7 @@ jobs:
             sleep 15
             get_slurm_job_status
             if [ -z "${job_status}" ]; then
-              job_status=$(sacct -j ${jobid}  --format=state | tail -n1)
+              job_status=$(sacct -j ${jobid} --format=state 2>/dev/null | tail -n1)
               echo "$(date) Job exited with status ${job_status}"
               touch job.ended
               exit 0
@@ -148,8 +309,109 @@ jobs:
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          kill $(cat tail.pid)
+          if [ -f tail.pid ]; then
+            kill $(cat tail.pid) 2>/dev/null || true
+            rm -f tail.pid
+          fi
 
+  # ============================================================================
+  # PBS Job
+  # ============================================================================
+  pbs_job:
+    needs:
+      - prepare_job_directory
+    if: ${{ inputs.execmethod == 'PBS' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create PBS Script
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          
+          # Write PBS directives from user input
+          cat << 'PBSEOF' > run.sh
+          ${{ inputs.pbs.scheduler_directives }}
+          PBSEOF
+          chmod +x run.sh
+          
+          # Add account if specified
+          if [[ -n "${{ inputs.pbs.account }}" && "${{ inputs.pbs.account }}" != "undefined" ]]; then
+            sed -i "2i #PBS -A ${{ inputs.pbs.account }}" run.sh
+          fi
+          
+          # Job started marker
+          echo "" >> run.sh
+          echo "cd ${{ inputs.rundir }}" >> run.sh
+          echo "touch job.started" >> run.sh
+          echo "hostname >> HOSTNAME" >> run.sh
+          
+          # Load singularity module if needed
+          cat << 'EOF' >> run.sh
+          
+          # Ensure Singularity is available
+          if ! command -v singularity >/dev/null 2>&1; then
+            if command -v module >/dev/null 2>&1; then
+              module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true
+            fi
+          fi
+          EOF
+          
+          cat start_service.sh >> run.sh
+      
+      - name: Submit PBS Script
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          echo "$(date) Submitting PBS Job"
+          jobid=$(qsub run.sh)
+          if [ -z "${jobid}" ]; then
+            echo "$(date) Job submission failed"
+            exit 1
+          fi
+          echo "jobid=${jobid}" | tee -a $OUTPUTS | tee -a jobid
+        cleanup: |
+          set -x
+          cd ${{ inputs.rundir }}
+          source jobid 2>/dev/null || true
+          if [[ -n "$jobid" ]]; then
+            qdel ${jobid} 2>/dev/null || true
+          fi
+          rm -f jobid SESSION_PORT job.started HOSTNAME
+      
+      - name: Monitor PBS Job
+        run: |
+          source jobid 2>/dev/null || true
+          echo "$(date) Monitoring PBS job ${jobid}"
+
+          cd ${{ inputs.rundir }}
+          touch run.out
+          
+          # PBS job monitoring loop
+          while true; do
+            sleep 15
+            
+            # Check job status
+            job_status=$(qstat -f ${jobid} 2>/dev/null | grep "job_state" | awk '{print $3}')
+            echo "$(date) PBS job status: ${job_status}"
+            
+            if [ -z "${job_status}" ] || [[ "${job_status}" == "C" ]] || [[ "${job_status}" == "E" ]]; then
+              echo "$(date) Job completed or not found"
+              touch job.ended
+              exit 0
+            fi
+            
+            # If job is running, try to tail output
+            if [[ "${job_status}" == "R" ]] && [ -f run.out ]; then
+              tail -f run.out &
+              wait $!
+            fi
+          done
+
+  # ============================================================================
+  # SSH Job (Direct Execution)
+  # ============================================================================
   ssh_job:
     needs:
       - prepare_job_directory
@@ -163,22 +425,26 @@ jobs:
           cd ${{ inputs.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
-
-          # Indicates job started running
+          
           echo "touch job.started" >> run.sh
-
+          echo "hostname >> HOSTNAME" >> run.sh
+          
           cat start_service.sh >> run.sh
+      
       - name: Submit SSH Script
         run: |
           cd ${{ inputs.rundir }}
           bash ./run.sh
           touch job.ended
-          rm -f jobid SESSION_PORT job.started
+          rm -f jobid SESSION_PORT job.started HOSTNAME
         cleanup: |
           set -x
           cd ${{ inputs.rundir }}
-          bash cancel.sh
+          bash cancel.sh 2>/dev/null || true
 
+  # ============================================================================
+  # Session Management
+  # ============================================================================
   create_session:
     needs:
       - prepare_job_directory
@@ -189,38 +455,60 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
+          timeout=600
+          elapsed=0
           while [ ! -f ${{ inputs.rundir }}/job.started ]; do
-            echo "Waiting for job to start..."
+            echo "Waiting for job to start... (${elapsed}s/${timeout}s)"
             sleep 5
+            ((elapsed+=5))
+            if [ $elapsed -ge $timeout ]; then
+              echo "ERROR: Timeout waiting for job to start"
+              exit 1
+            fi
           done
+      
       - name: Get Hostname
         early-cancel: any-job-failed
         run: |
           set -x
           cd ${{ inputs.rundir }}
-          if [[ ${{ inputs.execmethod }} == "SLURM" ]]; then
-            source jobid
-            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N")
-            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-          elif [[ ${{ inputs.execmethod }} == "SSH" ]]; then
+          
+          if [[ "${{ inputs.execmethod }}" == "SLURM" ]]; then
+            source jobid 2>/dev/null || true
+            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null)
+          elif [[ "${{ inputs.execmethod }}" == "PBS" ]]; then
+            # Wait for HOSTNAME file to be created
+            timeout=120
+            elapsed=0
+            while [ ! -f HOSTNAME ]; do
+              sleep 2
+              ((elapsed+=2))
+              if [ $elapsed -ge $timeout ]; then break; fi
+            done
+            target_hostname=$(cat HOSTNAME 2>/dev/null | head -1)
+          elif [[ "${{ inputs.execmethod }}" == "SSH" ]]; then
             target_hostname=$(hostname)
-            echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
           fi
+          
           if [ -z "${target_hostname}" ]; then
             echo "$(date) Failed to get target hostname"
             exit 1
           fi
+          
+          echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
+      
       - name: Get Session Port
         early-cancel: any-job-failed
         run: |
           set -euo pipefail
           set -x
 
-          TIMEOUT=5
+          TIMEOUT=600
           RETRY_INTERVAL=3
           cd ${{ inputs.rundir }}
 
           attempt=1
+          elapsed=0
           while true; do
               echo "$(date) Attempt $attempt: Checking for SESSION_PORT file..."
 
@@ -229,32 +517,37 @@ jobs:
                   cat SESSION_PORT | tee -a "$OUTPUTS"
                   exit 0
               elif [ -f job.ended ]; then
-                  echo "$(date) Job was completed but SESSION_PORT was never created. Exiting..."
+                  echo "$(date) Job completed but SESSION_PORT was never created. Exiting..."
                   exit 1
               else
                   echo "$(date) SESSION_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
                   sleep "$RETRY_INTERVAL"
                   ((attempt++))
+                  ((elapsed+=RETRY_INTERVAL))
+                  if [ $elapsed -ge $TIMEOUT ]; then
+                    echo "$(date) Timeout waiting for SESSION_PORT"
+                    exit 1
+                  fi
               fi
           done
+      
       - name: Wait for Server To Start
         early-cancel: any-job-failed
         run: |
-          TIMEOUT=5
+          TIMEOUT=300
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.outputs.target_hostname }}"
           remote_port="${{ needs.create_session.outputs.SESSION_PORT }}"
 
-          # Function to check if server is listening
           check_server() {
-              curl --silent --connect-timeout "$TIMEOUT" "http://${remote_host}:${remote_port}" >/dev/null 2>&1
+              curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1
               return $?
           }
 
           cd ${{ inputs.rundir }}
 
-          # Main loop
           attempt=1
+          elapsed=0
           while true; do
               echo "$(date) Attempt $attempt: Checking if server is listening on ${remote_host}:${remote_port}..."
               
@@ -262,14 +555,20 @@ jobs:
                   echo "$(date) Success: Server is listening on ${remote_host}:${remote_port}!"
                   exit 0
               elif [ -f job.ended ]; then
-                  echo "$(date) Job was completed. Exiting... "
+                  echo "$(date) Job completed. Exiting..."
                   exit 0
               else
                   echo "$(date) Server not responding. Retrying in ${RETRY_INTERVAL} seconds..."
                   sleep "$RETRY_INTERVAL"
                   ((attempt++))
+                  ((elapsed+=RETRY_INTERVAL))
+                  if [ $elapsed -ge $TIMEOUT ]; then
+                    echo "$(date) Timeout waiting for server"
+                    exit 1
+                  fi
               fi
           done
+      
       - name: Update Session
         uses: parallelworks/update-session
         with:
@@ -277,75 +576,157 @@ jobs:
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+          localPort: '${{ inputs.localport }}'
 
+# ==============================================================================
+# INPUT DEFINITIONS
+# ==============================================================================
 'on':
   execute:
     inputs:
+      # ========================================================================
+      # Resource Selection
+      # ========================================================================
       resource:
         type: compute-clusters
         label: Compute Cluster
         autoselect: true
         include-workspace: false
         tooltip: Resource to run the service
+      
+      # ========================================================================
+      # Execution Settings
+      # ========================================================================
       execmethod:
         type: dropdown
         label: Execution Method
-        default: SSH
-        tooltip: Choose whether to run the job directly via SSH or submit it to a SLURM queue
+        default: SLURM
+        tooltip: How to run the job - SSH (direct), SLURM, or PBS
         options:
           - value: SSH
-            label: SSH
+            label: SSH (Direct)
           - value: SLURM
             label: SLURM
+          - value: PBS
+            label: PBS
+      
       runmode:
-        label: Execution Mode
+        label: Container Runtime
         type: dropdown
+        default: singularity
+        tooltip: Singularity is recommended for HPC environments
         options:
-          - value: docker
-            label: Docker
           - value: singularity
             label: Singularity
+          - value: docker
+            label: Docker
+      
       rundir:
         label: Run Directory
-        default: ~/activate-rag-vllm
+        default: ~/pw/activate-rag-vllm
         type: string
+        tooltip: Directory where the service will be deployed
+      
       runtype:
-        label: Run Type
+        label: Deployment Type
         type: dropdown
+        default: all
+        tooltip: Deploy vLLM only or full vLLM+RAG stack
         options:
+          - value: all
+            label: vLLM + RAG (Full Stack)
           - value: vllm
             label: vLLM Only
-          - value: all
-            label: vLLM+RAG
+      
       build:
         label: Build Containers
         type: boolean
         default: false
-      hfmodel:
-        label: HF Model
-        default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
+        tooltip: Build containers from source instead of using pre-built images
+      
+      localport:
+        label: Local Port
+        default: '5555'
+        tooltip: Port in your workspace to access the service
         type: string
+
+      # ========================================================================
+      # Model Configuration
+      # ========================================================================
+      model:
+        type: group
+        label: Model Configuration
+        items:
+          source:
+            type: dropdown
+            label: Model Source
+            default: local
+            tooltip: Use a pre-downloaded model (local) or download from HuggingFace
+            options:
+              - value: local
+                label: "📁 Local Path (recommended for HPC)"
+              - value: huggingface
+                label: "🤗 HuggingFace Hub"
+          
+          local_path:
+            type: string
+            label: Model Path
+            placeholder: /path/to/model/weights
+            default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
+            tooltip: Full path to directory containing model weights
+            hidden: ${{ inputs.model.source != 'local' }}
+            ignore: ${{ inputs.model.source != 'local' }}
+          
+          hf_model_id:
+            type: string
+            label: HuggingFace Model ID
+            placeholder: meta-llama/Llama-3.1-8B-Instruct
+            tooltip: Model ID from HuggingFace Hub (e.g., meta-llama/Llama-3.1-8B-Instruct)
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+          
+          cache_dir:
+            type: string
+            label: Model Cache Directory
+            default: ~/.cache/activate-models
+            tooltip: Where to store downloaded models (should have sufficient space)
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+
+      # ========================================================================
+      # vLLM Configuration
+      # ========================================================================
       vllm_extra_args:
-        label: VLLM Extra Args
-        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --max-model-len=2048 --gpu-memory-utilization 0.85"
-        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --max-model-len=2048 --gpu-memory-utilization 0.85"
+        label: vLLM Extra Arguments
+        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
+        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4"
         type: string
+        tooltip: Additional arguments to pass to vLLM server
+      
       hftoken:
-        label: HF Token (gated models)
+        label: HuggingFace Token
         optional: true
         default: ${{ org.HF_TOKEN }}
         type: password
+        tooltip: Required for gated models (Llama, etc.)
+      
       apikey:
         label: vLLM API Key
         optional: true
-        tooltip: Required for integration with Cline and other code assist tools.
+        tooltip: API key for vLLM server. Required for Cline and other code assist tools.
         type: password
+
+      # ========================================================================
+      # RAG Configuration
+      # ========================================================================
       docsdir:
-        label: RAG Directory
+        label: RAG Documents Directory
         hidden: ${{ inputs.runtype != 'all' }}
         optional: true
         default: ./docs
         type: string
+        tooltip: Directory containing documents to index for RAG
+      
       systemprompt:
         type: string
         label: System Prompt
@@ -353,26 +734,119 @@ jobs:
         textarea: true
         optional: true
         default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+
+      # ========================================================================
+      # Container Configuration
+      # ========================================================================
+      container:
+        type: group
+        label: Container Options
+        hidden: ${{ inputs.runmode != 'singularity' }}
+        items:
+          pull:
+            label: Pull Pre-built Containers
+            type: boolean
+            default: true
+            tooltip: Download pre-built containers from bucket instead of building
+          
+          bucket:
+            label: Container Bucket
+            type: string
+            default: pw://mshaxted/codeassist
+            tooltip: Bucket containing vllm.sif and rag.sif containers
+            hidden: ${{ inputs.container.pull != true }}
+            ignore: ${{ inputs.container.pull != true }}
+
+      # ========================================================================
+      # SLURM Configuration
+      # ========================================================================
       slurm:
         type: group
-        label: SLURM Directives
+        label: SLURM Options
         hidden: ${{ inputs.execmethod != 'SLURM' }}
         items:
+          account:
+            label: Account
+            type: slurm-accounts
+            resource: ${{ inputs.resource }}
+            tooltip: SLURM account for job submission
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: true
+          
           partition:
             type: slurm-partitions
-            label: SLURM partition
+            label: Partition
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             optional: true
             resource: ${{ inputs.resource }}
-            tooltip: |
-              Partition to submit the interactive job. Leave empty to let SLURM pick
-              the optimal option.
-          scheduler_directives:
-            type: editor
+            tooltip: Partition for job submission. Leave empty for default.
+          
+          qos:
+            label: Quality of Service (QoS)
+            type: slurm-qos
+            resource: ${{ inputs.resource }}
+            tooltip: SLURM QoS setting
             ignore: ${{ inputs.execmethod != 'SLURM' }}
             optional: true
-            tooltip: |
-              Type in additional scheduler directives. 
+          
+          cpus_per_task:
+            type: number
+            label: CPUs per Task
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            min: 1
+            max: 128
+            default: 4
+            tooltip: Number of CPUs for the job
+          
+          time:
+            label: Walltime
+            type: string
+            default: 04:00:00
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            tooltip: Maximum job duration (e.g., 04:00:00)
+          
+          scheduler_directives:
+            type: editor
+            label: Additional Directives
+            ignore: ${{ inputs.execmethod != 'SLURM' }}
+            optional: true
+            tooltip: Additional SLURM directives
+            default: |
+              #SBATCH --gres=gpu:4
+              
+              ##SBATCH --constraint=mla  # Uncomment for Navy/AFRL DSRC systems
+
+      # ========================================================================
+      # PBS Configuration
+      # ========================================================================
+      pbs:
+        type: group
+        label: PBS Options
+        hidden: ${{ inputs.execmethod != 'PBS' }}
+        items:
+          account:
+            label: Account
+            type: string
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: true
+            tooltip: PBS account for job submission
+          
+          scheduler_directives:
+            label: PBS Script
+            type: editor
+            tooltip: Full PBS script including directives
+            ignore: ${{ inputs.execmethod != 'PBS' }}
+            optional: ${{ inputs.execmethod != 'PBS' }}
+            default: |
+              #!/bin/bash
+              #PBS -q gpu
+              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=4
+              #PBS -l walltime=04:00:00
+              #PBS -V
+
+      # ========================================================================
+      # Advanced Settings
+      # ========================================================================
       advanced_settings:
         type: group
         label: Advanced Settings
@@ -382,7 +856,40 @@ jobs:
             type: string
             label: Repository
             default: https://github.com/parallelworks/activate-rag-vllm.git
+          
           repository_branch:
             type: string
             label: Repository Branch
-            default: main
+            default: refactor
+          
+          tiktoken_encodings:
+            label: Download Tiktoken Encodings
+            tooltip: Download tiktoken encodings for offline use (required for some models)
+            type: boolean
+            default: false
+          
+          vllm_attention_backend:
+            type: dropdown
+            label: vLLM Attention Backend
+            default: FLASH_ATTN
+            tooltip: Attention implementation used by vLLM
+            options:
+              - value: FLASH_ATTN
+              - value: TRITON_ATTN
+              - value: FLASHINFER
+              - value: FLASHINFER_MLA
+              - value: TRITON_MLA
+              - value: CUTLASS_MLA
+              - value: FLASHMLA
+              - value: FLASHMLA_SPARSE
+              - value: FLASH_ATTN_MLA
+              - value: TORCH_SDPA
+              - value: ROCM_ATTN
+              - value: ROCM_AITER_MLA
+              - value: ROCM_AITER_TRITON_MLA
+              - value: ROCM_AITER_FA
+              - value: PALLAS
+              - value: IPEX
+              - value: CPU_ATTN
+              - value: NO_ATTENTION
+              - value: CUSTOM
