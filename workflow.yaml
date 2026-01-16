@@ -32,7 +32,7 @@ jobs:
           echo "export BUILD=${{ inputs.build }}" >> .run.env
           echo "export RUNTYPE=${{ inputs.runtype }}" >> .run.env
           echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
-          echo "export HF_TOKEN=${{ inputs.hftoken }}" >> .run.env
+          echo "export HF_TOKEN=${{ inputs.model.hf_token }}" >> .run.env
           echo "export API_KEY=${{ inputs.apikey }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
           echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
@@ -125,7 +125,7 @@ jobs:
           
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
-          HF_TOKEN="${{ inputs.hftoken }}"
+          HF_TOKEN="${{ inputs.model.hf_token }}"
           
           # Create cache directory
           mkdir -p "$CACHE_DIR"
@@ -685,6 +685,15 @@ jobs:
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
           
+          hf_token:
+            label: HuggingFace Token
+            optional: true
+            default: ${{ org.HF_TOKEN }}
+            type: password
+            tooltip: Required for gated models (Llama, etc.)
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+          
           cache_dir:
             type: string
             label: Model Cache Directory
@@ -702,15 +711,6 @@ jobs:
         placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4"
         type: string
         tooltip: Additional arguments to pass to vLLM server
-      
-      hftoken:
-        label: HuggingFace Token
-        optional: true
-        default: ${{ org.HF_TOKEN }}
-        type: password
-        tooltip: Required for gated models (Llama, etc.)
-        hidden: ${{ inputs.model.source != 'huggingface' }}
-        ignore: ${{ inputs.model.source != 'huggingface' }}
       
       apikey:
         label: vLLM API Key
