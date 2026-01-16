@@ -1,7 +1,20 @@
 version: "2.0"
 
+# ==============================================================================
+# ACTIVATE RAG-vLLM Singularity Compose Configuration
+# ==============================================================================
+# This file is processed by start_service.sh which replaces:
+#   __MODEL_PATH__  -> Full path to model directory
+#   __MODEL_BASE__  -> Basename of model directory (for container mount point)
+#
+# Environment variables are loaded from env.sh at runtime.
+# ==============================================================================
+
 instances:
   
+  # ============================================================================
+  # vLLM Server Instance
+  # ============================================================================
   vllm:
     build:
       context: .
@@ -16,14 +29,24 @@ instances:
     run:
       args:
         - >
-          nohup python3 -m vllm.entrypoints.openai.api_server --model "/__MODEL_BASE__" --tokenizer "/__MODEL_BASE__"  --host 0.0.0.0 --port ${VLLM_SERVER_PORT} ${VLLM_EXTRA_ARGS} > /logs/vllm.out 2>&1 &
+          nohup python3 -m vllm.entrypoints.openai.api_server 
+          --model "/__MODEL_BASE__" 
+          --tokenizer "/__MODEL_BASE__"  
+          --host 0.0.0.0 
+          --port ${VLLM_SERVER_PORT} 
+          ${VLLM_EXTRA_ARGS} 
+          > /logs/vllm.out 2>&1 &
     volumes:
       - ./logs:/logs
       - ./cache:/root/.cache
       - ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions
+      - ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings
       - ./env.sh:/.singularity.d/env/env.sh
-      - __MODEL_PATH__:/__MODEL_BASE__
+      - __MODEL_PATH__:/__MODEL_BASE__:ro
 
+  # ============================================================================
+  # RAG Server Instance (includes RAG proxy, server, ChromaDB, and indexer)
+  # ============================================================================
   rag:
     build:
       context: .
@@ -34,6 +57,7 @@ instances:
     volumes:
       - ./logs:/logs
       - ./cache:/root/.cache
+      - ./cache/chroma:/chroma_data
       - ./docs:/docs
       - ./env.sh:/.singularity.d/env/env.sh
     run:
