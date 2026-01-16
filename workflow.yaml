@@ -709,6 +709,8 @@ jobs:
         default: ${{ org.HF_TOKEN }}
         type: password
         tooltip: Required for gated models (Llama, etc.)
+        hidden: ${{ inputs.model.source != 'huggingface' }}
+        ignore: ${{ inputs.model.source != 'huggingface' }}
       
       apikey:
         label: vLLM API Key
