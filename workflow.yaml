@@ -983,7 +983,7 @@ jobs:
           lfs_branch:
             label: LFS Branch
             type: string
-            default: canary
+            default: main
             tooltip: Branch to pull from the LFS repo
             hidden: ${{ inputs.container.source != 'lfs' }}
             ignore: ${{ inputs.container.source != 'lfs' }}
