@@ -215,17 +215,20 @@ jobs:
           git -C "$LFS_DIR" lfs install --local
 
           git -C "$LFS_DIR" sparse-checkout init --no-cone
-          patterns=("vllm.[0-9][0-9][0-9][0-9][0-9].sif" "vllm.sif.part_*" "vllm.sif")
+          patterns=("vllm.*.sif" "vllm.sif.part_*" "vllm.sif")
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            patterns+=("rag.[0-9][0-9][0-9][0-9][0-9].sif" "rag.sif.part_*" "rag.sif")
+            patterns+=("rag.*.sif" "rag.sif.part_*" "rag.sif")
           fi
           git -C "$LFS_DIR" sparse-checkout set --no-cone "${patterns[@]}"
 
-          lfs_include="vllm.[0-9][0-9][0-9][0-9][0-9].sif,vllm.sif.part_*,vllm.sif"
+          lfs_include="vllm.*.sif,vllm.sif.part_*,vllm.sif"
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            lfs_include="${lfs_include},rag.[0-9][0-9][0-9][0-9][0-9].sif,rag.sif.part_*,rag.sif"
+            lfs_include="${lfs_include},rag.*.sif,rag.sif.part_*,rag.sif"
           fi
-          git -C "$LFS_DIR" lfs pull --include "$lfs_include" --exclude "*"
+          git -C "$LFS_DIR" config lfs.fetchinclude "$lfs_include"
+          git -C "$LFS_DIR" config lfs.fetchexclude ""
+          git -C "$LFS_DIR" lfs pull
+          git -C "$LFS_DIR" lfs checkout
 
           assemble_sif() {
             local prefix=$1
@@ -1054,7 +1057,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: refactor
+            default: main
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
