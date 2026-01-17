@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 from typing import Dict, List, Optional, Any, AsyncGenerator, Tuple
 import httpx
 from fastapi import FastAPI, Body, HTTPException, Request, Response
@@ -21,6 +22,10 @@ TOP_K_DEFAULT = int(os.getenv("TOP_K", "4"))
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "")
 HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "120"))
 CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "10"))
+RAG_FAIL_OPEN = os.getenv("RAG_FAIL_OPEN", "true").lower() in ("1", "true", "yes", "on")
+
+LOG = logging.getLogger("rag_proxy")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # =========================
 # Revised system directive
@@ -206,6 +211,11 @@ def _headers_with_auth(extra: Optional[Dict[str,str]] = None) -> Dict[str,str]:
     if extra: headers.update(extra)
     return headers
 
+def _model_to_dict(model: BaseModel) -> Dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump(exclude_none=True)
+    return model.dict(exclude_none=True)
+
 # =========================
 # RAG fetch
 # =========================
@@ -218,8 +228,15 @@ async def _rag_search(query: str, k: int, file_contains: Optional[str]=None) -> 
         r.raise_for_status()
         js = r.json()
         return js.get("results", [])
+    except httpx.HTTPStatusError as e:
+        detail = {"error": "RAG fetch failed", "detail": str(e), "status": e.response.status_code,
+                  "body": e.response.text, "rag_url": RAG_URL}
+        LOG.warning("RAG fetch HTTP error: %s", detail)
+        raise HTTPException(status_code=502, detail=detail)
     except Exception as e:
-        raise HTTPException(status_code=502, detail={"error":"RAG fetch failed","detail":str(e),"rag_url":RAG_URL})
+        detail = {"error": "RAG fetch failed", "detail": str(e), "rag_url": RAG_URL}
+        LOG.warning("RAG fetch error: %s", detail)
+        raise HTTPException(status_code=502, detail=detail)
 
 def _extract_user_query(messages: List[Dict[str, Any]]) -> str:
     for m in reversed(messages):
@@ -298,16 +315,23 @@ async def completions(request: Request):
     user_query = prompt  # completions => prompt is the user question
 
     if rag_cfg["enabled"] and user_query.strip():
-        results = await _rag_search(user_query, rag_cfg["top_k"], rag_cfg.get("file_contains"))
-        # Build numbered context/citation map
-        context_block, citations_all = build_context_and_map(results)
-        # Build a numbered prompt for completions
-        prompt = _pack_numbered_prompt(
-            user_query=user_query,
-            context_block=context_block,
-            max_context=MAX_CONTEXT,
-            max_completion_tokens=req_json.get("max_tokens") or DEFAULT_MAX_TOKENS
-        )
+        try:
+            results = await _rag_search(user_query, rag_cfg["top_k"], rag_cfg.get("file_contains"))
+            # Build numbered context/citation map
+            context_block, citations_all = build_context_and_map(results)
+            # Build a numbered prompt for completions
+            prompt = _pack_numbered_prompt(
+                user_query=user_query,
+                context_block=context_block,
+                max_context=MAX_CONTEXT,
+                max_completion_tokens=req_json.get("max_tokens") or DEFAULT_MAX_TOKENS
+            )
+        except HTTPException as e:
+            if RAG_FAIL_OPEN:
+                LOG.warning("RAG disabled for this request due to error: %s", e.detail)
+                rag_cfg["enabled"] = False
+            else:
+                raise
 
     payload = _passthrough(req_json, ALLOWED_COMPLETION_FIELDS)
     payload["prompt"] = prompt
@@ -328,7 +352,9 @@ async def completions(request: Request):
     try:
         r = await async_client.post(url, json=payload, headers=_headers_with_auth())
     except Exception as e:
-        raise HTTPException(502, {"error": str(e), "vllm_url": VLLM_URL})
+        detail = {"error": str(e), "vllm_url": VLLM_URL}
+        LOG.warning("vLLM request error: %s", detail)
+        raise HTTPException(502, detail)
 
     # Try to attach citations metadata
     try:
@@ -426,7 +452,8 @@ class ChatReq(BaseModel):
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatReq = Body(...), request: Request = None):
     headers = dict(request.headers) if request else {}
-    rag_cfg = _rag_cfg(req.dict(exclude_none=True), headers)
+    req_json = _model_to_dict(req)
+    rag_cfg = _rag_cfg(req_json, headers)
     stream = bool(req.stream)
 
     messages = req.messages or []
@@ -438,17 +465,24 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
     final_messages = messages
 
     if rag_cfg["enabled"] and user_query.strip():
-        results = await _rag_search(user_query, rag_cfg["top_k"], rag_cfg.get("file_contains"))
-        context_block, citations_all = build_context_and_map(results)
-        # Build numbered chat messages with trimming if needed
-        final_messages = _pack_numbered_chat(
-            user_query=user_query,
-            context_block=context_block,
-            max_context=MAX_CONTEXT,
-            max_completion_tokens=(req.max_tokens or DEFAULT_MAX_TOKENS)
-        )
+        try:
+            results = await _rag_search(user_query, rag_cfg["top_k"], rag_cfg.get("file_contains"))
+            context_block, citations_all = build_context_and_map(results)
+            # Build numbered chat messages with trimming if needed
+            final_messages = _pack_numbered_chat(
+                user_query=user_query,
+                context_block=context_block,
+                max_context=MAX_CONTEXT,
+                max_completion_tokens=(req.max_tokens or DEFAULT_MAX_TOKENS)
+            )
+        except HTTPException as e:
+            if RAG_FAIL_OPEN:
+                LOG.warning("RAG disabled for this request due to error: %s", e.detail)
+                rag_cfg["enabled"] = False
+            else:
+                raise
 
-    payload = _passthrough(req.dict(exclude_none=True), ALLOWED_CHAT_FIELDS)
+    payload = _passthrough(req_json, ALLOWED_CHAT_FIELDS)
     payload["messages"] = final_messages
     payload.setdefault("model", req.model or MODEL_NAME)
     url = f"{VLLM_URL}/chat/completions"
@@ -468,7 +502,9 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
     try:
         r = await async_client.post(url, json=payload, headers=_headers_with_auth())
     except Exception as e:
-        raise HTTPException(502, {"error": str(e), "vllm_url": VLLM_URL})
+        detail = {"error": str(e), "vllm_url": VLLM_URL}
+        LOG.warning("vLLM request error: %s", detail)
+        raise HTTPException(502, detail)
 
     # Attach citations metadata
     try:
