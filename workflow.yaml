@@ -73,6 +73,9 @@ jobs:
           rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
           rm -rf logs
           
+          # Create cache directories (needed for bind mounts even if not used)
+          mkdir -p cache/tiktoken_encodings
+          
           echo "rundir=$RUNDIR" >> $OUTPUTS
       
       - name: Create Environment File
@@ -433,7 +436,8 @@ jobs:
             
             if [ -f SESSION_PORT ]; then
               echo "$(date) Success: SESSION_PORT found!"
-              cat SESSION_PORT | tee -a "$OUTPUTS"
+              PORT=$(cat SESSION_PORT)
+              echo "SESSION_PORT=$PORT" | tee -a "$OUTPUTS"
               exit 0
             elif [ -f job.ended ]; then
               echo "$(date) Job ended without SESSION_PORT"
