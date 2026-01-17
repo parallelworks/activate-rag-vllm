@@ -360,7 +360,7 @@ EOF
             sleep 3
             
             # Start RAG server
-            nohup python3 /app/rag_server.py --embedding_model \"${EMBEDDING_MODEL_CONTAINER}\" > /logs/rag_server.out 2>&1 &
+            nohup python3 /app/rag_server.py --embedding_model \"${EMBEDDING_MODEL_CONTAINER}\" --port ${RAG_PORT} > /logs/rag_server.out 2>&1 &
             echo \$! > /logs/rag_server.pid
             
             # Start RAG proxy
