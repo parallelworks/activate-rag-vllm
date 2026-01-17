@@ -24,13 +24,39 @@ Deploy GPU-accelerated language model inference with optional RAG (Retrieval-Aug
    - **HuggingFace**: Download automatically (requires network access)
 4. Configure vLLM options and submit
 
-### Option 2: Local Development
+### Option 2: Local Development Runner
+
+For local debugging and development, use the `run_local.sh` script:
 
 ```bash
 # Clone the repository
 git clone -b refactor https://github.com/parallelworks/activate-rag-vllm.git
 cd activate-rag-vllm
 
+# Run with a local model
+./run_local.sh --model /path/to/model/weights
+
+# Run with HuggingFace model (downloads if not cached)
+./run_local.sh --hf-model meta-llama/Llama-3.1-8B-Instruct --hf-token $HF_TOKEN
+
+# Force Docker runtime
+./run_local.sh --docker --model /path/to/model
+
+# vLLM only (no RAG)
+./run_local.sh --vllm-only --model /path/to/model
+
+# Use a configuration file
+cp local.env.example my-config.env
+# Edit my-config.env with your settings
+./run_local.sh --config my-config.env
+
+# Dry run to see what would happen
+./run_local.sh --dry-run --model /path/to/model
+```
+
+### Option 3: Interactive Configuration Wizard
+
+```bash
 # Run the interactive configuration wizard
 ./scripts/configure.sh
 
@@ -38,7 +64,7 @@ cd activate-rag-vllm
 ./start_service.sh
 ```
 
-### Option 3: Manual Configuration
+### Option 4: Manual Configuration
 
 ```bash
 # Set environment variables
@@ -194,6 +220,8 @@ activate-rag-vllm/
 │   └── hpc-presets.yaml       # HPC environment configs
 ├── scripts/                   # Utility scripts
 │   └── configure.sh           # Interactive setup wizard
+├── run_local.sh               # Local development runner
+├── local.env.example          # Sample local configuration
 ├── singularity/               # Singularity deployment
 │   ├── singularity-compose.yml
 │   ├── Singularity.vllm
