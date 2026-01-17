@@ -12,9 +12,9 @@ jobs:
     steps:
       - name: Preparing Run Directory
         run: |
-          mkdir -p $(dirname ${{ inputs.rundir }})
-          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.rundir }}
-          cd ${{ inputs.rundir }}
+          mkdir -p $(dirname ${{ inputs.advanced_settings.rundir }})
+          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.advanced_settings.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           git checkout ${{ inputs.advanced_settings.repository_branch }}
           git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
           git pull
@@ -25,19 +25,22 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           # Core configuration
           echo "export RUNMODE=${{ inputs.runmode }}" > .run.env
-          echo "export BUILD=${{ inputs.build }}" >> .run.env
           echo "export RUNTYPE=${{ inputs.runtype }}" >> .run.env
-          echo "export SYSTEM_PROMPT=\"${{ inputs.systemprompt }}\"" >> .run.env
+          echo "export SYSTEM_PROMPT=\"${{ inputs.rag.systemprompt }}\"" >> .run.env
           echo "export HF_TOKEN=${{ inputs.model.hf_token }}" >> .run.env
-          echo "export API_KEY=${{ inputs.apikey }}" >> .run.env
-          echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
+          echo "export API_KEY=${{ inputs.advanced_settings.apikey }}" >> .run.env
+          echo "export DOCS_DIR=${{ inputs.rag.docsdir }}" >> .run.env
           
-          # Build vLLM extra args from structured inputs
-          VLLM_ARGS="--dtype ${{ inputs.vllm.dtype }} --tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
+          # Build vLLM extra args from structured inputs (skip dtype if custom)
+          if [[ "${{ inputs.vllm.dtype }}" == "custom" ]]; then
+            VLLM_ARGS="--tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
+          else
+            VLLM_ARGS="--dtype ${{ inputs.vllm.dtype }} --tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
+          fi
           if [[ "${{ inputs.vllm.max_model_len }}" != "auto" ]]; then
             VLLM_ARGS="$VLLM_ARGS --max-model-len ${{ inputs.vllm.max_model_len }}"
           fi
@@ -109,7 +112,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           # vllm container
           if [[ ! -f "vllm.sif" ]]; then
@@ -136,7 +139,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           # Link vllm container
           if [[ -f "${{ inputs.container.vllm_path }}" ]]; then
@@ -163,7 +166,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           echo "Building Singularity containers from source..."
           echo "Note: This requires sudo or fakeroot capabilities"
@@ -201,7 +204,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
@@ -265,7 +268,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           mkdir -p cache/tiktoken_encodings
           wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
           wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
@@ -284,7 +287,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
           
@@ -334,7 +337,7 @@ jobs:
       - name: Submit SLURM Script
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           echo "$(date) Submitting SLURM Job"
           jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
           if [ -z "${jobid}" ]; then
@@ -344,12 +347,12 @@ jobs:
           echo "jobid=${jobid}" | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           source jobid 2>/dev/null || true
           if [[ -n "$jobid" ]]; then
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null)
             if [[ -n "$target_hostname" ]]; then
-              ssh ${target_hostname} "cd ${{ inputs.rundir }} && bash cancel.sh" 2>/dev/null || true
+              ssh ${target_hostname} "cd ${{ inputs.advanced_settings.rundir }} && bash cancel.sh" 2>/dev/null || true
             fi
             scancel ${jobid} 2>/dev/null || true
           fi
@@ -360,7 +363,7 @@ jobs:
           source jobid 2>/dev/null || true
           echo "$(date) Monitoring SLURM job ${jobid}"
 
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           touch run.out
           tail -f run.out &
           echo $! > tail.pid
@@ -388,7 +391,7 @@ jobs:
           done
         cleanup: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           if [ -f tail.pid ]; then
             kill $(cat tail.pid) 2>/dev/null || true
             rm -f tail.pid
@@ -408,7 +411,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           # Write PBS directives from user input
           cat << 'PBSEOF' > run.sh
@@ -423,7 +426,7 @@ jobs:
           
           # Job started marker
           echo "" >> run.sh
-          echo "cd ${{ inputs.rundir }}" >> run.sh
+          echo "cd ${{ inputs.advanced_settings.rundir }}" >> run.sh
           echo "touch job.started" >> run.sh
           echo "hostname >> HOSTNAME" >> run.sh
           
@@ -443,7 +446,7 @@ jobs:
       - name: Submit PBS Script
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           echo "$(date) Submitting PBS Job"
           jobid=$(qsub run.sh)
           if [ -z "${jobid}" ]; then
@@ -453,7 +456,7 @@ jobs:
           echo "jobid=${jobid}" | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           source jobid 2>/dev/null || true
           if [[ -n "$jobid" ]]; then
             qdel ${jobid} 2>/dev/null || true
@@ -465,7 +468,7 @@ jobs:
           source jobid 2>/dev/null || true
           echo "$(date) Monitoring PBS job ${jobid}"
 
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           touch run.out
           
           # PBS job monitoring loop
@@ -502,7 +505,7 @@ jobs:
       - name: Create SSH Script
         early-cancel: any-job-failed
         run: |
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           echo '#!/bin/bash' > run.sh
           chmod +x run.sh
           
@@ -513,13 +516,13 @@ jobs:
       
       - name: Submit SSH Script
         run: |
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           bash ./run.sh
           touch job.ended
           rm -f jobid SESSION_PORT job.started HOSTNAME
         cleanup: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           bash cancel.sh 2>/dev/null || true
 
   # ============================================================================
@@ -537,7 +540,7 @@ jobs:
           set -x
           timeout=600
           elapsed=0
-          while [ ! -f ${{ inputs.rundir }}/job.started ]; do
+          while [ ! -f ${{ inputs.advanced_settings.rundir }}/job.started ]; do
             echo "Waiting for job to start... (${elapsed}s/${timeout}s)"
             sleep 5
             ((elapsed+=5))
@@ -551,7 +554,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           if [[ "${{ inputs.execmethod }}" == "SLURM" ]]; then
             source jobid 2>/dev/null || true
@@ -585,7 +588,7 @@ jobs:
 
           TIMEOUT=600
           RETRY_INTERVAL=3
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
 
           attempt=1
           elapsed=0
@@ -624,7 +627,7 @@ jobs:
               return $?
           }
 
-          cd ${{ inputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
 
           attempt=1
           elapsed=0
@@ -656,7 +659,7 @@ jobs:
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
           remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
-          localPort: '${{ inputs.localport }}'
+          localPort: '${{ inputs.advanced_settings.localport }}'
 
 # ==============================================================================
 # INPUT DEFINITIONS
@@ -701,12 +704,6 @@ jobs:
           - value: docker
             label: Docker
       
-      rundir:
-        label: Run Directory
-        default: ~/pw/activate-rag-vllm
-        type: string
-        tooltip: Directory where the service will be deployed
-      
       runtype:
         label: Deployment Type
         type: dropdown
@@ -717,21 +714,7 @@ jobs:
             label: vLLM Only
           - value: all
             label: vLLM + RAG (Full Stack)
-      
-      build:
-        label: Build Containers
-        type: boolean
-        default: false
-        tooltip: Build containers from source instead of using pre-built images
-      
-      localport:
-        label: Local Port
-        default: '5555'
-        tooltip: Port in your workspace to access the service
-        type: string
 
-      # ========================================================================
-      # Model Configuration
       # ========================================================================
       # Model Configuration
       # ========================================================================
@@ -739,27 +722,6 @@ jobs:
         type: group
         label: Model Configuration
         items:
-          preset:
-            type: dropdown
-            label: Model Preset
-            default: custom
-            tooltip: Select a pre-configured model or choose Custom for manual configuration
-            options:
-              - value: custom
-                label: "⚙️ Custom Configuration"
-              - value: llama-3.1-8b
-                label: "🦙 Llama 3.1 8B Instruct (1 GPU, ~16GB VRAM)"
-              - value: llama-3.1-70b
-                label: "🦙 Llama 3.1 70B Instruct (4 GPUs, ~160GB VRAM)"
-              - value: llama-3.3-70b
-                label: "🦙 Llama 3.3 70B Instruct (4 GPUs, ~160GB VRAM)"
-              - value: nemotron-49b
-                label: "🚀 Nemotron Super 49B (4 GPUs, ~120GB VRAM)"
-              - value: mistral-7b
-                label: "🌀 Mistral 7B Instruct (1 GPU, ~14GB VRAM)"
-              - value: qwen-2.5-72b
-                label: "🔮 Qwen 2.5 72B Instruct (4 GPUs, ~160GB VRAM)"
-          
           source:
             type: dropdown
             label: Model Source
@@ -811,6 +773,7 @@ jobs:
       vllm:
         type: group
         label: vLLM Settings
+        collapsed: true
         items:
           num_gpus:
             type: dropdown
@@ -869,7 +832,7 @@ jobs:
             type: dropdown
             label: Data Type
             default: bfloat16
-            tooltip: Model precision. bfloat16 recommended for newer GPUs.
+            tooltip: Model precision. Select 'Custom' to specify via extra arguments.
             options:
               - value: bfloat16
                 label: "bfloat16 (Recommended for A100/H100)"
@@ -877,39 +840,39 @@ jobs:
                 label: "float16 (Better compatibility)"
               - value: auto
                 label: "Auto (model default)"
+              - value: custom
+                label: "Custom (specify in extra args)"
           
           extra_args:
             type: string
             label: Additional Arguments
             default: "--trust_remote_code --async-scheduling"
             placeholder: "--trust_remote_code"
-            tooltip: Additional vLLM arguments (advanced users)
+            tooltip: Additional vLLM arguments. If dtype is 'Custom', include --dtype here.
             optional: true
-      
-      apikey:
-        label: vLLM API Key
-        optional: true
-        tooltip: Optional API key for vLLM server. Can be any value (e.g., 'dummy') - Cline and other IDEs require a value but do not validate it.
-        type: password
 
       # ========================================================================
       # RAG Configuration
       # ========================================================================
-      docsdir:
-        label: RAG Documents Directory
+      rag:
+        type: group
+        label: RAG Settings
         hidden: ${{ inputs.runtype != 'all' }}
-        optional: true
-        default: ./docs
-        type: string
-        tooltip: Directory containing documents to index for RAG
-      
-      systemprompt:
-        type: string
-        label: System Prompt
-        hidden: ${{ inputs.runtype != 'all' }}
-        textarea: true
-        optional: true
-        default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+        collapsed: true
+        items:
+          docsdir:
+            label: Documents Directory
+            optional: true
+            default: ./docs
+            type: string
+            tooltip: Directory containing documents to index for RAG
+          
+          systemprompt:
+            type: string
+            label: System Prompt
+            textarea: true
+            optional: true
+            default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
 
       # ========================================================================
       # Container Configuration
@@ -918,6 +881,7 @@ jobs:
         type: group
         label: Container Options
         hidden: ${{ inputs.runmode != 'singularity' }}
+        collapsed: true
         items:
           source:
             type: dropdown
@@ -963,6 +927,7 @@ jobs:
         type: group
         label: SLURM Options
         hidden: ${{ inputs.execmethod != 'SLURM' }}
+        collapsed: true
         items:
           account:
             label: Account
@@ -1022,6 +987,7 @@ jobs:
         type: group
         label: PBS Options
         hidden: ${{ inputs.execmethod != 'PBS' }}
+        collapsed: true
         items:
           account:
             label: Account
@@ -1051,6 +1017,24 @@ jobs:
         label: Advanced Settings
         collapsed: true
         items:
+          localport:
+            label: Local Port
+            default: '5555'
+            tooltip: Port in your workspace to access the service
+            type: string
+          
+          apikey:
+            label: vLLM API Key
+            optional: true
+            tooltip: Optional API key for vLLM server. Can be any value (e.g., 'dummy') - Cline and other IDEs require a value but do not validate it.
+            type: password
+          
+          rundir:
+            label: Run Directory
+            default: ~/pw/activate-rag-vllm
+            type: string
+            tooltip: Directory where the service will be deployed
+          
           repository:
             type: string
             label: Repository
