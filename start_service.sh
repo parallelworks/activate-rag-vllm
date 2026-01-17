@@ -260,12 +260,20 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     # If embedding model is a local path, bind it into the RAG container.
     RAG_EMBED_BIND=""
-    if [[ -n "${EMBEDDING_MODEL:-}" && "${EMBEDDING_MODEL}" == /* ]]; then
-        EMB_MODEL_PATH="${EMBEDDING_MODEL/#\~/$HOME}"
+    RAG_INDEXER_BIND=""
+    EMBEDDING_MODEL_CONTAINER="${EMBEDDING_MODEL:-}"
+    if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" == /* ]]; then
+        EMB_MODEL_PATH="${EMBEDDING_MODEL_CONTAINER/#\~/$HOME}"
         EMB_MODEL_BASE=$(basename "$EMB_MODEL_PATH")
-        EMB_MODEL_CONTAINER="/${EMB_MODEL_BASE}"
-        sed -i "s|^[#[:space:]]*\\(export[[:space:]]\\+\\)\\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMB_MODEL_CONTAINER|" env.sh
-        RAG_EMBED_BIND="--bind ${EMB_MODEL_PATH}:${EMB_MODEL_CONTAINER}"
+        EMBEDDING_MODEL_CONTAINER="/${EMB_MODEL_BASE}"
+        sed -i "s|^[#[:space:]]*\\(export[[:space:]]\\+\\)\\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMBEDDING_MODEL_CONTAINER|" env.sh
+        RAG_EMBED_BIND="--bind ${EMB_MODEL_PATH}:${EMBEDDING_MODEL_CONTAINER}"
+    fi
+    if [[ -n "${EMBEDDING_MODEL_CONTAINER}" ]]; then
+        INDEXER_CFG="./indexer_config.runtime.yaml"
+        cp -f indexer_config.yaml "$INDEXER_CFG"
+        sed -i "s|^embedding_model:.*|embedding_model: ${EMBEDDING_MODEL_CONTAINER}|" "$INDEXER_CFG"
+        RAG_INDEXER_BIND="--bind ${INDEXER_CFG}:/app/indexer_config.yaml"
     fi
 
     # Cleanup function
@@ -318,6 +326,7 @@ EOF
             --bind ./cache/chroma:/chroma_data \
             --bind ./docs:/docs \
             $RAG_EMBED_BIND \
+            $RAG_INDEXER_BIND \
             "$RAG_SIF" rag
 
         # Run RAG services inside the instance
@@ -332,7 +341,7 @@ EOF
             sleep 3
             
             # Start RAG server
-            nohup python3 /app/rag_server.py > /logs/rag_server.out 2>&1 &
+            nohup python3 /app/rag_server.py --embedding_model \"${EMBEDDING_MODEL_CONTAINER}\" > /logs/rag_server.out 2>&1 &
             echo \$! > /logs/rag_server.pid
             
             # Start RAG proxy
@@ -340,7 +349,7 @@ EOF
             echo \$! > /logs/rag_proxy.pid
             
             # Start indexer
-            nohup python3 /app/indexer.py > /logs/indexer.out 2>&1 &
+            nohup python3 /app/indexer.py --config /app/indexer_config.yaml > /logs/indexer.out 2>&1 &
             echo \$! > /logs/indexer.pid
         "
         
