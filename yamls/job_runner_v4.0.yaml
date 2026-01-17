@@ -1,0 +1,809 @@
+# yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
+---
+# ==============================================================================
+# Job Runner v4.0 - Unified Job Submission Workflow
+# ==============================================================================
+# A reusable marketplace action for submitting scripts to HPC schedulers
+# Supports: SSH (direct), SLURM, PBS
+#
+# Usage:
+#   steps:
+#     - name: Run My Script
+#       uses: marketplace/job_runner/v4.0
+#       with:
+#         resource: ${{ inputs.resource }}
+#         rundir: /path/to/workdir
+#         use_existing_script: true
+#         script_path: /path/to/script.sh
+#         scheduler: true
+#         slurm:
+#           partition: gpu
+#           time: 04:00:00
+#           account: myaccount
+# ==============================================================================
+
+jobs:
+  # ============================================================================
+  # Output Streaming - Tails job output for real-time visibility
+  # ============================================================================
+  stream_output:
+    working-directory: ${{ inputs.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Stream Output
+        run: |
+          set -x
+          OUTPUT_FILE="run.${PW_JOB_ID}.out"
+          
+          # Wait for output file to exist (with timeout)
+          timeout=60
+          elapsed=0
+          while [ ! -f "${OUTPUT_FILE}" ]; do
+            sleep 1
+            ((elapsed++))
+            [[ $elapsed -ge $timeout ]] && { echo "$(date) Timeout waiting for ${OUTPUT_FILE}"; break; }
+          done
+          
+          # Start tailing
+          touch "${OUTPUT_FILE}"
+          tail -f "${OUTPUT_FILE}" &
+          tail_pid=$!
+          
+          # Wait for cancellation signal OR job.ended (failure detection)
+          while [ ! -f "CANCEL_STREAMING" ] && [ ! -f "job.ended" ]; do
+            sleep ${{ inputs.poll_interval }}
+          done
+          
+          # Check why we exited
+          if [ -f "job.ended" ]; then
+            echo "$(date) job.ended detected - job has finished or failed"
+            # Give a moment for final output
+            sleep 2
+          fi
+          
+          if [ -f "CANCEL_STREAMING" ]; then
+            rm -f CANCEL_STREAMING
+            echo "$(date) CANCEL_STREAMING detected, stopping output stream"
+          fi
+          
+          kill ${tail_pid} 2>/dev/null || true
+          
+          # If job.ended exists without CANCEL_STREAMING, it was a failure
+          if [ -f "job.ended" ] && [ ! -f "COMPLETED" ]; then
+            echo "$(date) ERROR: Job ended unexpectedly"
+            exit 1
+          fi
+
+  # ============================================================================
+  # Script Template Creation
+  # ============================================================================
+  create_script_template:
+    working-directory: ${{ inputs.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create Script Template
+        run: |
+          set -x
+          
+          if [[ "${{ inputs.use_existing_script }}" == "true" ]]; then
+            if [ ! -f "${{ inputs.script_path }}" ]; then
+              echo "$(date) ERROR: File ${{ inputs.script_path }} does not exist or is not a regular file." >&2
+              exit 1
+            fi
+            cp "${{ inputs.script_path }}" run-template.sh
+          else
+            # Create script from inline content
+            cat <<'SCRIPT_EOF' > run-template.sh
+          ${{ inputs.script }}
+          SCRIPT_EOF
+          fi
+          
+          chmod +x run-template.sh
+          
+          # Inject job markers if enabled
+          if [[ "${{ inputs.inject_markers }}" == "true" ]]; then
+            # Create a wrapper that adds markers
+            cat > run-template-wrapped.sh << 'MARKER_EOF'
+          # Job markers for session management
+          touch job.started
+          hostname > HOSTNAME
+          echo "$(date) Job started on $(hostname)"
+          MARKER_EOF
+            cat run-template.sh >> run-template-wrapped.sh
+            mv run-template-wrapped.sh run-template.sh
+            chmod +x run-template.sh
+          fi
+          
+          echo "$(date) Script template created:"
+          cat run-template.sh
+
+  # ============================================================================
+  # SSH Job (Direct Execution)
+  # ============================================================================
+  ssh_job:
+    needs:
+      - create_script_template
+    if: ${{ inputs.slurm.is_disabled && inputs.pbs.is_disabled }}
+    working-directory: ${{ inputs.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Create SSH Script
+        run: |
+          set -x
+          cat > run.sh << 'SHEBANG_EOF'
+          ${{ inputs.shebang }}
+          SHEBANG_EOF
+          
+          echo "cd ${PWD}" >> run.sh
+          cat run-template.sh >> run.sh
+          chmod +x run.sh
+          
+          echo "$(date) SSH script created:"
+          cat run.sh
+      
+      - name: Execute Script
+        run: |
+          set -x
+          echo "$(date) Executing script via SSH"
+          ./run.sh > run.${PW_JOB_ID}.out 2>&1
+          exit_code=$?
+          
+          echo "$(date) Script completed with exit code: ${exit_code}"
+          touch job.ended
+          echo "exit_code=${exit_code}" >> $OUTPUTS
+          
+          if [[ $exit_code -ne 0 ]]; then
+            echo "$(date) ERROR: Script failed with exit code ${exit_code}"
+            exit ${exit_code}
+          fi
+        cleanup: |
+          set -x
+          echo "$(date) SSH job cleanup triggered"
+          # Try to kill any background processes from the script
+          pkill -f "run.sh" 2>/dev/null || true
+          touch job.ended
+
+  # ============================================================================
+  # PBS Job
+  # ============================================================================
+  pbs_job:
+    needs:
+      - create_script_template
+    if: ${{ inputs.pbs.is_disabled == false }}
+    working-directory: ${{ inputs.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      jobid: ${{ needs.pbs_job.steps.submit.outputs.jobid }}
+    steps:
+      - name: Create PBS Script
+        id: create_script
+        run: |
+          set -x
+          
+          cat > run.sh << 'SHEBANG_EOF'
+          ${{ inputs.shebang }}
+          SHEBANG_EOF
+          
+          # Add PBS directives
+          echo "#PBS -N ${PW_JOB_ID}" >> run.sh
+          echo "#PBS -o ${PWD}/run.${PW_JOB_ID}.out" >> run.sh
+          echo "#PBS -j oe" >> run.sh
+          
+          # Add account if specified
+          [[ -n "${{ inputs.pbs.account }}" && "${{ inputs.pbs.account }}" != "undefined" ]] && \
+            echo "#PBS -A ${{ inputs.pbs.account }}" >> run.sh
+          
+          # Add queue if specified
+          [[ -n "${{ inputs.pbs.queue }}" && "${{ inputs.pbs.queue }}" != "undefined" ]] && \
+            echo "#PBS -q ${{ inputs.pbs.queue }}" >> run.sh
+          
+          # Add walltime if specified
+          [[ -n "${{ inputs.pbs.walltime }}" && "${{ inputs.pbs.walltime }}" != "undefined" ]] && \
+            echo "#PBS -l walltime=${{ inputs.pbs.walltime }}" >> run.sh
+          
+          # Add resource selection if specified
+          [[ -n "${{ inputs.pbs.select }}" && "${{ inputs.pbs.select }}" != "undefined" ]] && \
+            echo "#PBS -l select=${{ inputs.pbs.select }}" >> run.sh
+          
+          # Add custom scheduler directives
+          if [[ -n "${{ inputs.pbs.scheduler_directives }}" && "${{ inputs.pbs.scheduler_directives }}" != "undefined" ]]; then
+            echo "${{ inputs.pbs.scheduler_directives }}" >> run.sh
+          fi
+          
+          # Change to working directory
+          echo "" >> run.sh
+          echo "cd ${PWD}" >> run.sh
+          echo "" >> run.sh
+          
+          # Append script template
+          cat run-template.sh >> run.sh
+          chmod +x run.sh
+          
+          # Clean up empty/undefined directives
+          sed -i '/^#PBS.*=$/d' run.sh
+          sed -i '/^#PBS.*undefined/d' run.sh
+          sed -i '/^[[:space:]]*$/d' run.sh
+          
+          echo "$(date) PBS script created:"
+          cat run.sh
+      
+      - name: Submit PBS Job
+        id: submit
+        run: |
+          set -x
+          echo "$(date) Submitting PBS Job"
+          
+          submit_output=$(qsub run.sh 2>&1)
+          submit_exit=$?
+          
+          if [[ $submit_exit -ne 0 ]]; then
+            echo "$(date) ERROR: qsub failed with exit code ${submit_exit}"
+            echo "${submit_output}"
+            exit 1
+          fi
+          
+          # Extract job ID (handle different PBS output formats)
+          jobid=$(echo "${submit_output}" | grep -oE '^[0-9]+' | head -1)
+          
+          if [[ -z "${jobid}" ]]; then
+            # Try alternative format: 12345.server
+            jobid=$(echo "${submit_output}" | cut -d'.' -f1)
+          fi
+          
+          if ! [[ "${jobid}" =~ ^[0-9]+$ ]]; then
+            echo "$(date) ERROR: Job submission failed - invalid jobid '${jobid}'"
+            echo "Submit output: ${submit_output}"
+            exit 1
+          fi
+          
+          echo "$(date) PBS job submitted: ${jobid}"
+          echo "jobid=${jobid}" | tee -a $OUTPUTS
+          echo "${jobid}" > jobid
+        cleanup: |
+          set -x
+          echo "$(date) PBS job cleanup triggered"
+          if [ -f jobid ]; then
+            jobid=$(cat jobid)
+            echo "$(date) Cancelling PBS job ${jobid}"
+            qdel "${jobid}" 2>/dev/null || true
+          fi
+          touch job.ended
+      
+      - name: Monitor PBS Job
+        id: monitor
+        run: |
+          set -x
+          jobid=${{ needs.pbs_job.steps.submit.outputs.jobid }}
+          echo "$(date) Monitoring PBS job ${jobid}"
+          
+          get_pbs_job_status() {
+            if [ -z "${QSTAT_HEADER}" ]; then
+              export QSTAT_HEADER="$(qstat 2>/dev/null | awk 'NR==1')"
+            fi
+            
+            status_response=$(qstat 2>/dev/null | grep "\<${jobid}\>" || true)
+            job_status=$(qstat -f ${jobid} 2>/dev/null | grep "job_state" | cut -d'=' -f2 | tr -d ' ' || true)
+            
+            echo "${QSTAT_HEADER}"
+            echo "${status_response}"
+            echo "Job state: ${job_status}"
+          }
+          
+          while true; do
+            sleep ${{ inputs.poll_interval }}
+            get_pbs_job_status
+            
+            case "${job_status}" in
+              C|E|"")
+                echo "$(date) PBS job completed or not found (state: ${job_status})"
+                
+                # Check exit status if available
+                exit_status=$(qstat -f ${jobid} 2>/dev/null | grep "Exit_status" | cut -d'=' -f2 | tr -d ' ' || echo "0")
+                if [[ "${exit_status}" != "0" && -n "${exit_status}" ]]; then
+                  echo "$(date) WARNING: Job exited with status ${exit_status}"
+                fi
+                
+                touch job.ended
+                break
+                ;;
+              H|Q|W|T|M)
+                echo "$(date) Job waiting/held (state: ${job_status})"
+                ;;
+              R|E)
+                echo "$(date) Job running (state: ${job_status})"
+                ;;
+            esac
+          done
+
+  # ============================================================================
+  # SLURM Job
+  # ============================================================================
+  slurm_job:
+    needs:
+      - create_script_template
+    if: ${{ inputs.slurm.is_disabled == false }}
+    working-directory: ${{ inputs.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      jobid: ${{ needs.slurm_job.steps.submit.outputs.jobid }}
+    steps:
+      - name: Create SLURM Script
+        id: create_script
+        run: |
+          set -x
+          
+          cat > run.sh << 'SHEBANG_EOF'
+          ${{ inputs.shebang }}
+          SHEBANG_EOF
+          
+          # Add SLURM directives
+          echo "#SBATCH --job-name=${PW_JOB_ID}" >> run.sh
+          echo "#SBATCH --chdir=${PWD}" >> run.sh
+          echo "#SBATCH --output=${PWD}/run.${PW_JOB_ID}.out" >> run.sh
+          echo "#SBATCH --error=${PWD}/run.${PW_JOB_ID}.out" >> run.sh
+          
+          # Add account if specified
+          [[ -n "${{ inputs.slurm.account }}" && "${{ inputs.slurm.account }}" != "undefined" ]] && \
+            echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
+          
+          # Add partition if specified
+          [[ -n "${{ inputs.slurm.partition }}" && "${{ inputs.slurm.partition }}" != "undefined" ]] && \
+            echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          
+          # Add QoS if specified
+          [[ -n "${{ inputs.slurm.qos }}" && "${{ inputs.slurm.qos }}" != "undefined" ]] && \
+            echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
+          
+          # Add time limit
+          [[ -n "${{ inputs.slurm.time }}" && "${{ inputs.slurm.time }}" != "undefined" ]] && \
+            echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
+          
+          # Add nodes
+          [[ -n "${{ inputs.slurm.nodes }}" && "${{ inputs.slurm.nodes }}" != "undefined" ]] && \
+            echo "#SBATCH --nodes=${{ inputs.slurm.nodes }}" >> run.sh
+          
+          # Add CPUs per task
+          [[ -n "${{ inputs.slurm.cpus_per_task }}" && "${{ inputs.slurm.cpus_per_task }}" != "undefined" ]] && \
+            echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
+          
+          # Add GPUs (gres)
+          [[ -n "${{ inputs.slurm.gres }}" && "${{ inputs.slurm.gres }}" != "undefined" ]] && \
+            echo "#SBATCH --gres=${{ inputs.slurm.gres }}" >> run.sh
+          
+          # Add memory
+          [[ -n "${{ inputs.slurm.mem }}" && "${{ inputs.slurm.mem }}" != "undefined" ]] && \
+            echo "#SBATCH --mem=${{ inputs.slurm.mem }}" >> run.sh
+          
+          # Add constraint
+          [[ -n "${{ inputs.slurm.constraint }}" && "${{ inputs.slurm.constraint }}" != "undefined" ]] && \
+            echo "#SBATCH --constraint=${{ inputs.slurm.constraint }}" >> run.sh
+          
+          # Add array job support
+          [[ -n "${{ inputs.slurm.array }}" && "${{ inputs.slurm.array }}" != "undefined" ]] && \
+            echo "#SBATCH --array=${{ inputs.slurm.array }}" >> run.sh
+          
+          # Add custom scheduler directives
+          if [[ -n "${{ inputs.slurm.scheduler_directives }}" && "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
+            echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
+          fi
+          
+          # Add blank line before script content
+          echo "" >> run.sh
+          
+          # Append script template
+          cat run-template.sh >> run.sh
+          chmod +x run.sh
+          
+          # Clean up empty/undefined SBATCH directives
+          sed -i '/^#SBATCH --[^=]*=$/d' run.sh
+          sed -i '/^#SBATCH.*undefined/d' run.sh
+          sed -i '/^#SBATCH.*=none$/d' run.sh
+          sed -i '/^[[:space:]]*$/d' run.sh
+          
+          echo "$(date) SLURM script created:"
+          cat run.sh
+      
+      - name: Submit SLURM Job
+        id: submit
+        run: |
+          set -x
+          echo "$(date) Submitting SLURM Job"
+          
+          submit_output=$(sbatch run.sh 2>&1)
+          submit_exit=$?
+          
+          if [[ $submit_exit -ne 0 ]]; then
+            echo "$(date) ERROR: sbatch failed with exit code ${submit_exit}"
+            echo "${submit_output}"
+            exit 1
+          fi
+          
+          # Extract job ID from "Submitted batch job 12345"
+          jobid=$(echo "${submit_output}" | grep -oE '[0-9]+$' | tail -1)
+          
+          if ! [[ "${jobid}" =~ ^[0-9]+$ ]]; then
+            echo "$(date) ERROR: Job submission failed - invalid jobid"
+            echo "Submit output: ${submit_output}"
+            exit 1
+          fi
+          
+          echo "$(date) SLURM job submitted: ${jobid}"
+          echo "jobid=${jobid}" | tee -a $OUTPUTS
+          echo "${jobid}" > jobid
+        cleanup: |
+          set -x
+          echo "$(date) SLURM job cleanup triggered"
+          if [ -f jobid ]; then
+            jobid=$(cat jobid)
+            echo "$(date) Cancelling SLURM job ${jobid}"
+            
+            # Try to get compute node and run cancel script there
+            target_node=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null | head -1)
+            if [[ -n "${target_node}" ]]; then
+              ssh "${target_node}" "cd ${PWD} && bash cancel.sh" 2>/dev/null || true
+            fi
+            
+            scancel "${jobid}" 2>/dev/null || true
+          fi
+          touch job.ended
+      
+      - name: Monitor SLURM Job
+        id: monitor
+        run: |
+          set -x
+          jobid=${{ needs.slurm_job.steps.submit.outputs.jobid }}
+          echo "$(date) Monitoring SLURM job ${jobid}"
+          
+          get_slurm_job_status() {
+            if [ -z "${SQUEUE_HEADER}" ]; then
+              export SQUEUE_HEADER="$(squeue 2>/dev/null | awk 'NR==1')"
+            fi
+            
+            status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
+            status_response=$(squeue 2>/dev/null | awk -v jobid="${jobid}" '$1 == jobid')
+            
+            echo "${SQUEUE_HEADER}"
+            echo "${status_response}"
+            
+            job_status=$(echo "${status_response}" | awk -v col="${status_column}" '{print $col}')
+          }
+          
+          while true; do
+            sleep ${{ inputs.poll_interval }}
+            get_slurm_job_status
+            
+            if [ -z "${job_status}" ]; then
+              # Job no longer in queue - check final status
+              final_state=$(sacct -j ${jobid} --format=state --noheader 2>/dev/null | head -1 | tr -d ' ')
+              echo "$(date) Job completed with final state: ${final_state}"
+              
+              case "${final_state}" in
+                COMPLETED)
+                  echo "$(date) Job completed successfully"
+                  ;;
+                FAILED|NODE_FAIL|TIMEOUT|CANCELLED|OUT_OF_MEMORY)
+                  echo "$(date) WARNING: Job ended with state ${final_state}"
+                  ;;
+              esac
+              
+              touch job.ended
+              break
+            fi
+            
+            case "${job_status}" in
+              PD)
+                echo "$(date) Job pending"
+                ;;
+              R)
+                echo "$(date) Job running"
+                ;;
+              CG)
+                echo "$(date) Job completing"
+                ;;
+            esac
+          done
+
+  # ============================================================================
+  # Cleanup (Always runs)
+  # ============================================================================
+  cleanup:
+    if: ${{ always }}
+    needs:
+      - ssh_job
+      - pbs_job
+      - slurm_job
+    working-directory: ${{ inputs.rundir }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Cleanup
+        run: |
+          set -x
+          echo "$(date) Workflow completed"
+          touch COMPLETED
+        cleanup: |
+          set -x
+          echo "$(date) Cleanup handler triggered"
+          touch CANCEL_STREAMING
+          
+          if [ -f COMPLETED ]; then
+            rm -f COMPLETED
+            echo "$(date) Job completed normally"
+            exit 0
+          fi
+          
+          echo "$(date) Job was cancelled, cleaning up..."
+          
+          # Cancel PBS job if running
+          if [[ "${{ inputs.pbs.is_disabled }}" == "false" ]]; then
+            if [ -f jobid ]; then
+              jobid=$(cat jobid)
+              echo "$(date) Cancelling PBS job ${jobid}"
+              qdel "${jobid}" 2>/dev/null || true
+            fi
+          fi
+          
+          # Cancel SLURM job if running
+          if [[ "${{ inputs.slurm.is_disabled }}" == "false" ]]; then
+            if [ -f jobid ]; then
+              jobid=$(cat jobid)
+              echo "$(date) Cancelling SLURM job ${jobid}"
+              scancel "${jobid}" 2>/dev/null || true
+            fi
+          fi
+          
+          # Run user's cancel script if it exists
+          if [ -f cancel.sh ]; then
+            echo "$(date) Running cancel.sh"
+            bash cancel.sh 2>/dev/null || true
+          fi
+          
+          # Clean up temp files
+          rm -f jobid CANCEL_STREAMING job.started HOSTNAME
+
+# ==============================================================================
+# INPUT DEFINITIONS
+# ==============================================================================
+'on':
+  execute:
+    inputs:
+      # ========================================================================
+      # Core Settings
+      # ========================================================================
+      resource:
+        label: Resource Target
+        type: compute-clusters
+        autoselect: true
+        optional: false
+        tooltip: The compute resource to execute the script on
+      
+      shebang:
+        label: Shebang
+        type: string
+        default: '#!/bin/bash'
+        tooltip: The shell interpreter line for the script
+      
+      rundir:
+        label: Run Directory
+        type: string
+        default: ${PWD}
+        tooltip: The directory where the script will be executed
+      
+      # ========================================================================
+      # Script Configuration
+      # ========================================================================
+      use_existing_script:
+        type: boolean
+        default: false
+        label: Use Existing Script?
+        tooltip: |
+          true → Use script at script_path on the target resource
+          false → Create script from the 'script' input
+      
+      script:
+        label: Script Content
+        type: editor
+        hidden: ${{ inputs.use_existing_script == true }}
+        ignore: ${{ .hidden }}
+        tooltip: The script content to execute (without shebang or scheduler directives)
+        default: |
+          echo "$(date) Running in directory ${PWD} on ${HOSTNAME}"
+      
+      script_path:
+        label: Script Path
+        type: string
+        hidden: ${{ inputs.use_existing_script == false }}
+        ignore: ${{ .hidden }}
+        tooltip: Path to an existing script on the target resource
+      
+      # ========================================================================
+      # Job Control
+      # ========================================================================
+      scheduler:
+        type: boolean
+        default: false
+        label: Submit to Scheduler?
+        hidden: ${{ inputs.resource.schedulerType == '' }}
+        tooltip: |
+          true → Submit job via scheduler (SLURM/PBS)
+          false → Execute directly via SSH
+      
+      inject_markers:
+        type: boolean
+        default: true
+        label: Inject Job Markers?
+        tooltip: |
+          Automatically inject job.started and HOSTNAME markers at the start
+          of the script for session management coordination
+      
+      poll_interval:
+        type: number
+        default: 15
+        label: Poll Interval (seconds)
+        tooltip: How often to check job status (in seconds)
+        hidden: true
+      
+      # ========================================================================
+      # SLURM Configuration
+      # ========================================================================
+      slurm:
+        type: group
+        label: SLURM Configuration
+        hidden: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+        items:
+          is_disabled:
+            type: boolean
+            hidden: true
+            default: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+            label: Is SLURM disabled?
+          
+          account:
+            label: Account
+            type: slurm-accounts
+            resource: ${{ inputs.resource }}
+            optional: true
+            tooltip: SLURM account for job submission (--account)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          partition:
+            type: slurm-partitions
+            label: Partition
+            resource: ${{ inputs.resource }}
+            optional: true
+            tooltip: SLURM partition for job submission (--partition)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          qos:
+            label: Quality of Service
+            type: slurm-qos
+            resource: ${{ inputs.resource }}
+            optional: true
+            tooltip: SLURM QoS setting (--qos)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          time:
+            label: Walltime
+            type: string
+            default: '04:00:00'
+            tooltip: Maximum job duration, e.g., 04:00:00 (--time)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          nodes:
+            label: Nodes
+            type: number
+            default: 1
+            min: 1
+            optional: true
+            tooltip: Number of nodes to request (--nodes)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          cpus_per_task:
+            label: CPUs per Task
+            type: number
+            default: 4
+            min: 1
+            max: 256
+            optional: true
+            tooltip: Number of CPUs per task (--cpus-per-task)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          gres:
+            label: Generic Resources (GPUs)
+            type: string
+            placeholder: "gpu:1"
+            optional: true
+            tooltip: Generic resource specification, e.g., gpu:1, gpu:a100:2 (--gres)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          mem:
+            label: Memory
+            type: string
+            placeholder: "32G"
+            optional: true
+            tooltip: Memory per node, e.g., 32G, 64000M (--mem)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          constraint:
+            label: Constraint
+            type: string
+            optional: true
+            tooltip: Node feature constraint, e.g., gpu, a100 (--constraint)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          array:
+            label: Array Job
+            type: string
+            placeholder: "0-9"
+            optional: true
+            tooltip: Job array specification, e.g., 0-9, 1-100%10 (--array)
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+          
+          scheduler_directives:
+            type: editor
+            label: Additional Directives
+            optional: true
+            tooltip: |
+              Additional SLURM directives (one per line, include #SBATCH prefix)
+              Example:
+                #SBATCH --exclusive
+                #SBATCH --mail-type=END
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+      
+      # ========================================================================
+      # PBS Configuration
+      # ========================================================================
+      pbs:
+        type: group
+        label: PBS Configuration
+        hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+        items:
+          is_disabled:
+            type: boolean
+            hidden: true
+            default: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+            label: Is PBS disabled?
+          
+          account:
+            label: Account
+            type: string
+            optional: true
+            tooltip: PBS account for job submission (-A)
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+          
+          queue:
+            label: Queue
+            type: string
+            optional: true
+            tooltip: PBS queue name (-q)
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+          
+          walltime:
+            label: Walltime
+            type: string
+            default: '04:00:00'
+            tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+          
+          select:
+            label: Resource Selection
+            type: string
+            placeholder: "1:ncpus=8:ngpus=1"
+            optional: true
+            tooltip: PBS resource selection string (-l select=)
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+          
+          scheduler_directives:
+            label: Additional Directives
+            type: editor
+            optional: true
+            tooltip: |
+              Additional PBS directives (one per line, include #PBS prefix)
+              Example:
+                #PBS -V
+                #PBS -m ae
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
