@@ -442,8 +442,7 @@ jobs:
             
             if [ -f SESSION_PORT ]; then
               echo "$(date) Success: SESSION_PORT found!"
-              RAW_PORT=$(cat SESSION_PORT)
-              PORT="${RAW_PORT##*=}"
+              PORT=$(cat SESSION_PORT)
               echo "SESSION_PORT=$PORT" | tee -a "$OUTPUTS"
               exit 0
             elif [ -f job.ended ]; then
