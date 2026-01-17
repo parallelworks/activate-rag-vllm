@@ -306,7 +306,7 @@ jobs:
           echo "Tiktoken encodings downloaded"
 
   # ============================================================================
-  # Run Service (using marketplace job-runner)
+  # Run Service (using marketplace job_runner)
   # ============================================================================
   run_service:
     needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
