@@ -258,6 +258,16 @@ elif [ "$RUNMODE" == "singularity" ]; then
     # Define common bind mounts
     COMMON_BINDS="--bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh"
 
+    # If embedding model is a local path, bind it into the RAG container.
+    RAG_EMBED_BIND=""
+    if [[ -n "${EMBEDDING_MODEL:-}" && "${EMBEDDING_MODEL}" == /* ]]; then
+        EMB_MODEL_PATH="${EMBEDDING_MODEL/#\~/$HOME}"
+        EMB_MODEL_BASE=$(basename "$EMB_MODEL_PATH")
+        EMB_MODEL_CONTAINER="/${EMB_MODEL_BASE}"
+        sed -i "s|^[#[:space:]]*\\(export[[:space:]]\\+\\)\\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMB_MODEL_CONTAINER|" env.sh
+        RAG_EMBED_BIND="--bind ${EMB_MODEL_PATH}:${EMB_MODEL_CONTAINER}"
+    fi
+
     # Cleanup function
     cleanup() {
         echo "$(date) Cleaning up singularity instances..."
@@ -307,6 +317,7 @@ EOF
             $COMMON_BINDS \
             --bind ./cache/chroma:/chroma_data \
             --bind ./docs:/docs \
+            $RAG_EMBED_BIND \
             "$RAG_SIF" rag
 
         # Run RAG services inside the instance
