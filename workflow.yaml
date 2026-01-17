@@ -630,13 +630,13 @@ jobs:
       runtype:
         label: Deployment Type
         type: dropdown
-        default: all
+        default: vllm
         tooltip: Deploy vLLM only or full vLLM+RAG stack
         options:
-          - value: all
-            label: vLLM + RAG (Full Stack)
           - value: vllm
             label: vLLM Only
+          - value: all
+            label: vLLM + RAG (Full Stack)
       
       build:
         label: Build Containers
