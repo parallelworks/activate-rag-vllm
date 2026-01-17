@@ -258,7 +258,7 @@ export_session_port() {
     local port="$1"
     local file="${2:-SESSION_PORT}"
     
-    echo "SESSION_PORT=${port}" > "$file"
+    echo "${port}" > "$file"
     info "Session port exported: $port"
 }
 

@@ -114,11 +114,11 @@ if [ "$RUNMODE" == "docker" ];then
         VLLM_SERVER_PORT=$(pw agent open-port)
         PROXY_PORT=${service_port}
         # TRANSITION CODE
-        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
+        echo "${VLLM_SERVER_PORT}" > SESSION_PORT
     else
         PROXY_PORT=$(pw agent open-port)
         VLLM_SERVER_PORT=${service_port}
-        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT
+        echo "${VLLM_SERVER_PORT}" > SESSION_PORT
     fi
     
     sed -i "s/^VLLM_SERVER_PORT=.*/VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" .env
@@ -200,9 +200,9 @@ elif [ "$RUNMODE" == "singularity" ]; then
     # - vLLM only: users connect directly to vLLM
     # - all (RAG): users connect to RAG proxy which forwards to vLLM
     if [ "$RUNTYPE" == "all" ]; then
-        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT 
+        echo "${PROXY_PORT}" > SESSION_PORT 
     else
-        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT 
+        echo "${VLLM_SERVER_PORT}" > SESSION_PORT 
     fi
 
     sed -i "s/^export VLLM_SERVER_PORT=.*/export VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" env.sh
