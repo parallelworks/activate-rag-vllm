@@ -1,9 +1,8 @@
 #!/bin/bash
 set -x
 
-# Mark job as started and record hostname for session management
-touch job.started
-hostname >> HOSTNAME
+# Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
+# when inject_markers=true (default)
 
 source .run.env > /dev/null 2>&1
 #rm .run.env > /dev/null 2>&1

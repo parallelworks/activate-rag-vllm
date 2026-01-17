@@ -285,7 +285,7 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Run Service
-        uses: marketplace/script_submitter/v3.5
+        uses: marketplace/script_submitter/v4.0
         early-cancel: any-job-failed
         with:
           resource: ${{ inputs.resource }}
@@ -294,14 +294,23 @@ jobs:
           use_existing_script: true
           script_path: ${{ needs.setup.outputs.rundir }}/start_service.sh
           scheduler: ${{ inputs.scheduler.enabled }}
+          inject_markers: true
           slurm:
             is_disabled: ${{ inputs.scheduler.slurm.is_disabled }}
+            account: ${{ inputs.scheduler.slurm.account }}
             partition: ${{ inputs.scheduler.slurm.partition }}
+            qos: ${{ inputs.scheduler.slurm.qos }}
             time: ${{ inputs.scheduler.slurm.time }}
+            cpus_per_task: ${{ inputs.scheduler.slurm.cpus_per_task }}
+            gres: ${{ inputs.scheduler.slurm.gres }}
             scheduler_directives: |
               ${{ inputs.scheduler.slurm.scheduler_directives }}
           pbs:
             is_disabled: ${{ inputs.scheduler.pbs.is_disabled }}
+            account: ${{ inputs.scheduler.pbs.account }}
+            queue: ${{ inputs.scheduler.pbs.queue }}
+            walltime: ${{ inputs.scheduler.pbs.walltime }}
+            select: ${{ inputs.scheduler.pbs.select }}
             scheduler_directives: |
               ${{ inputs.scheduler.pbs.scheduler_directives }}
 
@@ -479,7 +488,7 @@ jobs:
                 label: Account
                 type: slurm-accounts
                 resource: ${{ inputs.resource }}
-                tooltip: SLURM account for job submission
+                tooltip: SLURM account for job submission (--account)
                 optional: true
               
               partition:
@@ -487,36 +496,41 @@ jobs:
                 label: Partition
                 optional: true
                 resource: ${{ inputs.resource }}
-                tooltip: Partition for job submission. Leave empty for default.
+                tooltip: Partition for job submission (--partition)
               
               qos:
                 label: Quality of Service (QoS)
                 type: slurm-qos
                 resource: ${{ inputs.resource }}
-                tooltip: SLURM QoS setting
+                tooltip: SLURM QoS setting (--qos)
                 optional: true
               
               cpus_per_task:
                 type: number
                 label: CPUs per Task
                 min: 1
-                max: 128
+                max: 256
                 default: 4
-                tooltip: Number of CPUs for the job
+                tooltip: Number of CPUs for the job (--cpus-per-task)
               
               time:
                 label: Walltime
                 type: string
                 default: 04:00:00
-                tooltip: Maximum job duration (e.g., 04:00:00)
+                tooltip: Maximum job duration, e.g., 04:00:00 (--time)
+              
+              gres:
+                label: GPUs (gres)
+                type: string
+                default: "gpu:1"
+                placeholder: "gpu:1"
+                tooltip: GPU resource specification, e.g., gpu:1, gpu:a100:2 (--gres)
               
               scheduler_directives:
                 type: editor
                 label: Additional Directives
                 optional: true
-                tooltip: Additional SLURM directives
-                default: |
-                  #SBATCH --gres=gpu:1
+                tooltip: Additional SLURM directives (include #SBATCH prefix)
           
           pbs:
             type: group
@@ -533,18 +547,32 @@ jobs:
                 label: Account
                 type: string
                 optional: true
-                tooltip: PBS account for job submission
+                tooltip: PBS account for job submission (-A)
+              
+              queue:
+                label: Queue
+                type: string
+                optional: true
+                tooltip: PBS queue name (-q)
+              
+              walltime:
+                label: Walltime
+                type: string
+                default: 04:00:00
+                tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
+              
+              select:
+                label: Resource Selection
+                type: string
+                default: "1:ncpus=8:ngpus=1"
+                placeholder: "1:ncpus=8:ngpus=1"
+                tooltip: PBS resource selection string, e.g., 1:ncpus=8:ngpus=1 (-l select=)
               
               scheduler_directives:
-                label: PBS Script
+                label: Additional Directives
                 type: editor
-                tooltip: Full PBS script including directives
-                default: |
-                  #!/bin/bash
-                  #PBS -q gpu
-                  #PBS -l select=1:ncpus=8:mpiprocs=1:ngpus=1
-                  #PBS -l walltime=04:00:00
-                  #PBS -V
+                tooltip: Additional PBS directives (include #PBS prefix)
+                optional: true
       
       runmode:
         label: Container Runtime
