@@ -24,7 +24,7 @@ Inputs are organized into logical groups:
 form:
   resource:          # Cluster selection
   scheduler:         # Job scheduler settings (SLURM/PBS/SSH)
-  runmode:           # Container runtime (Singularity/Docker)
+  runmode:           # Container runtime (Apptainer/Singularity/Docker)
   model:             # Model configuration group
   vllm_extra_args:   # vLLM server options
   container:         # Container pull settings
@@ -58,7 +58,7 @@ hf_model_id:
 Common patterns:
 - `hidden: ${{ inputs.X != 'value' }}` - Hide unless X equals value
 - `ignore: ${{ inputs.X != 'value' }}` - Don't include in submission
-- `hidden: ${{ inputs.runmode != 'singularity' }}` - Runtime-specific options
+- `hidden: ${{ inputs.runmode != 'singularity' }}` - Apptainer-specific options
 
 ## Scheduler Configuration
 
@@ -188,7 +188,7 @@ model:
 
 ## Container Configuration
 
-### Singularity Containers
+### Apptainer/Singularity Containers
 
 ```yaml
 container:
@@ -211,7 +211,7 @@ container:
 ### Container Pull Step
 
 ```yaml
-- name: Pull Singularity Containers
+- name: Pull Apptainer Containers
   if: ${{ inputs.runmode == 'singularity' && inputs.container.pull == true }}
   run: |
     if [[ ! -f "vllm.sif" ]]; then
@@ -298,8 +298,8 @@ jobs:
 ### Conditional Execution
 
 ```yaml
-# Run only for Singularity mode
-- name: Install Singularity Compose
+# Run only for Apptainer/Singularity mode
+- name: Install Apptainer Compose
   if: ${{ inputs.runmode == 'singularity' }}
 
 # Run only for HuggingFace models

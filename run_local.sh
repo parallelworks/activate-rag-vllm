@@ -8,7 +8,7 @@
 # Usage:
 #   ./run_local.sh                    # Interactive mode with prompts
 #   ./run_local.sh --config local.env # Use config file
-#   ./run_local.sh --singularity      # Force Singularity mode
+#   ./run_local.sh --singularity      # Force Apptainer/Singularity mode
 #   ./run_local.sh --docker           # Force Docker mode
 #   ./run_local.sh --vllm-only        # Run vLLM without RAG
 #   ./run_local.sh --help             # Show help
@@ -66,7 +66,7 @@ USAGE:
 
 OPTIONS:
     --config FILE       Load configuration from file
-    --singularity       Force Singularity runtime
+    --singularity       Force Apptainer/Singularity runtime
     --docker            Force Docker runtime
     --vllm-only         Run vLLM only (no RAG)
     --build             Build containers from source
@@ -194,15 +194,15 @@ detect_runtime() {
         return
     fi
 
-    # Prefer Singularity if available (typical for HPC)
-    if command -v singularity &>/dev/null; then
+    # Prefer Apptainer/Singularity if available (typical for HPC)
+    if command -v apptainer &>/dev/null || command -v singularity &>/dev/null; then
         RUNMODE="singularity"
-        log_info "Detected Singularity runtime"
+        log_info "Detected Apptainer/Singularity runtime"
     elif command -v docker &>/dev/null; then
         RUNMODE="docker"
         log_info "Detected Docker runtime"
     else
-        log_error "No container runtime found. Please install Docker or Singularity."
+        log_error "No container runtime found. Please install Docker or Apptainer/Singularity."
         exit 1
     fi
 }

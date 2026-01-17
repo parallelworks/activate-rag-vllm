@@ -1,6 +1,6 @@
 # ACTIVATE — vLLM + RAG
 
-Deploy GPU-accelerated language model inference with optional RAG (Retrieval-Augmented Generation) capabilities on the ACTIVATE platform. Optimized for HPC environments using Singularity.
+Deploy GPU-accelerated language model inference with optional RAG (Retrieval-Augmented Generation) capabilities on the ACTIVATE platform. Optimized for HPC environments using Apptainer/Singularity.
 
 ## Overview
 
@@ -102,7 +102,7 @@ activate-rag-vllm/
 ├── rag_server.py          # RAG search server
 ├── indexer.py             # Document indexer
 ├── run_local.sh           # Local development runner
-├── singularity/           # Singularity container configs
+├── singularity/           # Apptainer/Singularity container configs
 ├── docker/                # Docker configs (local dev)
 ├── lib/                   # Shared utilities
 ├── configs/               # HPC preset configurations
@@ -130,7 +130,7 @@ activate-rag-vllm/
 |-------|----------|
 | CUDA out of memory | Reduce `--gpu-memory-utilization` or `--max-model-len` |
 | Model not found | Verify path exists with `config.json`; check HF_TOKEN for gated models |
-| Singularity not found | Load module: `module load singularity` |
+| Apptainer/Singularity not found | Load module: `module load apptainer` or `module load singularity` |
 | Port in use | Service auto-finds available ports; check for existing instances |
 
 ### Logs

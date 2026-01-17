@@ -4,7 +4,7 @@ This guide covers running the ACTIVATE RAG-vLLM stack locally for development, d
 
 ## Prerequisites
 
-- **Container Runtime**: Singularity or Docker
+- **Container Runtime**: Apptainer/Singularity or Docker
 - **GPU**: NVIDIA GPU with CUDA support
 - **Model Weights**: Local path or HuggingFace access
 
@@ -33,7 +33,7 @@ cd activate-rag-vllm
 
 Options:
   --config FILE       Load configuration from file
-  --singularity       Force Singularity runtime
+  --singularity       Force Apptainer/Singularity runtime
   --docker            Force Docker runtime
   --vllm-only         Run vLLM only (no RAG)
   --build             Build containers from source
@@ -105,7 +105,7 @@ DOCS_DIR=./docs
 
 ## Container Setup
 
-### Singularity
+### Apptainer/Singularity
 
 #### Pre-built Containers
 
@@ -120,8 +120,8 @@ pw bucket cp pw://mshaxted/codeassist/rag.sif ./
 ```bash
 # Requires sudo or fakeroot
 cd singularity
-sudo singularity build ../vllm.sif Singularity.vllm
-sudo singularity build ../rag.sif Singularity.rag
+sudo apptainer build ../vllm.sif Singularity.vllm
+sudo apptainer build ../rag.sif Singularity.rag
 
 # Or with singularity-compose
 singularity-compose build
@@ -251,10 +251,10 @@ singularity-compose down
 docker compose down
 ```
 
-#### Singularity Compose Not Found
+#### Apptainer/Singularity Compose Not Found
 
 ```bash
-# Install singularity-compose
+# Install singularity-compose (works with Apptainer)
 python3 -m venv ~/pw/software/singularity-compose
 source ~/pw/software/singularity-compose/bin/activate
 pip install singularity-compose
@@ -309,7 +309,7 @@ This will interactively prompt for:
 # Using generated script
 ./cancel.sh
 
-# Or manually for Singularity
+# Or manually for Apptainer/Singularity
 singularity-compose down
 
 # Or for Docker

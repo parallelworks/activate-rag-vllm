@@ -150,20 +150,20 @@ Background service for document indexing:
 
 ## Deployment Modes
 
-### Singularity (HPC)
+### Apptainer/Singularity (HPC)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     HPC Compute Node                             │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  vllm.sif (Singularity Container)                       │    │
+│  │  vllm.sif (Apptainer Container)                          │    │
 │  │  • vLLM Server                                          │    │
 │  │  • GPU access via --nv                                  │    │
 │  │  • Model mounted from host                              │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  rag.sif (Singularity Container)                        │    │
+│  │  rag.sif (Apptainer Container)                           │    │
 │  │  • RAG Proxy                                            │    │
 │  │  • RAG Server                                           │    │
 │  │  • ChromaDB                                             │    │
@@ -337,7 +337,7 @@ New File: research_paper.pdf
 | `./cache/chroma/` | ChromaDB persistence |
 | `./docs/` | RAG documents |
 | `.run.env` | Runtime environment |
-| `env.sh` | Singularity environment |
+| `env.sh` | Apptainer/Singularity environment |
 | `.env` | Docker environment |
 
 ## Security Considerations

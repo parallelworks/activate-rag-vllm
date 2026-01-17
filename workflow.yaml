@@ -77,7 +77,7 @@ jobs:
             echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
           fi
 
-      - name: Install Singularity Compose
+      - name: Install Apptainer Compose
         if: ${{ inputs.runmode == 'singularity' }}
         early-cancel: any-job-failed
         run: |
@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
       
-      - name: Pull Singularity Containers
+      - name: Pull Apptainer Containers
         if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'pull' }}
         early-cancel: any-job-failed
         run: |
@@ -132,7 +132,7 @@ jobs:
             fi
           fi
 
-          echo "Singularity container pull step complete."
+          echo "Apptainer container pull step complete."
       
       - name: Link Existing Containers
         if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'path' }}
@@ -161,14 +161,14 @@ jobs:
             fi
           fi
       
-      - name: Build Singularity Containers
+      - name: Build Apptainer Containers
         if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'build' }}
         early-cancel: any-job-failed
         run: |
           set -x
           cd ${{ inputs.advanced_settings.rundir }}
           
-          echo "Building Singularity containers from source..."
+          echo "Building Apptainer containers from source..."
           echo "Note: This requires sudo or fakeroot capabilities"
           
           # Build vllm container
@@ -197,7 +197,7 @@ jobs:
             fi
           fi
           
-          echo "Singularity container build complete."
+          echo "Apptainer container build complete."
       
       - name: Download HuggingFace Model
         if: ${{ inputs.model.source == 'huggingface' }}
@@ -697,10 +697,10 @@ jobs:
         label: Container Runtime
         type: dropdown
         default: singularity
-        tooltip: Singularity is recommended for HPC environments
+        tooltip: Apptainer/Singularity is recommended for HPC environments
         options:
           - value: singularity
-            label: Singularity
+            label: Apptainer
           - value: docker
             label: Docker
       
@@ -887,7 +887,7 @@ jobs:
             type: dropdown
             label: Container Source
             default: pull
-            tooltip: How to obtain Singularity containers
+            tooltip: How to obtain Apptainer/Singularity containers
             options:
               - value: pull
                 label: "📥 Pull from bucket (recommended)"
