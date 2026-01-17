@@ -145,9 +145,9 @@ model:
       default: local
       options:
         - value: local
-          label: "📁 Local Path (recommended for HPC)"
+          label: "📁 Local Path (pre-staged weights)"
         - value: huggingface
-          label: "🤗 HuggingFace Hub"
+          label: "🤗 HuggingFace Clone (git-lfs)"
 ```
 
 ### Local Model Path
@@ -162,13 +162,13 @@ model:
       ignore: ${{ inputs.model.source != 'local' }}
 ```
 
-### HuggingFace Configuration
+### HuggingFace Clone Configuration
 
 ```yaml
     hf_model_id:
       type: string
       label: HuggingFace Model ID
-      placeholder: meta-llama/Llama-3.1-8B-Instruct
+      placeholder: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
       hidden: ${{ inputs.model.source != 'huggingface' }}
       ignore: ${{ inputs.model.source != 'huggingface' }}
     

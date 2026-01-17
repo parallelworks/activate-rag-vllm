@@ -199,7 +199,7 @@ jobs:
           
           echo "Apptainer container build complete."
       
-      - name: Download HuggingFace Model
+      - name: Clone HuggingFace Model
         if: ${{ inputs.model.source == 'huggingface' }}
         early-cancel: any-job-failed
         run: |
@@ -209,6 +209,9 @@ jobs:
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
+          
+          # Expand ~ in cache directory
+          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           
           # Create cache directory
           mkdir -p "$CACHE_DIR"
@@ -220,48 +223,82 @@ jobs:
           # Check if model already exists
           if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
             echo "Model already cached at $TARGET_DIR"
-            # Update .run.env with resolved path
+            echo "Skipping clone - model weights already present"
+            # Update .run.env with resolved path for offline loading
             echo "export MODEL_PATH=$TARGET_DIR" >> .run.env
             echo "export MODEL_NAME=$TARGET_DIR" >> .run.env
+            echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
             exit 0
           fi
           
-          echo "Downloading model $MODEL_ID to $TARGET_DIR"
-          mkdir -p "$TARGET_DIR"
+          echo "Cloning model $MODEL_ID to $TARGET_DIR"
           
-          # Prefer git-lfs for HPC environments
-          if command -v git >/dev/null 2>&1 && git lfs version >/dev/null 2>&1; then
-            echo "Using git-lfs to clone model..."
-            
-            REPO_URL="https://huggingface.co/$MODEL_ID"
-            if [[ -n "$HF_TOKEN" ]]; then
-              REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
-            fi
-            
-            git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
-          elif command -v huggingface-cli >/dev/null 2>&1; then
-            echo "Using huggingface-cli to download model..."
-            
-            HF_CMD="huggingface-cli download $MODEL_ID --local-dir $TARGET_DIR"
-            if [[ -n "$HF_TOKEN" ]]; then
-              HF_CMD="$HF_CMD --token $HF_TOKEN"
-            fi
-            eval "$HF_CMD"
-          else
-            echo "ERROR: Neither git-lfs nor huggingface-cli available"
+          # Ensure git is available
+          if ! command -v git >/dev/null 2>&1; then
+            echo "ERROR: git is not installed"
             exit 1
           fi
           
-          # Verify download
+          # Install git-lfs if not available
+          if ! git lfs version >/dev/null 2>&1; then
+            echo "git-lfs not found, installing locally..."
+            
+            mkdir -p $HOME/bin
+            cd /tmp
+            
+            # Download latest git-lfs release
+            LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest \
+              | grep browser_download_url \
+              | grep linux-amd64 \
+              | head -1 \
+              | cut -d '"' -f 4)
+            
+            if [[ -z "$LFS_URL" ]]; then
+              echo "ERROR: Could not find git-lfs download URL"
+              exit 1
+            fi
+            
+            wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+            tar -xzf git-lfs-linux-amd64.tar.gz
+            ./git-lfs-*/install.sh --local
+            rm -rf git-lfs-* 
+            
+            # Add to PATH for this session
+            export PATH="$HOME/bin:$PATH"
+            
+            cd ${{ inputs.advanced_settings.rundir }}
+            
+            if ! git lfs version >/dev/null 2>&1; then
+              echo "ERROR: Failed to install git-lfs"
+              exit 1
+            fi
+            echo "git-lfs installed successfully"
+          fi
+          
+          # Initialize git-lfs
+          git lfs install
+          
+          # Build clone URL (with token for gated models)
+          REPO_URL="https://huggingface.co/$MODEL_ID"
+          if [[ -n "$HF_TOKEN" ]]; then
+            REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+          fi
+          
+          # Clone with depth 1 to save space/time
+          echo "Cloning from HuggingFace Hub..."
+          git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+          
+          # Verify clone
           if [[ ! -f "$TARGET_DIR/config.json" ]]; then
-            echo "ERROR: Model download incomplete - missing config.json"
+            echo "ERROR: Model clone incomplete - missing config.json"
             exit 1
           fi
           
-          # Update .run.env with resolved path
+          # Update .run.env with resolved path for offline loading
           echo "export MODEL_PATH=$TARGET_DIR" >> .run.env
           echo "export MODEL_NAME=$TARGET_DIR" >> .run.env
-          echo "Model download complete: $TARGET_DIR"
+          echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
+          echo "Model clone complete: $TARGET_DIR"
 
       - name: Pull Tiktoken Encodings
         if: ${{ inputs.advanced_settings.tiktoken_encodings == true }}
@@ -726,12 +763,12 @@ jobs:
             type: dropdown
             label: Model Source
             default: local
-            tooltip: Use a pre-downloaded model (local) or download from HuggingFace
+            tooltip: Use a pre-downloaded model (local) or clone from HuggingFace using git-lfs
             options:
               - value: local
-                label: "📁 Local Path (recommended for HPC)"
+                label: "📁 Local Path (pre-staged weights)"
               - value: huggingface
-                label: "🤗 HuggingFace Hub"
+                label: "🤗 HuggingFace Clone (git-lfs)"
           
           local_path:
             type: string
@@ -745,8 +782,8 @@ jobs:
           hf_model_id:
             type: string
             label: HuggingFace Model ID
-            placeholder: meta-llama/Llama-3.1-8B-Instruct
-            tooltip: Model ID from HuggingFace Hub (e.g., meta-llama/Llama-3.1-8B-Instruct)
+            placeholder: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+            tooltip: Model ID to clone from HuggingFace (e.g., nvidia/Llama-3_3-Nemotron-Super-49B-v1_5). Uses git-lfs for HPC compatibility.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
           
@@ -763,7 +800,7 @@ jobs:
             type: string
             label: Model Cache Directory
             default: ~/pw/models
-            tooltip: Where to store downloaded models (should have sufficient space)
+            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
 

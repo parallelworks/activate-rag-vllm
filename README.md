@@ -47,8 +47,10 @@ Choose how to provide model weights:
 
 | Option | When to Use |
 |--------|-------------|
-| **📁 Local Path** | Model weights pre-staged on cluster (recommended for HPC) |
-| **🤗 HuggingFace** | Download automatically (requires network + token for gated models) |
+| **📁 Local Path** | Model weights pre-staged on cluster |
+| **🤗 HuggingFace Clone** | Clone from HuggingFace using git-lfs (HPC-friendly, caches locally) |
+
+The HuggingFace Clone option uses `git clone` with git-lfs, which is more widely supported on HPC systems than the HuggingFace API. Models are cloned once to your cache directory and reused for subsequent runs.
 
 ### 3. Set vLLM Parameters
 
@@ -130,6 +132,7 @@ activate-rag-vllm/
 |-------|----------|
 | CUDA out of memory | Reduce `--gpu-memory-utilization` or `--max-model-len` |
 | Model not found | Verify path exists with `config.json`; check HF_TOKEN for gated models |
+| git-lfs not found | Workflow auto-installs git-lfs locally if missing |
 | Apptainer/Singularity not found | Load module: `module load apptainer` or `module load singularity` |
 | Port in use | Service auto-finds available ports; check for existing instances |
 
