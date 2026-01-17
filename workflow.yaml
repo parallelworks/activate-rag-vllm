@@ -715,7 +715,7 @@ jobs:
       apikey:
         label: vLLM API Key
         optional: true
-        tooltip: API key for vLLM server. Required for Cline and other code assist tools.
+        tooltip: Optional API key for vLLM server. Can be any value (e.g., 'dummy') - Cline and other IDEs require a value but do not validate it.
         type: password
 
       # ========================================================================
