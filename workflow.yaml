@@ -159,6 +159,112 @@ jobs:
           [[ "${{ inputs.runtype }}" == "all" && ! -f "rag.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./ || echo "rag.sif exists or not needed"
           
           echo "Container pull complete"
+
+      - name: Pull Containers from LFS Repo
+        id: pull_containers_lfs
+        if: ${{ inputs.container.source == 'lfs' }}
+        early-cancel: any-job-failed
+        run: |
+          set -euo pipefail
+          cd ${{ needs.setup.outputs.rundir }}
+
+          command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
+          git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found"; exit 1; }
+
+          LFS_REPO="${{ inputs.container.lfs_repo }}"
+          LFS_BRANCH="${{ inputs.container.lfs_branch }}"
+          LFS_DIR=".lfs_containers"
+          REV_FILE=".lfs_containers_rev"
+
+          VLLM_PATH="${{ inputs.container.vllm_path }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          RAG_PATH="${{ inputs.container.rag_path }}"
+          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+
+          need_vllm=true
+          need_rag=false
+          [[ -f "$VLLM_PATH" ]] && need_vllm=false
+          [[ "${{ inputs.runtype }}" == "all" ]] && { [[ ! -f "$RAG_PATH" ]] && need_rag=true; }
+
+          remote_rev=$(git ls-remote "$LFS_REPO" "$LFS_BRANCH" | awk '{print $1}')
+          if [[ -z "$remote_rev" ]]; then
+            echo "ERROR: Could not resolve $LFS_BRANCH in $LFS_REPO"
+            exit 1
+          fi
+          stored_rev=""
+          [[ -f "$REV_FILE" ]] && stored_rev=$(cat "$REV_FILE" || true)
+
+          if [[ "$need_vllm" == "false" && "$need_rag" == "false" ]]; then
+            if [[ -n "$remote_rev" && "$remote_rev" == "$stored_rev" ]]; then
+              echo "Containers already present and match remote revision $remote_rev; skipping LFS pull."
+            else
+              echo "Containers already present; remote revision is $remote_rev (stored: $stored_rev)."
+              echo "Skipping LFS pull to avoid re-download. Remove containers to force refresh."
+            fi
+            exit 0
+          fi
+
+          if [[ -d "$LFS_DIR/.git" ]]; then
+            git -C "$LFS_DIR" fetch origin "$LFS_BRANCH"
+          else
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch "$LFS_BRANCH" "$LFS_REPO" "$LFS_DIR"
+          fi
+
+          git -C "$LFS_DIR" checkout -f "$LFS_BRANCH"
+          git -C "$LFS_DIR" reset --hard "origin/$LFS_BRANCH"
+          git -C "$LFS_DIR" lfs install --local
+
+          git -C "$LFS_DIR" sparse-checkout init --no-cone
+          patterns=("vllm.[0-9][0-9][0-9][0-9][0-9].sif" "vllm.sif.part_*" "vllm.sif")
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            patterns+=("rag.[0-9][0-9][0-9][0-9][0-9].sif" "rag.sif.part_*" "rag.sif")
+          fi
+          git -C "$LFS_DIR" sparse-checkout set --no-cone "${patterns[@]}"
+
+          lfs_include="vllm.[0-9][0-9][0-9][0-9][0-9].sif,vllm.sif.part_*,vllm.sif"
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            lfs_include="${lfs_include},rag.[0-9][0-9][0-9][0-9][0-9].sif,rag.sif.part_*,rag.sif"
+          fi
+          git -C "$LFS_DIR" lfs pull --include "$lfs_include" --exclude "*"
+
+          assemble_sif() {
+            local prefix=$1
+            local target=$2
+            local full="$LFS_DIR/${prefix}.sif"
+            mkdir -p "$(dirname "$target")"
+
+            if [[ -f "$full" ]]; then
+              cp "$full" "$target"
+              return 0
+            fi
+
+            shopt -s nullglob
+            local parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$LFS_DIR/${prefix}.sif.part_"*)
+            shopt -u nullglob
+
+            if ((${#parts[@]} == 0)); then
+              echo "ERROR: No parts found for ${prefix} in ${LFS_DIR}"
+              exit 1
+            fi
+
+            mapfile -t parts_sorted < <(printf "%s\n" "${parts[@]}" | LC_ALL=C sort)
+            cat "${parts_sorted[@]}" > "$target"
+          }
+
+          if [[ "$need_vllm" == "true" ]]; then
+            echo "Assembling vLLM container to $VLLM_PATH"
+            assemble_sif vllm "$VLLM_PATH"
+          fi
+          if [[ "$need_rag" == "true" ]]; then
+            echo "Assembling RAG container to $RAG_PATH"
+            assemble_sif rag "$RAG_PATH"
+          fi
+
+          ln -sf "$VLLM_PATH" ./vllm.sif
+          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
+
+          [[ -n "$remote_rev" ]] && echo "$remote_rev" > "$REV_FILE"
+          echo "LFS container pull complete"
       
       - name: Link Existing Containers
         id: link_containers
@@ -829,15 +935,33 @@ jobs:
           source:
             type: dropdown
             label: Container Source
-            default: path
+            default: lfs
             tooltip: How to obtain Apptainer/Singularity containers
             options:
+              - value: lfs
+                label: "🧬 Git LFS repo (default)"
               - value: path
-                label: "📂 Use existing path (default)"
+                label: "📂 Use existing path"
               - value: pull
                 label: "📥 Pull from bucket"
               - value: build
                 label: "🔨 Build from source (requires sudo/fakeroot)"
+
+          lfs_repo:
+            label: LFS Repo
+            type: string
+            default: https://github.com/parallelworks/singularity-containers.git
+            tooltip: Git repo containing LFS SIF parts (vllm.*.sif, rag.*.sif)
+            hidden: ${{ inputs.container.source != 'lfs' }}
+            ignore: ${{ inputs.container.source != 'lfs' }}
+
+          lfs_branch:
+            label: LFS Branch
+            type: string
+            default: canary
+            tooltip: Branch to pull from the LFS repo
+            hidden: ${{ inputs.container.source != 'lfs' }}
+            ignore: ${{ inputs.container.source != 'lfs' }}
           
           bucket:
             label: Container Bucket
@@ -861,7 +985,7 @@ jobs:
             type: string
             default: ~/pw/singularity/rag.sif
             placeholder: ~/pw/singularity/rag.sif
-            tooltip: Path to rag.sif container (use existing or build destination, only needed for vLLM+RAG mode)
+            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
 
