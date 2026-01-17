@@ -138,26 +138,14 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - name: Install Apptainer Compose
-        id: install_compose
+      - name: Verify Singularity Available
+        id: verify_singularity
         early-cancel: any-job-failed
         run: |
           set -x
-          if ! command -v singularity-compose &> /dev/null; then
-            if [ -d ~/pw/software/singularity-compose ]; then
-              source ~/pw/software/singularity-compose/bin/activate
-            fi
-            if ! command -v singularity-compose &> /dev/null; then
-              echo "$(date) Installing singularity-compose..."
-              mkdir -p ~/pw/software
-              python3 -m venv ~/pw/software/singularity-compose
-              source ~/pw/software/singularity-compose/bin/activate
-              pip install --upgrade pip
-              pip install singularity-compose
-            fi
-          fi
-          command -v singularity-compose >/dev/null 2>&1 || { echo "ERROR: Failed to install singularity-compose"; exit 1; }
-          echo "singularity-compose ready"
+          command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "ERROR: singularity/apptainer not found"; exit 1; }
+          singularity --version || apptainer --version
+          echo "Singularity/Apptainer ready"
       
       - name: Pull Containers from Bucket
         id: pull_containers

@@ -187,18 +187,8 @@ elif [ "$RUNMODE" == "singularity" ]; then
         exit 1
     fi
 
-    # Check if singularity-compose is installed
-    source ~/pw/software/singularity-compose/bin/activate
-    if ! command -v singularity-compose >/dev/null 2>&1; then
-        source ~/pw/software/singularity-compose/bin/activate
-    fi
-    if ! command -v singularity-compose >/dev/null 2>&1; then
-        echo "$(date) ERROR: Failed to install singularity-compose"
-        exit 1
-    fi
-
-    cp singularity/* ./ -Rf
-    cp env.sh.example env.sh
+    cp singularity/env.sh.example env.sh
+    cp singularity/Singularity.* ./
 
     RAG_PORT=$(pw agent open-port)
     CHROMA_PORT=$(pw agent open-port)
@@ -223,15 +213,11 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
 
-    # get the base model name
+    # Get model path and basename for bind mounts
     MODEL_PATH="${MODEL_NAME}"
-    MODEL_BASE=$(basename $MODEL_NAME)
-    
-    sed -i "s|__MODEL_PATH__|${MODEL_PATH}|g" singularity-compose.yml
-    sed -i "s|__MODEL_BASE__|${MODEL_BASE}|g" singularity-compose.yml
+    MODEL_BASE=$(basename "$MODEL_NAME")
 
-    # Disable weight download
-    # Check if cache/huggingface directory exists
+    # Disable weight download if cache exists
     if [ -d "cache/huggingface" ]; then
         sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
         echo "$(date) Disabled model weight download"
@@ -241,45 +227,134 @@ elif [ "$RUNMODE" == "singularity" ]; then
     mkdir -p ${CUDA_CACHE_PATH} ${TORCH_EXTENSIONS_DIR} ${FLASHINFER_JIT_DIR}
     chmod -R 777 ${TMPDIR}
 
-    mkdir -p logs cache cache/chroma $DOCS_DIR
-
-    # fixing updated vllm sagemaker sessions issue
-    mkdir -p cache/sagemaker_sessions
+    mkdir -p logs cache cache/chroma cache/tiktoken_encodings cache/sagemaker_sessions
     chmod 700 cache/sagemaker_sessions
+    
+    mkdir -p /dev/shm/sagemaker_sessions 2>/dev/null || true
+    chmod 700 /dev/shm/sagemaker_sessions 2>/dev/null || true
 
-    mkdir -p /dev/shm/sagemaker_sessions
-    chmod 700 /dev/shm/sagemaker_sessions
-
-    # singularity-compose does not support env variables in the yml config file
-    if [ "$DOCS_DIR" != "./docs" ];then
-        ln -s $DOCS_DIR ./docs
-    fi
-
-    # If build is true check that user has root access
-    #if [ "$BUILD" = "true" ] && ! sudo -n true 2>/dev/null; then
-    #    echo "$(date) ERROR: User needs root access to build singularity containers"
-    #    exit 1
-    #fi
-    echo "singularity-compose down" >> cancel.sh
-    if [ "$RUNTYPE" == "all" ];then
-        [ "$BUILD" = "true" ] && singularity-compose build
-        DOCS_DIR=$DOCS_DIR singularity-compose up
+    # Create docs directory / symlink
+    if [ "$DOCS_DIR" != "./docs" ] && [ -n "$DOCS_DIR" ]; then
+        mkdir -p "$DOCS_DIR"
+        ln -sf "$DOCS_DIR" ./docs
     else
-        [ "$BUILD" = "true" ] && singularity-compose build "${RUNTYPE}1"
-        singularity-compose up "${RUNTYPE}1"
+        mkdir -p ./docs
     fi
 
-    # Only follow logs if up succeeded
-    # Make tail die when this script dies (and don't explode if logs don't exist yet)
+    # Resolve container paths (from workflow input or default)
+    VLLM_SIF="${VLLM_CONTAINER_PATH:-./vllm.sif}"
+    VLLM_SIF="${VLLM_SIF/#\~/$HOME}"
+    RAG_SIF="${RAG_CONTAINER_PATH:-./rag.sif}"
+    RAG_SIF="${RAG_SIF/#\~/$HOME}"
+
+    # Verify containers exist
+    [[ ! -f "$VLLM_SIF" ]] && { echo "$(date) ERROR: vLLM container not found at $VLLM_SIF"; exit 1; }
+    [[ "$RUNTYPE" == "all" && ! -f "$RAG_SIF" ]] && { echo "$(date) ERROR: RAG container not found at $RAG_SIF"; exit 1; }
+
+    # Define common bind mounts
+    COMMON_BINDS="--bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh"
+
+    # Cleanup function
+    cleanup() {
+        echo "$(date) Cleaning up singularity instances..."
+        singularity instance stop vllm 2>/dev/null || true
+        singularity instance stop rag 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    # Create cancel script
+    cat > cancel.sh << 'EOF'
+#!/bin/bash
+singularity instance stop vllm 2>/dev/null || true
+singularity instance stop rag 2>/dev/null || true
+EOF
+    chmod +x cancel.sh
+
+    echo "$(date) Starting vLLM instance..."
+    
+    # Start vLLM instance with GPU support
+    singularity instance start --nv \
+        $COMMON_BINDS \
+        --bind ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions \
+        --bind ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings \
+        --bind "${MODEL_PATH}:/${MODEL_BASE}" \
+        "$VLLM_SIF" vllm
+
+    # Run vLLM server inside the instance
+    singularity exec instance://vllm bash -c "
+        source /.singularity.d/env/env.sh
+        nohup python3 -m vllm.entrypoints.openai.api_server \
+            --model '/${MODEL_BASE}' \
+            --tokenizer '/${MODEL_BASE}' \
+            --host 0.0.0.0 \
+            --port ${VLLM_SERVER_PORT} \
+            ${VLLM_EXTRA_ARGS} \
+            > /logs/vllm.out 2>&1 &
+        echo \$! > /logs/vllm.pid
+    "
+
+    echo "$(date) vLLM server starting on port ${VLLM_SERVER_PORT}"
+
+    if [ "$RUNTYPE" == "all" ]; then
+        echo "$(date) Starting RAG instance..."
+        
+        # Start RAG instance
+        singularity instance start \
+            $COMMON_BINDS \
+            --bind ./cache/chroma:/chroma_data \
+            --bind ./docs:/docs \
+            "$RAG_SIF" rag
+
+        # Run RAG services inside the instance
+        singularity exec instance://rag bash -c "
+            source /.singularity.d/env/env.sh
+            
+            # Start ChromaDB
+            nohup chroma run --host 127.0.0.1 --port ${CHROMA_PORT} --path /chroma_data > /logs/chroma.out 2>&1 &
+            echo \$! > /logs/chroma.pid
+            
+            # Wait for ChromaDB
+            sleep 3
+            
+            # Start RAG server
+            nohup python3 /app/rag_server.py > /logs/rag_server.out 2>&1 &
+            echo \$! > /logs/rag_server.pid
+            
+            # Start RAG proxy
+            nohup python3 /app/rag_proxy.py > /logs/rag_proxy.out 2>&1 &
+            echo \$! > /logs/rag_proxy.pid
+            
+            # Start indexer
+            nohup python3 /app/indexer.py > /logs/indexer.out 2>&1 &
+            echo \$! > /logs/indexer.pid
+        "
+        
+        echo "$(date) RAG services starting (ChromaDB: ${CHROMA_PORT}, RAG: ${RAG_PORT}, Proxy: ${PROXY_PORT})"
+    fi
+
+    echo "$(date) All services started. Tailing logs..."
+    
+    # Wait a moment for logs to be created
+    sleep 2
+    
+    # Tail logs (will keep script running)
     shopt -s nullglob
-    logs=(logs/*)
+    logs=(logs/*.out)
     if ((${#logs[@]} > 0)); then
         tail -F "${logs[@]}" &
         tail_pid=$!
-        trap 'kill "$tail_pid" >/dev/null 2>&1 || true; cleanup' EXIT
         wait "$tail_pid"
     else
-        echo "No logs found under logs/. Skipping tail."
+        echo "No logs found. Waiting..."
+        # Keep running so job doesn't end
+        while true; do
+            sleep 60
+            # Check if vLLM is still running
+            if ! singularity instance list | grep -q vllm; then
+                echo "$(date) vLLM instance stopped. Exiting."
+                exit 1
+            fi
+        done
     fi
 
 fi
