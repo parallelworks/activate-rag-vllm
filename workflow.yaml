@@ -225,9 +225,25 @@ jobs:
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
             lfs_include="${lfs_include},rag.*.sif,rag.sif.part_*,rag.sif"
           fi
+          git -C "$LFS_DIR" config lfs.concurrenttransfers 3
+          git -C "$LFS_DIR" config lfs.transfer.maxretries 10
+          git -C "$LFS_DIR" config lfs.transfer.maxretrydelay 30
           git -C "$LFS_DIR" config lfs.fetchinclude "$lfs_include"
           git -C "$LFS_DIR" config lfs.fetchexclude ""
-          git -C "$LFS_DIR" lfs pull
+          attempt=1
+          max_attempts=5
+          while true; do
+            echo "LFS pull attempt ${attempt}/${max_attempts}..."
+            if git -C "$LFS_DIR" lfs pull; then
+              break
+            fi
+            if [[ $attempt -ge $max_attempts ]]; then
+              echo "ERROR: LFS pull failed after ${max_attempts} attempts"
+              exit 1
+            fi
+            sleep $((attempt * 5))
+            ((attempt++))
+          done
           git -C "$LFS_DIR" lfs checkout
 
           assemble_sif() {
