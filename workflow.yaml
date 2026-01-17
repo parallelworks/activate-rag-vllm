@@ -563,7 +563,7 @@ jobs:
                 label: CPUs per Task
                 min: 1
                 max: 256
-                default: 4
+                default: 1
                 tooltip: Number of CPUs for the job (--cpus-per-task)
               
               time:
@@ -574,10 +574,18 @@ jobs:
               
               gres:
                 label: GPUs (gres)
-                type: string
+                type: dropdown
                 default: "gpu:1"
-                placeholder: "gpu:1"
-                tooltip: GPU resource specification, e.g., gpu:1, gpu:a100:2 (--gres)
+                tooltip: GPU resource specification (--gres). Keep in sync with vLLM GPU count.
+                options:
+                  - value: "gpu:1"
+                    label: "1 GPU (gpu:1)"
+                  - value: "gpu:2"
+                    label: "2 GPUs (gpu:2)"
+                  - value: "gpu:4"
+                    label: "4 GPUs (gpu:4)"
+                  - value: "gpu:8"
+                    label: "8 GPUs (gpu:8)"
               
               scheduler_directives:
                 type: editor

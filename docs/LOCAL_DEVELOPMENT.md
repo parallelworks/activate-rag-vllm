@@ -127,6 +127,14 @@ sudo apptainer build ../rag.sif Singularity.rag
 singularity-compose build
 ```
 
+You can also use the helper script from the repo root:
+
+```bash
+scripts/build_singularity.sh --runtype all
+# Optional push to a PW bucket
+scripts/build_singularity.sh --push --bucket pw://mshaxted/codeassist
+```
+
 ### Docker
 
 ```bash
