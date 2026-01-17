@@ -261,6 +261,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     # If embedding model is a local path, bind it into the RAG container.
     RAG_EMBED_BIND=""
     RAG_INDEXER_BIND=""
+    RAG_APP_BINDS=""
     EMBEDDING_MODEL_CONTAINER="${EMBEDDING_MODEL:-}"
     if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" != /* ]]; then
         CACHE_BASE="${EMBEDDING_CACHE_DIR:-${MODEL_CACHE_BASE:-}}"
@@ -287,6 +288,11 @@ elif [ "$RUNMODE" == "singularity" ]; then
         sed -i "s|^embedding_model:.*|embedding_model: ${EMBEDDING_MODEL_CONTAINER}|" "$INDEXER_CFG"
         RAG_INDEXER_BIND="--bind ${INDEXER_CFG}:/app/indexer_config.yaml"
     fi
+    for app_file in rag_server.py rag_proxy.py indexer.py; do
+        if [[ -f "${app_file}" ]]; then
+            RAG_APP_BINDS="${RAG_APP_BINDS} --bind ${PWD}/${app_file}:/app/${app_file}"
+        fi
+    done
 
     # Cleanup function
     cleanup() {
@@ -339,6 +345,7 @@ EOF
             --bind ./docs:/docs \
             $RAG_EMBED_BIND \
             $RAG_INDEXER_BIND \
+            $RAG_APP_BINDS \
             "$RAG_SIF" rag
 
         # Run RAG services inside the instance
