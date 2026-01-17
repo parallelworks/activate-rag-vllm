@@ -5,48 +5,71 @@ sessions:
     redirect: false
     openAI: true
 
+# ==============================================================================
+# JOB DEFINITIONS
+# ==============================================================================
 jobs:
-  prepare_job_directory:
+  # ============================================================================
+  # Setup: Clone Repository and Create Environment
+  # ============================================================================
+  setup:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      rundir: ${{ needs.setup.steps.clone_repo.outputs.rundir }}
     steps:
-      - name: Preparing Run Directory
-        run: |
-          mkdir -p $(dirname ${{ inputs.advanced_settings.rundir }})
-          git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} ${{ inputs.advanced_settings.rundir }}
-          cd ${{ inputs.advanced_settings.rundir }}
-          git checkout ${{ inputs.advanced_settings.repository_branch }}
-          git branch --set-upstream-to=origin/${{ inputs.advanced_settings.repository_branch }}
-          git pull
-          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
-          rm -rf logs
-      
-      - name: Create Environment File
+      - name: Clone Repository
+        id: clone_repo
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          RUNDIR="${{ inputs.advanced_settings.rundir }}"
+          RUNDIR="${RUNDIR/#\~/$HOME}"
+          
+          mkdir -p "$(dirname $RUNDIR)"
+          
+          if [[ -d "$RUNDIR/.git" ]]; then
+            echo "Repository exists, updating..."
+            cd "$RUNDIR"
+            git fetch origin
+            git checkout ${{ inputs.advanced_settings.repository_branch }}
+            git reset --hard origin/${{ inputs.advanced_settings.repository_branch }}
+          else
+            echo "Cloning fresh repository..."
+            git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} "$RUNDIR"
+          fi
+          
+          cd "$RUNDIR"
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
+          rm -rf logs
+          
+          echo "rundir=$RUNDIR" >> $OUTPUTS
+      
+      - name: Create Environment File
+        id: create_env
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ needs.setup.steps.clone_repo.outputs.rundir }}
           
           # Core configuration
-          echo "export RUNMODE=${{ inputs.runmode }}" > .run.env
-          echo "export RUNTYPE=${{ inputs.runtype }}" >> .run.env
-          echo "export SYSTEM_PROMPT=\"${{ inputs.rag.systemprompt }}\"" >> .run.env
-          echo "export HF_TOKEN=${{ inputs.model.hf_token }}" >> .run.env
-          echo "export API_KEY=${{ inputs.advanced_settings.apikey }}" >> .run.env
-          echo "export DOCS_DIR=${{ inputs.rag.docsdir }}" >> .run.env
+          cat > .run.env << 'ENVEOF'
+          export RUNMODE=${{ inputs.runmode }}
+          export RUNTYPE=${{ inputs.runtype }}
+          export SYSTEM_PROMPT="${{ inputs.rag.systemprompt }}"
+          export HF_TOKEN=${{ inputs.model.hf_token }}
+          export API_KEY=${{ inputs.advanced_settings.apikey }}
+          export DOCS_DIR=${{ inputs.rag.docsdir }}
+          ENVEOF
           
-          # Build vLLM extra args from structured inputs (skip dtype if custom)
+          # Build vLLM extra args from structured inputs
           if [[ "${{ inputs.vllm.dtype }}" == "custom" ]]; then
             VLLM_ARGS="--tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
           else
             VLLM_ARGS="--dtype ${{ inputs.vllm.dtype }} --tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
           fi
-          if [[ "${{ inputs.vllm.max_model_len }}" != "auto" ]]; then
-            VLLM_ARGS="$VLLM_ARGS --max-model-len ${{ inputs.vllm.max_model_len }}"
-          fi
-          if [[ -n "${{ inputs.vllm.extra_args }}" ]]; then
-            VLLM_ARGS="$VLLM_ARGS ${{ inputs.vllm.extra_args }}"
-          fi
+          [[ "${{ inputs.vllm.max_model_len }}" != "auto" ]] && VLLM_ARGS="$VLLM_ARGS --max-model-len ${{ inputs.vllm.max_model_len }}"
+          [[ -n "${{ inputs.vllm.extra_args }}" ]] && VLLM_ARGS="$VLLM_ARGS ${{ inputs.vllm.extra_args }}"
           echo "export VLLM_EXTRA_ARGS=\"$VLLM_ARGS\"" >> .run.env
           
           # Model configuration
@@ -61,361 +84,288 @@ jobs:
             echo "export MODEL_CACHE_BASE=${{ inputs.model.cache_dir }}" >> .run.env
           fi
           
-          # Container paths (if using existing containers)
+          # Container paths
           if [[ "${{ inputs.container.source }}" == "path" ]]; then
             echo "export VLLM_CONTAINER_PATH=${{ inputs.container.vllm_path }}" >> .run.env
             echo "export RAG_CONTAINER_PATH=${{ inputs.container.rag_path }}" >> .run.env
           fi
           
-          # vLLM attention backend
-          if [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]]; then
-            echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
-          fi
+          # Additional settings
+          [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]] && echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
+          [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]] && echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
           
-          # Tiktoken encodings path
-          if [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]]; then
-            echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
-          fi
+          echo "Environment file created"
 
+  # ============================================================================
+  # Prepare Containers (Apptainer/Singularity)
+  # ============================================================================
+  prepare_containers:
+    needs: [setup]
+    if: ${{ inputs.runmode == 'singularity' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
       - name: Install Apptainer Compose
-        if: ${{ inputs.runmode == 'singularity' }}
+        id: install_compose
         early-cancel: any-job-failed
         run: |
           set -x
-          # Check if singularity-compose is installed globally
           if ! command -v singularity-compose &> /dev/null; then
-              # Check if virtual environment exists and activate it
-              if [ -d ~/pw/software/singularity-compose ]; then
-                  source ~/pw/software/singularity-compose/bin/activate
-              fi
-              # Check again if singularity-compose is available after activation
-              if ! command -v singularity-compose &> /dev/null; then
-                  echo "$(date) singularity-compose not found, installing..."
-                  
-                  # Create directory for Python environment
-                  mkdir -p ~/pw/software
-                  
-                  # Create virtual environment and install singularity-compose
-                  python3 -m venv ~/pw/software/singularity-compose
-                  source ~/pw/software/singularity-compose/bin/activate
-                  pip install --upgrade pip
-                  pip install singularity-compose
-              fi
-          fi
-          if ! command -v singularity-compose >/dev/null 2>&1; then
-            echo "$(date) ERROR: Failed to install singularity-compose"
-            exit 1
-          fi
-      
-      - name: Pull Apptainer Containers
-        if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'pull' }}
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ inputs.advanced_settings.rundir }}
-          
-          # vllm container
-          if [[ ! -f "vllm.sif" ]]; then
-            echo "vllm.sif not found, pulling from ${{ inputs.container.bucket }}"
-            pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" ./
-          else
-            echo "vllm.sif already exists, skipping pull"
-          fi
-
-          # rag container (only for runtype=all)
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            if [[ ! -f "rag.sif" ]]; then
-              echo "rag.sif not found, pulling from ${{ inputs.container.bucket }}"
-              pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./
-            else
-              echo "rag.sif already exists, skipping pull"
+            if [ -d ~/pw/software/singularity-compose ]; then
+              source ~/pw/software/singularity-compose/bin/activate
+            fi
+            if ! command -v singularity-compose &> /dev/null; then
+              echo "$(date) Installing singularity-compose..."
+              mkdir -p ~/pw/software
+              python3 -m venv ~/pw/software/singularity-compose
+              source ~/pw/software/singularity-compose/bin/activate
+              pip install --upgrade pip
+              pip install singularity-compose
             fi
           fi
-
-          echo "Apptainer container pull step complete."
+          command -v singularity-compose >/dev/null 2>&1 || { echo "ERROR: Failed to install singularity-compose"; exit 1; }
+          echo "singularity-compose ready"
+      
+      - name: Pull Containers from Bucket
+        id: pull_containers
+        if: ${{ inputs.container.source == 'pull' }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ needs.setup.outputs.rundir }}
+          
+          [[ ! -f "vllm.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" ./ || echo "vllm.sif exists"
+          [[ "${{ inputs.runtype }}" == "all" && ! -f "rag.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./ || echo "rag.sif exists or not needed"
+          
+          echo "Container pull complete"
       
       - name: Link Existing Containers
-        if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'path' }}
+        id: link_containers
+        if: ${{ inputs.container.source == 'path' }}
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           
-          # Link vllm container
-          if [[ -f "${{ inputs.container.vllm_path }}" ]]; then
-            ln -sf "${{ inputs.container.vllm_path }}" ./vllm.sif
-            echo "Linked vllm.sif from ${{ inputs.container.vllm_path }}"
-          else
-            echo "ERROR: vLLM container not found at ${{ inputs.container.vllm_path }}"
-            exit 1
-          fi
+          VLLM_PATH="${{ inputs.container.vllm_path }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
           
-          # Link rag container (only for runtype=all)
+          [[ -f "$VLLM_PATH" ]] && ln -sf "$VLLM_PATH" ./vllm.sif || { echo "ERROR: vLLM container not found at $VLLM_PATH"; exit 1; }
+          echo "Linked vllm.sif from $VLLM_PATH"
+          
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            if [[ -f "${{ inputs.container.rag_path }}" ]]; then
-              ln -sf "${{ inputs.container.rag_path }}" ./rag.sif
-              echo "Linked rag.sif from ${{ inputs.container.rag_path }}"
-            else
-              echo "ERROR: RAG container not found at ${{ inputs.container.rag_path }}"
-              exit 1
-            fi
+            RAG_PATH="${{ inputs.container.rag_path }}"
+            RAG_PATH="${RAG_PATH/#\~/$HOME}"
+            [[ -f "$RAG_PATH" ]] && ln -sf "$RAG_PATH" ./rag.sif || { echo "ERROR: RAG container not found at $RAG_PATH"; exit 1; }
+            echo "Linked rag.sif from $RAG_PATH"
           fi
       
-      - name: Build Apptainer Containers
-        if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'build' }}
+      - name: Build Containers from Source
+        id: build_containers
+        if: ${{ inputs.container.source == 'build' }}
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           
-          echo "Building Apptainer containers from source..."
-          echo "Note: This requires sudo or fakeroot capabilities"
+          echo "Building Apptainer containers (requires sudo or fakeroot)..."
           
-          # Build vllm container
-          if [[ ! -f "vllm.sif" ]]; then
-            echo "Building vllm.sif..."
+          build_container() {
+            local name=$1 def=$2
+            [[ -f "$name" ]] && { echo "$name exists, skipping"; return 0; }
+            echo "Building $name..."
             if sudo -n true 2>/dev/null; then
-              sudo singularity build vllm.sif singularity/Singularity.vllm
+              sudo singularity build "$name" "$def"
             else
-              singularity build --fakeroot vllm.sif singularity/Singularity.vllm
+              singularity build --fakeroot "$name" "$def"
             fi
-          else
-            echo "vllm.sif already exists, skipping build"
-          fi
+          }
           
-          # Build rag container (only for runtype=all)
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            if [[ ! -f "rag.sif" ]]; then
-              echo "Building rag.sif..."
-              if sudo -n true 2>/dev/null; then
-                sudo singularity build rag.sif singularity/Singularity.rag
-              else
-                singularity build --fakeroot rag.sif singularity/Singularity.rag
-              fi
-            else
-              echo "rag.sif already exists, skipping build"
-            fi
-          fi
+          build_container vllm.sif singularity/Singularity.vllm
+          [[ "${{ inputs.runtype }}" == "all" ]] && build_container rag.sif singularity/Singularity.rag
           
-          echo "Apptainer container build complete."
-      
+          echo "Container build complete"
+
+  # ============================================================================
+  # Prepare Model
+  # ============================================================================
+  prepare_model:
+    needs: [setup]
+    if: ${{ inputs.model.source == 'huggingface' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      model_path: ${{ needs.prepare_model.steps.clone_model.outputs.model_path }}
+    steps:
       - name: Clone HuggingFace Model
-        if: ${{ inputs.model.source == 'huggingface' }}
+        id: clone_model
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
+          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
           
-          # Expand ~ in cache directory
-          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
-          
-          # Create cache directory
           mkdir -p "$CACHE_DIR"
-          
-          # Sanitize model ID for directory name (replace / with __)
           SAFE_MODEL_ID="${MODEL_ID//\//__}"
           TARGET_DIR="$CACHE_DIR/$SAFE_MODEL_ID"
           
-          # Check if model already exists
+          # Check if already cached
           if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
             echo "Model already cached at $TARGET_DIR"
-            echo "Skipping clone - model weights already present"
-            # Update .run.env with resolved path for offline loading
-            echo "export MODEL_PATH=$TARGET_DIR" >> .run.env
-            echo "export MODEL_NAME=$TARGET_DIR" >> .run.env
-            echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
-            exit 0
-          fi
-          
-          echo "Cloning model $MODEL_ID to $TARGET_DIR"
-          
-          # Ensure git is available
-          if ! command -v git >/dev/null 2>&1; then
-            echo "ERROR: git is not installed"
-            exit 1
-          fi
-          
-          # Install git-lfs if not available
-          if ! git lfs version >/dev/null 2>&1; then
-            echo "git-lfs not found, installing locally..."
+          else
+            echo "Cloning model $MODEL_ID to $TARGET_DIR"
             
-            mkdir -p $HOME/bin
-            cd /tmp
-            
-            # Download latest git-lfs release
-            LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest \
-              | grep browser_download_url \
-              | grep linux-amd64 \
-              | head -1 \
-              | cut -d '"' -f 4)
-            
-            if [[ -z "$LFS_URL" ]]; then
-              echo "ERROR: Could not find git-lfs download URL"
-              exit 1
-            fi
-            
-            wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
-            tar -xzf git-lfs-linux-amd64.tar.gz
-            ./git-lfs-*/install.sh --local
-            rm -rf git-lfs-* 
-            
-            # Add to PATH for this session
-            export PATH="$HOME/bin:$PATH"
-            
-            cd ${{ inputs.advanced_settings.rundir }}
-            
+            # Ensure git-lfs is available
             if ! git lfs version >/dev/null 2>&1; then
-              echo "ERROR: Failed to install git-lfs"
-              exit 1
+              echo "Installing git-lfs locally..."
+              mkdir -p $HOME/bin
+              cd /tmp
+              LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
+              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
+              wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+              tar -xzf git-lfs-linux-amd64.tar.gz
+              ./git-lfs-*/install.sh --local
+              rm -rf git-lfs-*
+              export PATH="$HOME/bin:$PATH"
+              cd ${{ needs.setup.outputs.rundir }}
+              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
             fi
-            echo "git-lfs installed successfully"
+            
+            git lfs install
+            
+            # Build clone URL
+            REPO_URL="https://huggingface.co/$MODEL_ID"
+            [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+            
+            git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Model clone incomplete"; exit 1; }
           fi
           
-          # Initialize git-lfs
-          git lfs install
+          # Update environment file
+          cat >> .run.env << EOF
+          export MODEL_PATH=$TARGET_DIR
+          export MODEL_NAME=$TARGET_DIR
+          export TRANSFORMERS_OFFLINE=1
+          EOF
           
-          # Build clone URL (with token for gated models)
-          REPO_URL="https://huggingface.co/$MODEL_ID"
-          if [[ -n "$HF_TOKEN" ]]; then
-            REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
-          fi
-          
-          # Clone with depth 1 to save space/time
-          echo "Cloning from HuggingFace Hub..."
-          git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
-          
-          # Verify clone
-          if [[ ! -f "$TARGET_DIR/config.json" ]]; then
-            echo "ERROR: Model clone incomplete - missing config.json"
-            exit 1
-          fi
-          
-          # Update .run.env with resolved path for offline loading
-          echo "export MODEL_PATH=$TARGET_DIR" >> .run.env
-          echo "export MODEL_NAME=$TARGET_DIR" >> .run.env
-          echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
-          echo "Model clone complete: $TARGET_DIR"
+          echo "model_path=$TARGET_DIR" >> $OUTPUTS
+          echo "Model ready at $TARGET_DIR"
 
-      - name: Pull Tiktoken Encodings
-        if: ${{ inputs.advanced_settings.tiktoken_encodings == true }}
+  # ============================================================================
+  # Prepare Tiktoken Encodings (Optional)
+  # ============================================================================
+  prepare_tiktoken:
+    needs: [setup]
+    if: ${{ inputs.advanced_settings.tiktoken_encodings == true }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Download Tiktoken Encodings
+        id: download_tiktoken
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           mkdir -p cache/tiktoken_encodings
           wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
           wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+          echo "Tiktoken encodings downloaded"
 
   # ============================================================================
   # SLURM Job
   # ============================================================================
   slurm_job:
-    needs:
-      - prepare_job_directory
+    needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
     if: ${{ inputs.execmethod == 'SLURM' }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      jobid: ${{ needs.slurm_job.steps.submit.outputs.jobid }}
     steps:
       - name: Create SLURM Script
+        id: create_script
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
-          echo '#!/bin/bash' > run.sh
+          cd ${{ needs.setup.outputs.rundir }}
+          
+          cat > run.sh << 'SLURMEOF'
+          #!/bin/bash
+          SLURMEOF
           chmod +x run.sh
           
           # SLURM directives
-          if [[ -n "${{ inputs.slurm.account }}" && "${{ inputs.slurm.account }}" != "undefined" ]]; then
-            echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
-          fi
-          if [[ -n "${{ inputs.slurm.qos }}" && "${{ inputs.slurm.qos }}" != "undefined" ]]; then
-            echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
-          fi
-          if [[ -n "${{ inputs.slurm.partition }}" && "${{ inputs.slurm.partition }}" != "undefined" ]]; then
-            echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
-          fi
-          if [[ -n "${{ inputs.slurm.cpus_per_task }}" ]]; then
-            echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
-          fi
+          [[ -n "${{ inputs.slurm.account }}" && "${{ inputs.slurm.account }}" != "undefined" ]] && echo "#SBATCH --account=${{ inputs.slurm.account }}" >> run.sh
+          [[ -n "${{ inputs.slurm.qos }}" && "${{ inputs.slurm.qos }}" != "undefined" ]] && echo "#SBATCH --qos=${{ inputs.slurm.qos }}" >> run.sh
+          [[ -n "${{ inputs.slurm.partition }}" && "${{ inputs.slurm.partition }}" != "undefined" ]] && echo "#SBATCH --partition=${{ inputs.slurm.partition }}" >> run.sh
+          [[ -n "${{ inputs.slurm.cpus_per_task }}" ]] && echo "#SBATCH --cpus-per-task=${{ inputs.slurm.cpus_per_task }}" >> run.sh
           echo "#SBATCH --nodes=1" >> run.sh
-          if [[ -n "${{ inputs.slurm.time }}" ]]; then
-            echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
-          fi
+          [[ -n "${{ inputs.slurm.time }}" ]] && echo "#SBATCH --time=${{ inputs.slurm.time }}" >> run.sh
           echo "#SBATCH --chdir=${PWD}" >> run.sh
           echo "#SBATCH -o ${PWD}/run.out" >> run.sh
           echo "#SBATCH -e ${PWD}/run.out" >> run.sh
           
-          # Additional scheduler directives
-          if [[ -n "${{ inputs.slurm.scheduler_directives }}" && "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]]; then
-            echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
-          fi
+          # Additional directives
+          [[ -n "${{ inputs.slurm.scheduler_directives }}" && "${{ inputs.slurm.scheduler_directives }}" != "undefined" ]] && echo "${{ inputs.slurm.scheduler_directives }}" >> run.sh
           
-          # Job started marker
-          echo "touch job.started" >> run.sh
-          echo "hostname >> HOSTNAME" >> run.sh
+          # Job setup
+          cat >> run.sh << 'EOF'
+          touch job.started
+          hostname >> HOSTNAME
           
-          # Load singularity module if needed
-          cat << 'EOF' >> run.sh
-          
-          # Ensure Singularity is available
+          # Ensure Singularity/Apptainer is available
           if ! command -v singularity >/dev/null 2>&1; then
-            if command -v module >/dev/null 2>&1; then
-              module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true
-            fi
+            command -v module >/dev/null 2>&1 && { module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true; }
           fi
           EOF
           
           cat start_service.sh >> run.sh
+          echo "SLURM script created"
       
-      - name: Submit SLURM Script
+      - name: Submit SLURM Job
+        id: submit
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           echo "$(date) Submitting SLURM Job"
           jobid=$(sbatch run.sh | tail -1 | awk -F ' ' '{print $4}')
-          if [ -z "${jobid}" ]; then
-            echo "$(date) Job submission failed"
-            exit 1
-          fi
+          [[ -z "${jobid}" ]] && { echo "$(date) Job submission failed"; exit 1; }
           echo "jobid=${jobid}" | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           source jobid 2>/dev/null || true
           if [[ -n "$jobid" ]]; then
             target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null)
-            if [[ -n "$target_hostname" ]]; then
-              ssh ${target_hostname} "cd ${{ inputs.advanced_settings.rundir }} && bash cancel.sh" 2>/dev/null || true
-            fi
+            [[ -n "$target_hostname" ]] && ssh ${target_hostname} "cd ${{ needs.setup.outputs.rundir }} && bash cancel.sh" 2>/dev/null || true
             scancel ${jobid} 2>/dev/null || true
           fi
           rm -f jobid SESSION_PORT job.started HOSTNAME
       
       - name: Monitor SLURM Job
+        id: monitor
         run: |
           source jobid 2>/dev/null || true
           echo "$(date) Monitoring SLURM job ${jobid}"
-
-          cd ${{ inputs.advanced_settings.rundir }}
+          
+          cd ${{ needs.setup.outputs.rundir }}
           touch run.out
           tail -f run.out &
           echo $! > tail.pid
-
+          
           get_slurm_job_status() {
-              if [ -z "${SQUEUE_HEADER}" ]; then
-                  export SQUEUE_HEADER="$(squeue 2>/dev/null | awk 'NR==1')"
-              fi
-              status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
-              status_response=$(squeue 2>/dev/null | awk -v jobid="${jobid}" '$1 == jobid')
-              echo "${SQUEUE_HEADER}"
-              echo "${status_response}"
-              export job_status=$(echo ${status_response} | awk -v id="${jobid}" -v col="$status_column" '{print $col}')
+            [[ -z "${SQUEUE_HEADER}" ]] && export SQUEUE_HEADER="$(squeue 2>/dev/null | awk 'NR==1')"
+            status_column=$(echo "${SQUEUE_HEADER}" | awk '{ for (i=1; i<=NF; i++) if ($i ~ /^S/) { print i; exit } }')
+            status_response=$(squeue 2>/dev/null | awk -v jobid="${jobid}" '$1 == jobid')
+            echo "${SQUEUE_HEADER}"
+            echo "${status_response}"
+            export job_status=$(echo ${status_response} | awk -v id="${jobid}" -v col="$status_column" '{print $col}')
           }
-
+          
           while true; do
             sleep 15
             get_slurm_job_status
@@ -428,27 +378,26 @@ jobs:
           done
         cleanup: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
-          if [ -f tail.pid ]; then
-            kill $(cat tail.pid) 2>/dev/null || true
-            rm -f tail.pid
-          fi
+          cd ${{ needs.setup.outputs.rundir }}
+          [[ -f tail.pid ]] && { kill $(cat tail.pid) 2>/dev/null || true; rm -f tail.pid; }
 
   # ============================================================================
   # PBS Job
   # ============================================================================
   pbs_job:
-    needs:
-      - prepare_job_directory
+    needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
     if: ${{ inputs.execmethod == 'PBS' }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      jobid: ${{ needs.pbs_job.steps.submit.outputs.jobid }}
     steps:
       - name: Create PBS Script
+        id: create_script
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           
           # Write PBS directives from user input
           cat << 'PBSEOF' > run.sh
@@ -457,62 +406,51 @@ jobs:
           chmod +x run.sh
           
           # Add account if specified
-          if [[ -n "${{ inputs.pbs.account }}" && "${{ inputs.pbs.account }}" != "undefined" ]]; then
-            sed -i "2i #PBS -A ${{ inputs.pbs.account }}" run.sh
-          fi
+          [[ -n "${{ inputs.pbs.account }}" && "${{ inputs.pbs.account }}" != "undefined" ]] && sed -i "2i #PBS -A ${{ inputs.pbs.account }}" run.sh
           
-          # Job started marker
-          echo "" >> run.sh
-          echo "cd ${{ inputs.advanced_settings.rundir }}" >> run.sh
-          echo "touch job.started" >> run.sh
-          echo "hostname >> HOSTNAME" >> run.sh
+          # Job setup
+          cat >> run.sh << EOF
           
-          # Load singularity module if needed
-          cat << 'EOF' >> run.sh
+          cd ${{ needs.setup.outputs.rundir }}
+          touch job.started
+          hostname >> HOSTNAME
           
-          # Ensure Singularity is available
+          # Ensure Singularity/Apptainer is available
           if ! command -v singularity >/dev/null 2>&1; then
-            if command -v module >/dev/null 2>&1; then
-              module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true
-            fi
+            command -v module >/dev/null 2>&1 && { module load singularity 2>/dev/null || module load apptainer 2>/dev/null || true; }
           fi
           EOF
           
           cat start_service.sh >> run.sh
+          echo "PBS script created"
       
-      - name: Submit PBS Script
+      - name: Submit PBS Job
+        id: submit
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           echo "$(date) Submitting PBS Job"
           jobid=$(qsub run.sh)
-          if [ -z "${jobid}" ]; then
-            echo "$(date) Job submission failed"
-            exit 1
-          fi
+          [[ -z "${jobid}" ]] && { echo "$(date) Job submission failed"; exit 1; }
           echo "jobid=${jobid}" | tee -a $OUTPUTS | tee -a jobid
         cleanup: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           source jobid 2>/dev/null || true
-          if [[ -n "$jobid" ]]; then
-            qdel ${jobid} 2>/dev/null || true
-          fi
+          [[ -n "$jobid" ]] && qdel ${jobid} 2>/dev/null || true
           rm -f jobid SESSION_PORT job.started HOSTNAME
       
       - name: Monitor PBS Job
+        id: monitor
         run: |
           source jobid 2>/dev/null || true
           echo "$(date) Monitoring PBS job ${jobid}"
-
-          cd ${{ inputs.advanced_settings.rundir }}
+          
+          cd ${{ needs.setup.outputs.rundir }}
           touch run.out
           
-          # PBS job monitoring loop
           while true; do
             sleep 15
-            
-            # Check job status
             job_status=$(qstat -f ${jobid} 2>/dev/null | grep "job_state" | awk '{print $3}')
             echo "$(date) PBS job status: ${job_status}"
             
@@ -522,180 +460,167 @@ jobs:
               exit 0
             fi
             
-            # If job is running, try to tail output
-            if [[ "${job_status}" == "R" ]] && [ -f run.out ]; then
-              tail -f run.out &
-              wait $!
-            fi
+            [[ "${job_status}" == "R" ]] && [[ -f run.out ]] && { tail -f run.out & wait $!; }
           done
 
   # ============================================================================
   # SSH Job (Direct Execution)
   # ============================================================================
   ssh_job:
-    needs:
-      - prepare_job_directory
+    needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
     if: ${{ inputs.execmethod == 'SSH' }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Create SSH Script
+        id: create_script
         early-cancel: any-job-failed
         run: |
-          cd ${{ inputs.advanced_settings.rundir }}
-          echo '#!/bin/bash' > run.sh
+          cd ${{ needs.setup.outputs.rundir }}
+          
+          cat > run.sh << 'EOF'
+          #!/bin/bash
+          touch job.started
+          hostname >> HOSTNAME
+          EOF
           chmod +x run.sh
           
-          echo "touch job.started" >> run.sh
-          echo "hostname >> HOSTNAME" >> run.sh
-          
           cat start_service.sh >> run.sh
+          echo "SSH script created"
       
-      - name: Submit SSH Script
+      - name: Execute SSH Script
+        id: execute
         run: |
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           bash ./run.sh
           touch job.ended
           rm -f jobid SESSION_PORT job.started HOSTNAME
         cleanup: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           bash cancel.sh 2>/dev/null || true
 
   # ============================================================================
   # Session Management
   # ============================================================================
   create_session:
-    needs:
-      - prepare_job_directory
+    needs: [setup]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      target_hostname: ${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}
+      SESSION_PORT: ${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}
     steps:
-      - name: Wait for job to start
+      - name: Wait for Job to Start
+        id: wait_job
         early-cancel: any-job-failed
         run: |
           set -x
           timeout=600
           elapsed=0
-          while [ ! -f ${{ inputs.advanced_settings.rundir }}/job.started ]; do
+          while [ ! -f ${{ needs.setup.outputs.rundir }}/job.started ]; do
             echo "Waiting for job to start... (${elapsed}s/${timeout}s)"
             sleep 5
             ((elapsed+=5))
-            if [ $elapsed -ge $timeout ]; then
-              echo "ERROR: Timeout waiting for job to start"
-              exit 1
-            fi
+            [[ $elapsed -ge $timeout ]] && { echo "ERROR: Timeout waiting for job"; exit 1; }
           done
+          echo "Job started"
       
       - name: Get Hostname
+        id: get_hostname
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           
-          if [[ "${{ inputs.execmethod }}" == "SLURM" ]]; then
-            source jobid 2>/dev/null || true
-            target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null)
-          elif [[ "${{ inputs.execmethod }}" == "PBS" ]]; then
-            # Wait for HOSTNAME file to be created
-            timeout=120
-            elapsed=0
-            while [ ! -f HOSTNAME ]; do
-              sleep 2
-              ((elapsed+=2))
-              if [ $elapsed -ge $timeout ]; then break; fi
-            done
-            target_hostname=$(cat HOSTNAME 2>/dev/null | head -1)
-          elif [[ "${{ inputs.execmethod }}" == "SSH" ]]; then
-            target_hostname=$(hostname)
-          fi
+          case "${{ inputs.execmethod }}" in
+            SLURM)
+              source jobid 2>/dev/null || true
+              target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null)
+              ;;
+            PBS)
+              timeout=120; elapsed=0
+              while [ ! -f HOSTNAME ]; do
+                sleep 2; ((elapsed+=2))
+                [[ $elapsed -ge $timeout ]] && break
+              done
+              target_hostname=$(cat HOSTNAME 2>/dev/null | head -1)
+              ;;
+            SSH)
+              target_hostname=$(hostname)
+              ;;
+          esac
           
-          if [ -z "${target_hostname}" ]; then
-            echo "$(date) Failed to get target hostname"
-            exit 1
-          fi
-          
+          [[ -z "${target_hostname}" ]] && { echo "$(date) Failed to get target hostname"; exit 1; }
           echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
       
       - name: Get Session Port
+        id: get_port
         early-cancel: any-job-failed
         run: |
           set -euo pipefail
           set -x
-
+          
           TIMEOUT=600
           RETRY_INTERVAL=3
-          cd ${{ inputs.advanced_settings.rundir }}
-
-          attempt=1
-          elapsed=0
+          cd ${{ needs.setup.outputs.rundir }}
+          
+          attempt=1; elapsed=0
           while true; do
-              echo "$(date) Attempt $attempt: Checking for SESSION_PORT file..."
-
-              if [ -f SESSION_PORT ]; then
-                  echo "$(date) Success: SESSION_PORT file found!"
-                  cat SESSION_PORT | tee -a "$OUTPUTS"
-                  exit 0
-              elif [ -f job.ended ]; then
-                  echo "$(date) Job completed but SESSION_PORT was never created. Exiting..."
-                  exit 1
-              else
-                  echo "$(date) SESSION_PORT not found. Retrying in ${RETRY_INTERVAL} seconds..."
-                  sleep "$RETRY_INTERVAL"
-                  ((attempt++))
-                  ((elapsed+=RETRY_INTERVAL))
-                  if [ $elapsed -ge $TIMEOUT ]; then
-                    echo "$(date) Timeout waiting for SESSION_PORT"
-                    exit 1
-                  fi
-              fi
+            echo "$(date) Attempt $attempt: Checking for SESSION_PORT..."
+            
+            if [ -f SESSION_PORT ]; then
+              echo "$(date) Success: SESSION_PORT found!"
+              cat SESSION_PORT | tee -a "$OUTPUTS"
+              exit 0
+            elif [ -f job.ended ]; then
+              echo "$(date) Job ended without SESSION_PORT"
+              exit 1
+            else
+              echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
+              sleep "$RETRY_INTERVAL"
+              ((attempt++)); ((elapsed+=RETRY_INTERVAL))
+              [[ $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
+            fi
           done
       
-      - name: Wait for Server To Start
+      - name: Wait for Server
+        id: wait_server
         early-cancel: any-job-failed
         run: |
           TIMEOUT=300
           RETRY_INTERVAL=3
-          remote_host="${{ needs.create_session.outputs.target_hostname }}"
-          remote_port="${{ needs.create_session.outputs.SESSION_PORT }}"
-
-          check_server() {
-              curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1
-              return $?
-          }
-
-          cd ${{ inputs.advanced_settings.rundir }}
-
-          attempt=1
-          elapsed=0
+          remote_host="${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}"
+          remote_port="${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}"
+          
+          cd ${{ needs.setup.outputs.rundir }}
+          
+          attempt=1; elapsed=0
           while true; do
-              echo "$(date) Attempt $attempt: Checking if server is listening on ${remote_host}:${remote_port}..."
-              
-              if check_server; then
-                  echo "$(date) Success: Server is listening on ${remote_host}:${remote_port}!"
-                  exit 0
-              elif [ -f job.ended ]; then
-                  echo "$(date) Job completed. Exiting..."
-                  exit 0
-              else
-                  echo "$(date) Server not responding. Retrying in ${RETRY_INTERVAL} seconds..."
-                  sleep "$RETRY_INTERVAL"
-                  ((attempt++))
-                  ((elapsed+=RETRY_INTERVAL))
-                  if [ $elapsed -ge $TIMEOUT ]; then
-                    echo "$(date) Timeout waiting for server"
-                    exit 1
-                  fi
-              fi
+            echo "$(date) Attempt $attempt: Checking ${remote_host}:${remote_port}..."
+            
+            if curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1; then
+              echo "$(date) Success: Server is listening!"
+              exit 0
+            elif [ -f job.ended ]; then
+              echo "$(date) Job completed"
+              exit 0
+            else
+              echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
+              sleep "$RETRY_INTERVAL"
+              ((attempt++)); ((elapsed+=RETRY_INTERVAL))
+              [[ $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
+            fi
           done
       
       - name: Update Session
+        id: update_session
         uses: parallelworks/update-session
         with:
-          remotePort: '${{ needs.create_session.outputs.SESSION_PORT }}'
+          remotePort: '${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}'
           target: '${{ inputs.resource.id }}'
           name: '${{ sessions.session }}'
-          remoteHost: '${{ needs.create_session.outputs.target_hostname }}'
+          remoteHost: '${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}'
           localPort: '${{ inputs.advanced_settings.localport }}'
 
 # ==============================================================================
@@ -924,13 +849,13 @@ jobs:
           source:
             type: dropdown
             label: Container Source
-            default: pull
+            default: path
             tooltip: How to obtain Apptainer/Singularity containers
             options:
-              - value: pull
-                label: "📥 Pull from bucket (recommended)"
               - value: path
-                label: "📂 Use existing path"
+                label: "📂 Use existing path (default)"
+              - value: pull
+                label: "📥 Pull from bucket"
               - value: build
                 label: "🔨 Build from source (requires sudo/fakeroot)"
           
@@ -945,7 +870,8 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            placeholder: /path/to/vllm.sif
+            default: ~/pw/singularity/vllm.sif
+            placeholder: ~/pw/singularity/vllm.sif
             tooltip: Full path to existing vllm.sif container
             hidden: ${{ inputs.container.source != 'path' }}
             ignore: ${{ inputs.container.source != 'path' }}
@@ -953,7 +879,8 @@ jobs:
           rag_path:
             label: RAG Container Path
             type: string
-            placeholder: /path/to/rag.sif
+            default: ~/pw/singularity/rag.sif
+            placeholder: ~/pw/singularity/rag.sif
             tooltip: Full path to existing rag.sif container (only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source != 'path' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source != 'path' || inputs.runtype != 'all' }}
