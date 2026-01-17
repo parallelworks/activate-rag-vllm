@@ -128,6 +128,7 @@ if [ "$RUNMODE" == "docker" ];then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" .env
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
+    sed -i "s|^EMBEDDING_MODEL=.*|EMBEDDING_MODEL=${EMBEDDING_MODEL}|" .env
     
     if [[ "$DOCS_DIR" != "undefined" ]]; then
         sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
@@ -214,6 +215,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMBEDDING_MODEL|" env.sh
 
     # Get model path and basename for bind mounts
     MODEL_PATH="${MODEL_NAME}"
@@ -255,6 +257,24 @@ elif [ "$RUNMODE" == "singularity" ]; then
 
     # Define common bind mounts
     COMMON_BINDS="--bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh"
+
+    # If embedding model is a local path, bind it into the RAG container.
+    RAG_EMBED_BIND=""
+    RAG_INDEXER_BIND=""
+    EMBEDDING_MODEL_CONTAINER="${EMBEDDING_MODEL:-}"
+    if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" == /* ]]; then
+        EMB_MODEL_PATH="${EMBEDDING_MODEL_CONTAINER/#\~/$HOME}"
+        EMB_MODEL_BASE=$(basename "$EMB_MODEL_PATH")
+        EMBEDDING_MODEL_CONTAINER="/${EMB_MODEL_BASE}"
+        sed -i "s|^[#[:space:]]*\\(export[[:space:]]\\+\\)\\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMBEDDING_MODEL_CONTAINER|" env.sh
+        RAG_EMBED_BIND="--bind ${EMB_MODEL_PATH}:${EMBEDDING_MODEL_CONTAINER}"
+    fi
+    if [[ -n "${EMBEDDING_MODEL_CONTAINER}" ]]; then
+        INDEXER_CFG="./indexer_config.runtime.yaml"
+        cp -f indexer_config.yaml "$INDEXER_CFG"
+        sed -i "s|^embedding_model:.*|embedding_model: ${EMBEDDING_MODEL_CONTAINER}|" "$INDEXER_CFG"
+        RAG_INDEXER_BIND="--bind ${INDEXER_CFG}:/app/indexer_config.yaml"
+    fi
 
     # Cleanup function
     cleanup() {
@@ -305,6 +325,8 @@ EOF
             $COMMON_BINDS \
             --bind ./cache/chroma:/chroma_data \
             --bind ./docs:/docs \
+            $RAG_EMBED_BIND \
+            $RAG_INDEXER_BIND \
             "$RAG_SIF" rag
 
         # Run RAG services inside the instance
@@ -319,7 +341,7 @@ EOF
             sleep 3
             
             # Start RAG server
-            nohup python3 /app/rag_server.py > /logs/rag_server.out 2>&1 &
+            nohup python3 /app/rag_server.py --embedding_model \"${EMBEDDING_MODEL_CONTAINER}\" > /logs/rag_server.out 2>&1 &
             echo \$! > /logs/rag_server.pid
             
             # Start RAG proxy
@@ -327,7 +349,7 @@ EOF
             echo \$! > /logs/rag_proxy.pid
             
             # Start indexer
-            nohup python3 /app/indexer.py > /logs/indexer.out 2>&1 &
+            nohup python3 /app/indexer.py --config /app/indexer_config.yaml > /logs/indexer.out 2>&1 &
             echo \$! > /logs/indexer.pid
         "
         

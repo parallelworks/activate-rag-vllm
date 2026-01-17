@@ -382,6 +382,9 @@ def main():
     cfg.setdefault("watch_paths", ["/docs"])
     cfg.setdefault("collection", "activate_rag")
     cfg.setdefault("embedding_model", "sentence-transformers/all-MiniLM-L6-v2")
+    env_embedding = os.environ.get("EMBEDDING_MODEL")
+    if env_embedding:
+        cfg["embedding_model"] = env_embedding
     cfg.setdefault("include_ext", [".txt", ".pdf", ".md", ".csv", ".log"])
     cfg.setdefault("exclude_globs", [".DS_Store", ".*", "*.part", "*.tmp"])
     cfg.setdefault("chunk_chars", 1200)

@@ -94,6 +94,12 @@ jobs:
           export API_KEY=${{ inputs.advanced_settings.apikey }}
           export DOCS_DIR=${{ inputs.rag.docsdir }}
           ENVEOF
+
+          if [[ "${{ inputs.rag.embedding_model_source }}" == "local" ]]; then
+            echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_path }}" >> .run.env
+          else
+            echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_id }}" >> .run.env
+          fi
           
           # Build vLLM extra args from structured inputs
           if [[ "${{ inputs.vllm.dtype }}" == "custom" ]]; then
@@ -443,6 +449,85 @@ jobs:
           echo "Model ready at $TARGET_DIR"
 
   # ============================================================================
+  # Prepare Embedding Model (RAG)
+  # ============================================================================
+  prepare_embedding_model:
+    needs: [setup]
+    if: ${{ inputs.runtype == 'all' && inputs.rag.embedding_model_source == 'huggingface' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    outputs:
+      embedding_model_path: ${{ needs.prepare_embedding_model.steps.clone_embedding.outputs.embedding_model_path }}
+    steps:
+      - name: Clone Embedding Model
+        id: clone_embedding
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ needs.setup.outputs.rundir }}
+
+          MODEL_ID="${{ inputs.rag.embedding_model_id }}"
+          CACHE_DIR="${{ inputs.rag.embedding_cache_dir }}"
+          if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
+            CACHE_DIR="${{ inputs.model.cache_dir }}"
+          fi
+          if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
+            CACHE_DIR="~/pw/models"
+          fi
+          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
+          HF_TOKEN="${{ inputs.model.hf_token }}"
+
+          mkdir -p "$CACHE_DIR"
+          SAFE_MODEL_ID="${MODEL_ID//\//__}"
+          TARGET_DIR="$CACHE_DIR/$SAFE_MODEL_ID"
+
+          # Check if already cached
+          if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
+            echo "Embedding model already cached at $TARGET_DIR"
+          else
+            echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
+
+            # Ensure git-lfs is available
+            if ! git lfs version >/dev/null 2>&1; then
+              echo "Installing git-lfs locally..."
+              mkdir -p $HOME/bin
+              cd /tmp
+              LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
+              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
+              wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+              tar -xzf git-lfs-linux-amd64.tar.gz
+              ./git-lfs-*/install.sh --local
+              rm -rf git-lfs-*
+              export PATH="$HOME/bin:$PATH"
+              cd ${{ needs.setup.outputs.rundir }}
+              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
+            fi
+
+            git lfs install
+
+            # Build clone URL
+            REPO_URL="https://huggingface.co/$MODEL_ID"
+            [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+
+            # Clone with LFS and pull large files
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+            cd "$TARGET_DIR"
+            git lfs pull
+            cd ..
+
+            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model clone incomplete - missing config.json"; exit 1; }
+          fi
+
+          # Update environment file
+          cat >> .run.env << EOF
+          export EMBEDDING_MODEL=$TARGET_DIR
+          export TRANSFORMERS_OFFLINE=1
+          EOF
+
+          echo "embedding_model_path=$TARGET_DIR" >> $OUTPUTS
+          echo "Embedding model ready at $TARGET_DIR"
+
+  # ============================================================================
   # Prepare Tiktoken Encodings (Optional)
   # ============================================================================
   prepare_tiktoken:
@@ -466,7 +551,7 @@ jobs:
   # Run Service (using marketplace job_runner)
   # ============================================================================
   run_service:
-    needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
+    needs: [setup, prepare_containers, prepare_model, prepare_embedding_model, prepare_tiktoken]
     working-directory: ${{ needs.setup.outputs.rundir }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
@@ -969,6 +1054,41 @@ jobs:
             default: ./docs
             type: string
             tooltip: Directory containing documents to index for RAG
+
+          embedding_model_source:
+            label: Embedding Model Source
+            type: dropdown
+            default: huggingface
+            tooltip: How to load the embedding model for RAG
+            options:
+              - value: huggingface
+                label: HuggingFace Hub
+              - value: local
+                label: Local path
+
+          embedding_model_id:
+            label: Embedding Model ID
+            type: string
+            default: sentence-transformers/all-MiniLM-L6-v2
+            tooltip: HuggingFace model ID for embeddings
+            hidden: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
+            ignore: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
+
+          embedding_model_path:
+            label: Embedding Model Path
+            type: string
+            optional: true
+            tooltip: Local path to an embedding model directory
+            hidden: ${{ inputs.rag.embedding_model_source != 'local' }}
+            ignore: ${{ inputs.rag.embedding_model_source != 'local' }}
+
+          embedding_model_cache_dir:
+            label: Embedding Model Cache Directory
+            type: string
+            default: ~/pw/models
+            tooltip: Directory to clone the embedding model into (HuggingFace)
+            hidden: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
+            ignore: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
           
           systemprompt:
             type: string
