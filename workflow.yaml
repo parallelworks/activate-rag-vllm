@@ -216,7 +216,7 @@ jobs:
           git -C "$LFS_DIR" lfs install --local
 
           git -C "$LFS_DIR" sparse-checkout init --no-cone
-          patterns=("vllm.*.sif" "vllm.sif.part_*" "vllm.sif")
+          patterns=("vllm.*.sif" "vllm.sif.part_*" "vllm.sif" "scripts/sif_parts.sh")
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
             patterns+=("rag.*.sif" "rag.sif.part_*" "rag.sif")
           fi
@@ -226,13 +226,13 @@ jobs:
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
             lfs_include="${lfs_include},rag.*.sif,rag.sif.part_*,rag.sif"
           fi
-          git -C "$LFS_DIR" config lfs.concurrenttransfers 3
+          git -C "$LFS_DIR" config lfs.concurrenttransfers 4
           git -C "$LFS_DIR" config lfs.transfer.maxretries 10
           git -C "$LFS_DIR" config lfs.transfer.maxretrydelay 30
           git -C "$LFS_DIR" config lfs.fetchinclude "$lfs_include"
           git -C "$LFS_DIR" config lfs.fetchexclude ""
           attempt=1
-          max_attempts=5
+          max_attempts=2
           while true; do
             echo "LFS pull attempt ${attempt}/${max_attempts}..."
             if git -C "$LFS_DIR" lfs fetch; then
@@ -255,6 +255,15 @@ jobs:
 
             if [[ -f "$full" ]]; then
               cp "$full" "$target"
+              return 0
+            fi
+
+            local script="$LFS_DIR/scripts/sif_parts.sh"
+            shopt -s nullglob
+            local numeric_parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
+            shopt -u nullglob
+            if [[ -x "$script" && ${#numeric_parts[@]} -gt 0 ]]; then
+              bash "$script" join --prefix "$prefix" --in-dir "$LFS_DIR" --output "$target"
               return 0
             fi
 
