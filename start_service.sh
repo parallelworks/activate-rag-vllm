@@ -190,16 +190,18 @@ elif [ "$RUNMODE" == "singularity" ]; then
     cp singularity/env.sh.example env.sh
     cp singularity/Singularity.* ./
 
+    # Allocate ports for all services
+    VLLM_SERVER_PORT=$(pw agent open-port)
     RAG_PORT=$(pw agent open-port)
     CHROMA_PORT=$(pw agent open-port)
+    PROXY_PORT=$(pw agent open-port)
 
-    if [ "$RUNTYPE" == "all" ];then
-        VLLM_SERVER_PORT=$(pw agent open-port)
-        PROXY_PORT=${service_port}
-        echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT 
+    # Set SESSION_PORT based on deployment type
+    # - vLLM only: users connect directly to vLLM
+    # - all (RAG): users connect to RAG proxy which forwards to vLLM
+    if [ "$RUNTYPE" == "all" ]; then
+        echo "SESSION_PORT=${PROXY_PORT}" > SESSION_PORT 
     else
-        PROXY_PORT=$(pw agent open-port)
-        VLLM_SERVER_PORT=${service_port}
         echo "SESSION_PORT=${VLLM_SERVER_PORT}" > SESSION_PORT 
     fi
 
