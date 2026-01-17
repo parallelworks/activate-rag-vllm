@@ -538,7 +538,7 @@ jobs:
           set -euo pipefail
           set -x
           
-          TIMEOUT=600
+          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
           RETRY_INTERVAL=3
           cd ${{ needs.setup.outputs.rundir }}
           
@@ -566,7 +566,7 @@ jobs:
         id: wait_server
         early-cancel: any-job-failed
         run: |
-          TIMEOUT=300
+          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}"
           remote_port="${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}"
@@ -1027,6 +1027,12 @@ jobs:
             default: '5555'
             tooltip: Port in your workspace to access the service
             type: string
+
+          session_timeout:
+            label: Session Wait Timeout (seconds)
+            default: 1800
+            tooltip: How long to wait for the server to start before timing out
+            type: number
           
           apikey:
             label: vLLM API Key
