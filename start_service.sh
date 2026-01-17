@@ -1,6 +1,10 @@
 #!/bin/bash
 set -x
 
+# Mark job as started and record hostname for session management
+touch job.started
+hostname >> HOSTNAME
+
 source .run.env > /dev/null 2>&1
 #rm .run.env > /dev/null 2>&1
 
