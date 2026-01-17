@@ -11,7 +11,7 @@
 #   - Optional RAG stack with ChromaDB vector store and document indexing
 #   - HuggingFace model cloning via git-lfs or local model path support
 #   - OpenAI-compatible API endpoint for IDE integration (Cline, Continue, etc.)
-#   - Unified SLURM/PBS/SSH job submission via script_submitter marketplace action
+#   - Unified SLURM/PBS/SSH job submission via job_runner marketplace action
 #
 # Organized Input Sections:
 #   1. Resource Selection          - Compute cluster target
@@ -306,7 +306,7 @@ jobs:
           echo "Tiktoken encodings downloaded"
 
   # ============================================================================
-  # Run Service (using marketplace script_submitter)
+  # Run Service (using marketplace job-runner)
   # ============================================================================
   run_service:
     needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
@@ -315,7 +315,7 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Run Service
-        uses: marketplace/script_submitter/v4.0
+        uses: marketplace/job_runner/v4.0
         early-cancel: any-job-failed
         with:
           resource: ${{ inputs.resource }}
