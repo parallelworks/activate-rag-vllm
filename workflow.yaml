@@ -782,8 +782,9 @@ jobs:
           hf_model_id:
             type: string
             label: HuggingFace Model ID
-            placeholder: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
-            tooltip: Model ID to clone from HuggingFace (e.g., nvidia/Llama-3_3-Nemotron-Super-49B-v1_5). Uses git-lfs for HPC compatibility.
+            placeholder: Qwen/Qwen2.5-Coder-7B-Instruct
+            default: Qwen/Qwen2.5-Coder-7B-Instruct
+            tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-Coder-7B optimized for code assist on single GPU.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
           
@@ -815,7 +816,7 @@ jobs:
           num_gpus:
             type: dropdown
             label: Number of GPUs
-            default: "4"
+            default: "1"
             tooltip: Number of GPUs for tensor parallelism (must match available GPUs)
             options:
               - value: "1"
@@ -830,7 +831,7 @@ jobs:
           gpu_memory:
             type: dropdown
             label: GPU Memory Utilization
-            default: "0.85"
+            default: "0.90"
             tooltip: Fraction of GPU memory to use (lower if OOM errors occur)
             options:
               - value: "0.95"
@@ -1013,9 +1014,7 @@ jobs:
             optional: true
             tooltip: Additional SLURM directives
             default: |
-              #SBATCH --gres=gpu:4
-              
-              ##SBATCH --constraint=mla  # Uncomment for Navy/AFRL DSRC systems
+              #SBATCH --gres=gpu:1
 
       # ========================================================================
       # PBS Configuration
@@ -1042,7 +1041,7 @@ jobs:
             default: |
               #!/bin/bash
               #PBS -q gpu
-              #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=4
+              #PBS -l select=1:ncpus=8:mpiprocs=1:ngpus=1
               #PBS -l walltime=04:00:00
               #PBS -V
 
