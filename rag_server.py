@@ -117,7 +117,7 @@ def search(
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--collection", default="activate_rag")
-    ap.add_argument("--embedding_model", default="sentence-transformers/all-MiniLM-L6-v2")
+    ap.add_argument("--embedding_model", default=os.environ.get("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"))
     ap.add_argument("--port", type=int, default=8080)
     args=ap.parse_args()
 
