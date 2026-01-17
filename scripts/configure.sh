@@ -131,8 +131,8 @@ configure_model() {
             read -p "Enter HuggingFace model ID: " HF_MODEL_ID
             MODEL_NAME="$HF_MODEL_ID"
             
-            read -p "Enter model cache directory [~/.cache/activate-models]: " MODEL_CACHE
-            MODEL_CACHE="${MODEL_CACHE:-$HOME/.cache/activate-models}"
+            read -p "Enter model cache directory [~/pw/models]: " MODEL_CACHE
+            MODEL_CACHE="${MODEL_CACHE:-$HOME/pw/models}"
             
             # HuggingFace token for gated models
             echo ""

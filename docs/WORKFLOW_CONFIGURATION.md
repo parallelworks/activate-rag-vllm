@@ -182,7 +182,7 @@ model:
     cache_dir:
       type: string
       label: Model Cache Directory
-      default: ~/.cache/activate-models
+      default: ~/pw/models
       hidden: ${{ inputs.model.source != 'huggingface' }}
 ```
 

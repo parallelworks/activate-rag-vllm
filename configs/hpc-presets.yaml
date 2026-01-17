@@ -115,7 +115,7 @@ presets:
     
     model:
       source: huggingface
-      cache_dir: ~/.cache/activate-models
+      cache_dir: ~/pw/models
       recommended:
         - meta-llama/Llama-3.1-8B-Instruct
         - meta-llama/Llama-3.1-70B-Instruct
@@ -140,7 +140,7 @@ presets:
     
     model:
       source: huggingface
-      cache_dir: ~/.cache/activate-models
+      cache_dir: ~/pw/models
     
     notes:
       - "A2 or A3 instances recommended for GPU workloads"
@@ -161,7 +161,7 @@ presets:
     
     model:
       source: huggingface
-      cache_dir: ~/.cache/activate-models
+      cache_dir: ~/pw/models
       recommended:
         - meta-llama/Llama-3.2-1B-Instruct
         - meta-llama/Llama-3.1-8B-Instruct
@@ -192,7 +192,7 @@ presets:
     
     model:
       source: huggingface
-      cache_dir: ~/.cache/activate-models
+      cache_dir: ~/pw/models
     
     notes:
       - "Singularity must be installed locally"

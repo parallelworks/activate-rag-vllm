@@ -697,7 +697,7 @@ jobs:
           cache_dir:
             type: string
             label: Model Cache Directory
-            default: ~/.cache/activate-models
+            default: ~/pw/models
             tooltip: Where to store downloaded models (should have sufficient space)
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}

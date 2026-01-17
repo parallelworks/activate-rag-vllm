@@ -159,7 +159,7 @@ git clone https://user:${HF_TOKEN}@huggingface.co/meta-llama/Llama-3.1-8B-Instru
 ### HuggingFace Hub
 
 When using `--hf-model`, the script will:
-1. Check if model is already cached in `~/.cache/activate-models`
+1. Check if model is already cached in `~/pw/models`
 2. If not, download using git-lfs (preferred) or huggingface-cli
 3. Set `MODEL_PATH` to the cached location
 

@@ -8,7 +8,7 @@
 # Configuration
 # ============================================================================
 
-MODEL_CACHE_BASE="${MODEL_CACHE_BASE:-$HOME/.cache/activate-models}"
+MODEL_CACHE_BASE="${MODEL_CACHE_BASE:-$HOME/pw/models}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 
 # ============================================================================

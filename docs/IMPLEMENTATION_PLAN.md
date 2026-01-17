@@ -330,7 +330,7 @@ inputs:
     cache_dir:
       type: text
       label: Model Cache Directory
-      default: ~/.cache/activate-models
+      default: ~/pw/models
       description: "Where to store downloaded models"
       hidden:
         source: '!= huggingface'
