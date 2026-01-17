@@ -454,7 +454,7 @@ jobs:
           scheduler: ${{ inputs.scheduler.enabled }}
           inject_markers: true
           slurm:
-            is_disabled: ${{ inputs.scheduler.slurm.is_disabled }}
+            is_disabled: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
             account: ${{ inputs.scheduler.slurm.account }}
             partition: ${{ inputs.scheduler.slurm.partition }}
             qos: ${{ inputs.scheduler.slurm.qos }}
@@ -464,7 +464,7 @@ jobs:
             scheduler_directives: |
               ${{ inputs.scheduler.slurm.scheduler_directives }}
           pbs:
-            is_disabled: ${{ inputs.scheduler.pbs.is_disabled }}
+            is_disabled: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
             account: ${{ inputs.scheduler.pbs.account }}
             queue: ${{ inputs.scheduler.pbs.queue }}
             walltime: ${{ inputs.scheduler.pbs.walltime }}

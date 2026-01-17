@@ -83,6 +83,16 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
+      - name: Validate Scheduler Selection
+        run: |
+          set -x
+          if [[ "${{ inputs.scheduler }}" == "true" ]]; then
+            if [[ "${{ inputs.slurm.is_disabled }}" == "true" && "${{ inputs.pbs.is_disabled }}" == "true" ]]; then
+              echo "$(date) ERROR: Scheduler enabled but no scheduler type is active."
+              echo "Set SLURM or PBS inputs, or disable scheduler for SSH mode."
+              exit 1
+            fi
+          fi
       - name: Create Script Template
         run: |
           set -x
@@ -125,7 +135,7 @@ jobs:
   ssh_job:
     needs:
       - create_script_template
-    if: ${{ inputs.slurm.is_disabled && inputs.pbs.is_disabled }}
+    if: ${{ inputs.scheduler == false && inputs.slurm.is_disabled && inputs.pbs.is_disabled }}
     working-directory: ${{ inputs.rundir }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
