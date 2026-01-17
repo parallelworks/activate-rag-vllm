@@ -99,6 +99,7 @@ jobs:
             echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_path }}" >> .run.env
           else
             echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_id }}" >> .run.env
+            echo "export EMBEDDING_CACHE_DIR=${{ inputs.rag.embedding_model_cache_dir }}" >> .run.env
           fi
           
           # Build vLLM extra args from structured inputs
@@ -521,6 +522,7 @@ jobs:
           # Update environment file
           cat >> .run.env << EOF
           export EMBEDDING_MODEL=$TARGET_DIR
+          export EMBEDDING_CACHE_DIR=$CACHE_DIR
           export TRANSFORMERS_OFFLINE=1
           EOF
 

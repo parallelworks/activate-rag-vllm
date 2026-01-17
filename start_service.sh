@@ -262,6 +262,18 @@ elif [ "$RUNMODE" == "singularity" ]; then
     RAG_EMBED_BIND=""
     RAG_INDEXER_BIND=""
     EMBEDDING_MODEL_CONTAINER="${EMBEDDING_MODEL:-}"
+    if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" != /* ]]; then
+        CACHE_BASE="${EMBEDDING_CACHE_DIR:-${MODEL_CACHE_BASE:-}}"
+        if [[ -z "${CACHE_BASE}" || "${CACHE_BASE}" == "undefined" ]]; then
+            CACHE_BASE="~/pw/models"
+        fi
+        CACHE_BASE="${CACHE_BASE/#\~/$HOME}"
+        SAFE_ID="${EMBEDDING_MODEL_CONTAINER//\//__}"
+        CANDIDATE="${CACHE_BASE}/${SAFE_ID}"
+        if [[ -d "$CANDIDATE" ]]; then
+            EMBEDDING_MODEL_CONTAINER="$CANDIDATE"
+        fi
+    fi
     if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" == /* ]]; then
         EMB_MODEL_PATH="${EMBEDDING_MODEL_CONTAINER/#\~/$HOME}"
         EMB_MODEL_BASE=$(basename "$EMB_MODEL_PATH")
