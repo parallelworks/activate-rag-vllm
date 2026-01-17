@@ -42,7 +42,7 @@ instances:
       - ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions
       - ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings
       - ./env.sh:/.singularity.d/env/env.sh
-      - __MODEL_PATH__:/__MODEL_BASE__:ro
+      - __MODEL_PATH__:/__MODEL_BASE__
 
   # ============================================================================
   # RAG Server Instance (includes RAG proxy, server, ChromaDB, and indexer)
