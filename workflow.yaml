@@ -99,6 +99,7 @@ jobs:
             echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_path }}" >> .run.env
           else
             echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_id }}" >> .run.env
+            echo "export EMBEDDING_CACHE_DIR=${{ inputs.rag.embedding_model_cache_dir }}" >> .run.env
           fi
           
           # Build vLLM extra args from structured inputs
@@ -521,6 +522,7 @@ jobs:
           # Update environment file
           cat >> .run.env << EOF
           export EMBEDDING_MODEL=$TARGET_DIR
+          export EMBEDDING_CACHE_DIR=$CACHE_DIR
           export TRANSFORMERS_OFFLINE=1
           EOF
 
@@ -684,6 +686,14 @@ jobs:
           RETRY_INTERVAL=3
           remote_host="${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}"
           remote_port="${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}"
+          local_host=""
+          if [[ -n "${remote_host}" ]]; then
+            host_short=$(hostname 2>/dev/null || true)
+            host_fqdn=$(hostname -f 2>/dev/null || true)
+            if [[ "${remote_host}" == "${host_short}" || "${remote_host}" == "${host_fqdn}" ]]; then
+              local_host="127.0.0.1"
+            fi
+          fi
           
           cd ${{ needs.setup.outputs.rundir }}
           
@@ -693,6 +703,9 @@ jobs:
             
             if curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1; then
               echo "$(date) Success: Server is listening!"
+              exit 0
+            elif [[ -n "${local_host}" ]] && curl --silent --connect-timeout 5 "http://${local_host}:${remote_port}" >/dev/null 2>&1; then
+              echo "$(date) Success: Server is listening on ${local_host}:${remote_port}!"
               exit 0
             elif [ -f job.ended ]; then
               echo "$(date) Job completed"

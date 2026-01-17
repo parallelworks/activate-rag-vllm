@@ -261,7 +261,20 @@ elif [ "$RUNMODE" == "singularity" ]; then
     # If embedding model is a local path, bind it into the RAG container.
     RAG_EMBED_BIND=""
     RAG_INDEXER_BIND=""
+    RAG_APP_BINDS=""
     EMBEDDING_MODEL_CONTAINER="${EMBEDDING_MODEL:-}"
+    if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" != /* ]]; then
+        CACHE_BASE="${EMBEDDING_CACHE_DIR:-${MODEL_CACHE_BASE:-}}"
+        if [[ -z "${CACHE_BASE}" || "${CACHE_BASE}" == "undefined" ]]; then
+            CACHE_BASE="~/pw/models"
+        fi
+        CACHE_BASE="${CACHE_BASE/#\~/$HOME}"
+        SAFE_ID="${EMBEDDING_MODEL_CONTAINER//\//__}"
+        CANDIDATE="${CACHE_BASE}/${SAFE_ID}"
+        if [[ -d "$CANDIDATE" ]]; then
+            EMBEDDING_MODEL_CONTAINER="$CANDIDATE"
+        fi
+    fi
     if [[ -n "${EMBEDDING_MODEL_CONTAINER}" && "${EMBEDDING_MODEL_CONTAINER}" == /* ]]; then
         EMB_MODEL_PATH="${EMBEDDING_MODEL_CONTAINER/#\~/$HOME}"
         EMB_MODEL_BASE=$(basename "$EMB_MODEL_PATH")
@@ -275,6 +288,11 @@ elif [ "$RUNMODE" == "singularity" ]; then
         sed -i "s|^embedding_model:.*|embedding_model: ${EMBEDDING_MODEL_CONTAINER}|" "$INDEXER_CFG"
         RAG_INDEXER_BIND="--bind ${INDEXER_CFG}:/app/indexer_config.yaml"
     fi
+    for app_file in rag_server.py rag_proxy.py indexer.py; do
+        if [[ -f "${app_file}" ]]; then
+            RAG_APP_BINDS="${RAG_APP_BINDS} --bind ${PWD}/${app_file}:/app/${app_file}"
+        fi
+    done
 
     # Cleanup function
     cleanup() {
@@ -327,6 +345,7 @@ EOF
             --bind ./docs:/docs \
             $RAG_EMBED_BIND \
             $RAG_INDEXER_BIND \
+            $RAG_APP_BINDS \
             "$RAG_SIF" rag
 
         # Run RAG services inside the instance
@@ -341,7 +360,7 @@ EOF
             sleep 3
             
             # Start RAG server
-            nohup python3 /app/rag_server.py --embedding_model \"${EMBEDDING_MODEL_CONTAINER}\" > /logs/rag_server.out 2>&1 &
+            nohup python3 /app/rag_server.py --embedding_model \"${EMBEDDING_MODEL_CONTAINER}\" --port ${RAG_PORT} > /logs/rag_server.out 2>&1 &
             echo \$! > /logs/rag_server.pid
             
             # Start RAG proxy
