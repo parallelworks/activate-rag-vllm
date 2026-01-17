@@ -114,8 +114,8 @@ jobs:
             echo "export MODEL_CACHE_BASE=${{ inputs.model.cache_dir }}" >> .run.env
           fi
           
-          # Container paths
-          if [[ "${{ inputs.container.source }}" == "path" ]]; then
+          # Container paths (used for both 'path' and 'build' modes)
+          if [[ "${{ inputs.container.source }}" != "pull" ]]; then
             echo "export VLLM_CONTAINER_PATH=${{ inputs.container.vllm_path }}" >> .run.env
             echo "export RAG_CONTAINER_PATH=${{ inputs.container.rag_path }}" >> .run.env
           fi
@@ -198,21 +198,34 @@ jobs:
           set -x
           cd ${{ needs.setup.outputs.rundir }}
           
+          # Resolve container paths (expand ~ to $HOME)
+          VLLM_PATH="${{ inputs.container.vllm_path }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          RAG_PATH="${{ inputs.container.rag_path }}"
+          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+          
           echo "Building Apptainer containers (requires sudo or fakeroot)..."
+          echo "vLLM container will be built to: $VLLM_PATH"
+          echo "RAG container will be built to: $RAG_PATH"
           
           build_container() {
-            local name=$1 def=$2
-            [[ -f "$name" ]] && { echo "$name exists, skipping"; return 0; }
-            echo "Building $name..."
+            local target=$1 def=$2
+            [[ -f "$target" ]] && { echo "$target exists, skipping"; return 0; }
+            echo "Building $target from $def..."
+            mkdir -p "$(dirname "$target")"
             if sudo -n true 2>/dev/null; then
-              sudo singularity build "$name" "$def"
+              sudo singularity build "$target" "$def"
             else
-              singularity build --fakeroot "$name" "$def"
+              singularity build --fakeroot "$target" "$def"
             fi
           }
           
-          build_container vllm.sif singularity/Singularity.vllm
-          [[ "${{ inputs.runtype }}" == "all" ]] && build_container rag.sif singularity/Singularity.rag
+          build_container "$VLLM_PATH" singularity/Singularity.vllm
+          [[ "${{ inputs.runtype }}" == "all" ]] && build_container "$RAG_PATH" singularity/Singularity.rag
+          
+          # Create symlinks in rundir for consistency with other modes
+          ln -sf "$VLLM_PATH" ./vllm.sif
+          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
           
           echo "Container build complete"
 
@@ -821,18 +834,18 @@ jobs:
             type: string
             default: ~/pw/singularity/vllm.sif
             placeholder: ~/pw/singularity/vllm.sif
-            tooltip: Full path to existing vllm.sif container
-            hidden: ${{ inputs.container.source != 'path' }}
-            ignore: ${{ inputs.container.source != 'path' }}
+            tooltip: Path to vllm.sif container (use existing or build destination)
+            hidden: ${{ inputs.container.source == 'pull' }}
+            ignore: ${{ inputs.container.source == 'pull' }}
           
           rag_path:
             label: RAG Container Path
             type: string
             default: ~/pw/singularity/rag.sif
             placeholder: ~/pw/singularity/rag.sif
-            tooltip: Full path to existing rag.sif container (only needed for vLLM+RAG mode)
-            hidden: ${{ inputs.container.source != 'path' || inputs.runtype != 'all' }}
-            ignore: ${{ inputs.container.source != 'path' || inputs.runtype != 'all' }}
+            tooltip: Path to rag.sif container (use existing or build destination, only needed for vLLM+RAG mode)
+            hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
+            ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
 
       # ========================================================================
       # Advanced Settings
