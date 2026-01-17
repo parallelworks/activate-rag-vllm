@@ -319,7 +319,7 @@ jobs:
           echo "Tiktoken encodings downloaded"
 
   # ============================================================================
-  # Run Service (using marketplace job_runner)
+  # Run Service (direct execution - marketplace job_runner disabled for debugging)
   # ============================================================================
   run_service:
     needs: [setup, prepare_containers, prepare_model, prepare_tiktoken]
@@ -328,34 +328,30 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Run Service
-        uses: marketplace/job_runner/v4.0
+        id: run_service
         early-cancel: any-job-failed
-        with:
-          resource: ${{ inputs.resource }}
-          shebang: '#!/bin/bash'
-          rundir: ${{ needs.setup.outputs.rundir }}
-          use_existing_script: true
-          script_path: ${{ needs.setup.outputs.rundir }}/start_service.sh
-          scheduler: ${{ inputs.scheduler.enabled }}
-          inject_markers: true
-          slurm:
-            is_disabled: ${{ inputs.scheduler.slurm.is_disabled }}
-            account: ${{ inputs.scheduler.slurm.account }}
-            partition: ${{ inputs.scheduler.slurm.partition }}
-            qos: ${{ inputs.scheduler.slurm.qos }}
-            time: ${{ inputs.scheduler.slurm.time }}
-            cpus_per_task: ${{ inputs.scheduler.slurm.cpus_per_task }}
-            gres: ${{ inputs.scheduler.slurm.gres }}
-            scheduler_directives: |
-              ${{ inputs.scheduler.slurm.scheduler_directives }}
-          pbs:
-            is_disabled: ${{ inputs.scheduler.pbs.is_disabled }}
-            account: ${{ inputs.scheduler.pbs.account }}
-            queue: ${{ inputs.scheduler.pbs.queue }}
-            walltime: ${{ inputs.scheduler.pbs.walltime }}
-            select: ${{ inputs.scheduler.pbs.select }}
-            scheduler_directives: |
-              ${{ inputs.scheduler.pbs.scheduler_directives }}
+        run: |
+          set -x
+          cd ${{ needs.setup.outputs.rundir }}
+          
+          # Create job markers
+          touch job.started
+          hostname > HOSTNAME
+          
+          # Source environment and run
+          source .run.env
+          nohup bash start_service.sh > run.out 2>&1 &
+          echo $! > service.pid
+          
+          # Wait briefly then check if still running
+          sleep 5
+          if ! kill -0 $(cat service.pid) 2>/dev/null; then
+            echo "ERROR: Service failed to start"
+            cat run.out
+            exit 1
+          fi
+          
+          echo "Service started in background"
 
   # ============================================================================
   # Session Management
