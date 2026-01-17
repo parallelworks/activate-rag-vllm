@@ -2,8 +2,6 @@
 
 Deploy GPU-accelerated language model inference with optional RAG (Retrieval-Augmented Generation) capabilities on the ACTIVATE platform. Optimized for HPC environments using Singularity.
 
-[![Demo Video](https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1)](https://www.youtube.com/watch?v=6LiwXEOkuUc)
-
 ## Overview
 
 This workflow deploys an OpenAI-compatible inference server powered by [vLLM](https://github.com/vllm-project/vllm), with optional RAG capabilities for context-aware responses using your own documents.
@@ -119,6 +117,10 @@ activate-rag-vllm/
 | [Workflow Configuration](docs/WORKFLOW_CONFIGURATION.md) | YAML workflow customization |
 | [Architecture](docs/ARCHITECTURE.md) | System design details |
 | [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) | Development roadmap |
+
+## Demo
+
+[![Demo Video](https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1)](https://www.youtube.com/watch?v=6LiwXEOkuUc)
 
 ## Troubleshooting
 
