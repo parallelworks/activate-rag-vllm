@@ -159,6 +159,112 @@ jobs:
           [[ "${{ inputs.runtype }}" == "all" && ! -f "rag.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./ || echo "rag.sif exists or not needed"
           
           echo "Container pull complete"
+
+      - name: Pull Containers from LFS Repo
+        id: pull_containers_lfs
+        if: ${{ inputs.container.source == 'lfs' }}
+        early-cancel: any-job-failed
+        run: |
+          set -euo pipefail
+          cd ${{ needs.setup.outputs.rundir }}
+
+          command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
+          git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found"; exit 1; }
+
+          LFS_REPO="${{ inputs.container.lfs_repo }}"
+          LFS_BRANCH="${{ inputs.container.lfs_branch }}"
+          LFS_DIR=".lfs_containers"
+          REV_FILE=".lfs_containers_rev"
+
+          VLLM_PATH="${{ inputs.container.vllm_path }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          RAG_PATH="${{ inputs.container.rag_path }}"
+          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+
+          need_vllm=true
+          need_rag=false
+          [[ -f "$VLLM_PATH" ]] && need_vllm=false
+          [[ "${{ inputs.runtype }}" == "all" ]] && { [[ ! -f "$RAG_PATH" ]] && need_rag=true; }
+
+          remote_rev=$(git ls-remote "$LFS_REPO" "$LFS_BRANCH" | awk '{print $1}')
+          if [[ -z "$remote_rev" ]]; then
+            echo "ERROR: Could not resolve $LFS_BRANCH in $LFS_REPO"
+            exit 1
+          fi
+          stored_rev=""
+          [[ -f "$REV_FILE" ]] && stored_rev=$(cat "$REV_FILE" || true)
+
+          if [[ "$need_vllm" == "false" && "$need_rag" == "false" ]]; then
+            if [[ -n "$remote_rev" && "$remote_rev" == "$stored_rev" ]]; then
+              echo "Containers already present and match remote revision $remote_rev; skipping LFS pull."
+            else
+              echo "Containers already present; remote revision is $remote_rev (stored: $stored_rev)."
+              echo "Skipping LFS pull to avoid re-download. Remove containers to force refresh."
+            fi
+            exit 0
+          fi
+
+          if [[ -d "$LFS_DIR/.git" ]]; then
+            git -C "$LFS_DIR" fetch origin "$LFS_BRANCH"
+          else
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch "$LFS_BRANCH" "$LFS_REPO" "$LFS_DIR"
+          fi
+
+          git -C "$LFS_DIR" checkout -f "$LFS_BRANCH"
+          git -C "$LFS_DIR" reset --hard "origin/$LFS_BRANCH"
+          git -C "$LFS_DIR" lfs install --local
+
+          git -C "$LFS_DIR" sparse-checkout init --no-cone
+          patterns=("vllm.[0-9][0-9][0-9][0-9][0-9].sif" "vllm.sif.part_*" "vllm.sif")
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            patterns+=("rag.[0-9][0-9][0-9][0-9][0-9].sif" "rag.sif.part_*" "rag.sif")
+          fi
+          git -C "$LFS_DIR" sparse-checkout set --no-cone "${patterns[@]}"
+
+          lfs_include="vllm.[0-9][0-9][0-9][0-9][0-9].sif,vllm.sif.part_*,vllm.sif"
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            lfs_include="${lfs_include},rag.[0-9][0-9][0-9][0-9][0-9].sif,rag.sif.part_*,rag.sif"
+          fi
+          git -C "$LFS_DIR" lfs pull --include "$lfs_include" --exclude "*"
+
+          assemble_sif() {
+            local prefix=$1
+            local target=$2
+            local full="$LFS_DIR/${prefix}.sif"
+            mkdir -p "$(dirname "$target")"
+
+            if [[ -f "$full" ]]; then
+              cp "$full" "$target"
+              return 0
+            fi
+
+            shopt -s nullglob
+            local parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$LFS_DIR/${prefix}.sif.part_"*)
+            shopt -u nullglob
+
+            if ((${#parts[@]} == 0)); then
+              echo "ERROR: No parts found for ${prefix} in ${LFS_DIR}"
+              exit 1
+            fi
+
+            mapfile -t parts_sorted < <(printf "%s\n" "${parts[@]}" | LC_ALL=C sort)
+            cat "${parts_sorted[@]}" > "$target"
+          }
+
+          if [[ "$need_vllm" == "true" ]]; then
+            echo "Assembling vLLM container to $VLLM_PATH"
+            assemble_sif vllm "$VLLM_PATH"
+          fi
+          if [[ "$need_rag" == "true" ]]; then
+            echo "Assembling RAG container to $RAG_PATH"
+            assemble_sif rag "$RAG_PATH"
+          fi
+
+          ln -sf "$VLLM_PATH" ./vllm.sif
+          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
+
+          [[ -n "$remote_rev" ]] && echo "$remote_rev" > "$REV_FILE"
+          echo "LFS container pull complete"
       
       - name: Link Existing Containers
         id: link_containers
@@ -348,7 +454,7 @@ jobs:
           scheduler: ${{ inputs.scheduler.enabled }}
           inject_markers: true
           slurm:
-            is_disabled: ${{ inputs.scheduler.slurm.is_disabled }}
+            is_disabled: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
             account: ${{ inputs.scheduler.slurm.account }}
             partition: ${{ inputs.scheduler.slurm.partition }}
             qos: ${{ inputs.scheduler.slurm.qos }}
@@ -358,7 +464,7 @@ jobs:
             scheduler_directives: |
               ${{ inputs.scheduler.slurm.scheduler_directives }}
           pbs:
-            is_disabled: ${{ inputs.scheduler.pbs.is_disabled }}
+            is_disabled: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
             account: ${{ inputs.scheduler.pbs.account }}
             queue: ${{ inputs.scheduler.pbs.queue }}
             walltime: ${{ inputs.scheduler.pbs.walltime }}
@@ -524,17 +630,30 @@ jobs:
             label: Submit to Job Scheduler
             tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
             default: false
-            hidden: ${{ inputs.resource.schedulerType == '' }}
+
+          type_override:
+            type: dropdown
+            label: Scheduler Type Override
+            tooltip: Use when resource metadata is missing/incorrect. Auto uses the resource scheduler type.
+            default: auto
+            hidden: ${{ inputs.scheduler.enabled != true }}
+            options:
+              - value: auto
+                label: Auto (resource)
+              - value: slurm
+                label: SLURM
+              - value: pbs
+                label: PBS
           
           slurm:
             type: group
             label: SLURM Configuration
-            hidden: ${{ inputs.scheduler.enabled != true || inputs.resource.schedulerType != 'slurm' }}
+            hidden: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
             collapsed: true
             items:
               is_disabled:
                 type: boolean
-                default: ${{ inputs.resource.schedulerType != 'slurm' }}
+                default: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
                 hidden: true
               
               account:
@@ -543,6 +662,7 @@ jobs:
                 resource: ${{ inputs.resource }}
                 tooltip: SLURM account for job submission (--account)
                 optional: true
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
               
               partition:
                 type: slurm-partitions
@@ -550,6 +670,7 @@ jobs:
                 optional: true
                 resource: ${{ inputs.resource }}
                 tooltip: Partition for job submission (--partition)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
               
               qos:
                 label: Quality of Service (QoS)
@@ -557,43 +678,56 @@ jobs:
                 resource: ${{ inputs.resource }}
                 tooltip: SLURM QoS setting (--qos)
                 optional: true
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
               
               cpus_per_task:
                 type: number
                 label: CPUs per Task
                 min: 1
                 max: 256
-                default: 4
+                default: 1
                 tooltip: Number of CPUs for the job (--cpus-per-task)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
               
               time:
                 label: Walltime
                 type: string
                 default: 04:00:00
                 tooltip: Maximum job duration, e.g., 04:00:00 (--time)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
               
               gres:
                 label: GPUs (gres)
-                type: string
+                type: dropdown
                 default: "gpu:1"
-                placeholder: "gpu:1"
-                tooltip: GPU resource specification, e.g., gpu:1, gpu:a100:2 (--gres)
+                tooltip: GPU resource specification (--gres). Keep in sync with vLLM GPU count.
+                options:
+                  - value: "gpu:1"
+                    label: "1 GPU (gpu:1)"
+                  - value: "gpu:2"
+                    label: "2 GPUs (gpu:2)"
+                  - value: "gpu:4"
+                    label: "4 GPUs (gpu:4)"
+                  - value: "gpu:8"
+                    label: "8 GPUs (gpu:8)"
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
               
               scheduler_directives:
                 type: editor
                 label: Additional Directives
                 optional: true
                 tooltip: Additional SLURM directives (include #SBATCH prefix)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
           
           pbs:
             type: group
             label: PBS Configuration
-            hidden: ${{ inputs.scheduler.enabled != true || inputs.resource.schedulerType != 'pbs' }}
+            hidden: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
             collapsed: true
             items:
               is_disabled:
                 type: boolean
-                default: ${{ inputs.resource.schedulerType != 'pbs' }}
+                default: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
                 hidden: true
               
               account:
@@ -601,18 +735,21 @@ jobs:
                 type: string
                 optional: true
                 tooltip: PBS account for job submission (-A)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
               
               queue:
                 label: Queue
                 type: string
                 optional: true
                 tooltip: PBS queue name (-q)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
               
               walltime:
                 label: Walltime
                 type: string
                 default: 04:00:00
                 tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
               
               select:
                 label: Resource Selection
@@ -620,12 +757,14 @@ jobs:
                 default: "1:ncpus=8:ngpus=1"
                 placeholder: "1:ncpus=8:ngpus=1"
                 tooltip: PBS resource selection string, e.g., 1:ncpus=8:ngpus=1 (-l select=)
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
               
               scheduler_directives:
                 label: Additional Directives
                 type: editor
                 tooltip: Additional PBS directives (include #PBS prefix)
                 optional: true
+                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
       
       runmode:
         label: Container Runtime
@@ -821,15 +960,33 @@ jobs:
           source:
             type: dropdown
             label: Container Source
-            default: path
+            default: lfs
             tooltip: How to obtain Apptainer/Singularity containers
             options:
+              - value: lfs
+                label: "🧬 Git LFS repo (default)"
               - value: path
-                label: "📂 Use existing path (default)"
+                label: "📂 Use existing path"
               - value: pull
                 label: "📥 Pull from bucket"
               - value: build
                 label: "🔨 Build from source (requires sudo/fakeroot)"
+
+          lfs_repo:
+            label: LFS Repo
+            type: string
+            default: https://github.com/parallelworks/singularity-containers.git
+            tooltip: Git repo containing LFS SIF parts (vllm.*.sif, rag.*.sif)
+            hidden: ${{ inputs.container.source != 'lfs' }}
+            ignore: ${{ inputs.container.source != 'lfs' }}
+
+          lfs_branch:
+            label: LFS Branch
+            type: string
+            default: canary
+            tooltip: Branch to pull from the LFS repo
+            hidden: ${{ inputs.container.source != 'lfs' }}
+            ignore: ${{ inputs.container.source != 'lfs' }}
           
           bucket:
             label: Container Bucket
@@ -853,7 +1010,7 @@ jobs:
             type: string
             default: ~/pw/singularity/rag.sif
             placeholder: ~/pw/singularity/rag.sif
-            tooltip: Path to rag.sif container (use existing or build destination, only needed for vLLM+RAG mode)
+            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
 
