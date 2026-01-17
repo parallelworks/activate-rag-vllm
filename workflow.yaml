@@ -35,7 +35,16 @@ jobs:
           echo "export HF_TOKEN=${{ inputs.model.hf_token }}" >> .run.env
           echo "export API_KEY=${{ inputs.apikey }}" >> .run.env
           echo "export DOCS_DIR=${{ inputs.docsdir }}" >> .run.env
-          echo "export VLLM_EXTRA_ARGS=\"${{ inputs.vllm_extra_args }}\"" >> .run.env
+          
+          # Build vLLM extra args from structured inputs
+          VLLM_ARGS="--dtype ${{ inputs.vllm.dtype }} --tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
+          if [[ "${{ inputs.vllm.max_model_len }}" != "auto" ]]; then
+            VLLM_ARGS="$VLLM_ARGS --max-model-len ${{ inputs.vllm.max_model_len }}"
+          fi
+          if [[ -n "${{ inputs.vllm.extra_args }}" ]]; then
+            VLLM_ARGS="$VLLM_ARGS ${{ inputs.vllm.extra_args }}"
+          fi
+          echo "export VLLM_EXTRA_ARGS=\"$VLLM_ARGS\"" >> .run.env
           
           # Model configuration
           echo "export MODEL_SOURCE=${{ inputs.model.source }}" >> .run.env
@@ -47,6 +56,12 @@ jobs:
             echo "export MODEL_NAME=${{ inputs.model.hf_model_id }}" >> .run.env
             echo "export HF_MODEL_ID=${{ inputs.model.hf_model_id }}" >> .run.env
             echo "export MODEL_CACHE_BASE=${{ inputs.model.cache_dir }}" >> .run.env
+          fi
+          
+          # Container paths (if using existing containers)
+          if [[ "${{ inputs.container.source }}" == "path" ]]; then
+            echo "export VLLM_CONTAINER_PATH=${{ inputs.container.vllm_path }}" >> .run.env
+            echo "export RAG_CONTAINER_PATH=${{ inputs.container.rag_path }}" >> .run.env
           fi
           
           # vLLM attention backend
@@ -90,7 +105,7 @@ jobs:
           fi
       
       - name: Pull Singularity Containers
-        if: ${{ inputs.runmode == 'singularity' && inputs.container.pull == true }}
+        if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'pull' }}
         early-cancel: any-job-failed
         run: |
           set -x
@@ -115,6 +130,71 @@ jobs:
           fi
 
           echo "Singularity container pull step complete."
+      
+      - name: Link Existing Containers
+        if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'path' }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          
+          # Link vllm container
+          if [[ -f "${{ inputs.container.vllm_path }}" ]]; then
+            ln -sf "${{ inputs.container.vllm_path }}" ./vllm.sif
+            echo "Linked vllm.sif from ${{ inputs.container.vllm_path }}"
+          else
+            echo "ERROR: vLLM container not found at ${{ inputs.container.vllm_path }}"
+            exit 1
+          fi
+          
+          # Link rag container (only for runtype=all)
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            if [[ -f "${{ inputs.container.rag_path }}" ]]; then
+              ln -sf "${{ inputs.container.rag_path }}" ./rag.sif
+              echo "Linked rag.sif from ${{ inputs.container.rag_path }}"
+            else
+              echo "ERROR: RAG container not found at ${{ inputs.container.rag_path }}"
+              exit 1
+            fi
+          fi
+      
+      - name: Build Singularity Containers
+        if: ${{ inputs.runmode == 'singularity' && inputs.container.source == 'build' }}
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          cd ${{ inputs.rundir }}
+          
+          echo "Building Singularity containers from source..."
+          echo "Note: This requires sudo or fakeroot capabilities"
+          
+          # Build vllm container
+          if [[ ! -f "vllm.sif" ]]; then
+            echo "Building vllm.sif..."
+            if sudo -n true 2>/dev/null; then
+              sudo singularity build vllm.sif singularity/Singularity.vllm
+            else
+              singularity build --fakeroot vllm.sif singularity/Singularity.vllm
+            fi
+          else
+            echo "vllm.sif already exists, skipping build"
+          fi
+          
+          # Build rag container (only for runtype=all)
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            if [[ ! -f "rag.sif" ]]; then
+              echo "Building rag.sif..."
+              if sudo -n true 2>/dev/null; then
+                sudo singularity build rag.sif singularity/Singularity.rag
+              else
+                singularity build --fakeroot rag.sif singularity/Singularity.rag
+              fi
+            else
+              echo "rag.sif already exists, skipping build"
+            fi
+          fi
+          
+          echo "Singularity container build complete."
       
       - name: Download HuggingFace Model
         if: ${{ inputs.model.source == 'huggingface' }}
@@ -653,10 +733,33 @@ jobs:
       # ========================================================================
       # Model Configuration
       # ========================================================================
+      # Model Configuration
+      # ========================================================================
       model:
         type: group
         label: Model Configuration
         items:
+          preset:
+            type: dropdown
+            label: Model Preset
+            default: custom
+            tooltip: Select a pre-configured model or choose Custom for manual configuration
+            options:
+              - value: custom
+                label: "⚙️ Custom Configuration"
+              - value: llama-3.1-8b
+                label: "🦙 Llama 3.1 8B Instruct (1 GPU, ~16GB VRAM)"
+              - value: llama-3.1-70b
+                label: "🦙 Llama 3.1 70B Instruct (4 GPUs, ~160GB VRAM)"
+              - value: llama-3.3-70b
+                label: "🦙 Llama 3.3 70B Instruct (4 GPUs, ~160GB VRAM)"
+              - value: nemotron-49b
+                label: "🚀 Nemotron Super 49B (4 GPUs, ~120GB VRAM)"
+              - value: mistral-7b
+                label: "🌀 Mistral 7B Instruct (1 GPU, ~14GB VRAM)"
+              - value: qwen-2.5-72b
+                label: "🔮 Qwen 2.5 72B Instruct (4 GPUs, ~160GB VRAM)"
+          
           source:
             type: dropdown
             label: Model Source
@@ -705,12 +808,83 @@ jobs:
       # ========================================================================
       # vLLM Configuration
       # ========================================================================
-      vllm_extra_args:
-        label: vLLM Extra Arguments
-        default: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4 --async-scheduling --gpu-memory-utilization 0.85"
-        placeholder: "--dtype bfloat16 --trust_remote_code --tensor-parallel-size 4"
-        type: string
-        tooltip: Additional arguments to pass to vLLM server
+      vllm:
+        type: group
+        label: vLLM Settings
+        items:
+          num_gpus:
+            type: dropdown
+            label: Number of GPUs
+            default: "4"
+            tooltip: Number of GPUs for tensor parallelism (must match available GPUs)
+            options:
+              - value: "1"
+                label: "1 GPU"
+              - value: "2"
+                label: "2 GPUs"
+              - value: "4"
+                label: "4 GPUs"
+              - value: "8"
+                label: "8 GPUs"
+          
+          gpu_memory:
+            type: dropdown
+            label: GPU Memory Utilization
+            default: "0.85"
+            tooltip: Fraction of GPU memory to use (lower if OOM errors occur)
+            options:
+              - value: "0.95"
+                label: "95% (Maximum)"
+              - value: "0.90"
+                label: "90%"
+              - value: "0.85"
+                label: "85% (Recommended)"
+              - value: "0.80"
+                label: "80%"
+              - value: "0.70"
+                label: "70% (Conservative)"
+          
+          max_model_len:
+            type: dropdown
+            label: Max Context Length
+            default: "auto"
+            tooltip: Maximum sequence length. Lower values reduce memory usage.
+            options:
+              - value: "auto"
+                label: "Auto (use model default)"
+              - value: "4096"
+                label: "4K tokens"
+              - value: "8192"
+                label: "8K tokens"
+              - value: "16384"
+                label: "16K tokens"
+              - value: "32768"
+                label: "32K tokens"
+              - value: "65536"
+                label: "64K tokens"
+              - value: "131072"
+                label: "128K tokens"
+          
+          dtype:
+            type: dropdown
+            label: Data Type
+            default: bfloat16
+            tooltip: Model precision. bfloat16 recommended for newer GPUs.
+            options:
+              - value: bfloat16
+                label: "bfloat16 (Recommended for A100/H100)"
+              - value: float16
+                label: "float16 (Better compatibility)"
+              - value: auto
+                label: "Auto (model default)"
+          
+          extra_args:
+            type: string
+            label: Additional Arguments
+            default: "--trust_remote_code --async-scheduling"
+            placeholder: "--trust_remote_code"
+            tooltip: Additional vLLM arguments (advanced users)
+            optional: true
       
       apikey:
         label: vLLM API Key
@@ -745,19 +919,42 @@ jobs:
         label: Container Options
         hidden: ${{ inputs.runmode != 'singularity' }}
         items:
-          pull:
-            label: Pull Pre-built Containers
-            type: boolean
-            default: true
-            tooltip: Download pre-built containers from bucket instead of building
+          source:
+            type: dropdown
+            label: Container Source
+            default: pull
+            tooltip: How to obtain Singularity containers
+            options:
+              - value: pull
+                label: "📥 Pull from bucket (recommended)"
+              - value: path
+                label: "📂 Use existing path"
+              - value: build
+                label: "🔨 Build from source (requires sudo/fakeroot)"
           
           bucket:
             label: Container Bucket
             type: string
             default: pw://mshaxted/codeassist
             tooltip: Bucket containing vllm.sif and rag.sif containers
-            hidden: ${{ inputs.container.pull != true }}
-            ignore: ${{ inputs.container.pull != true }}
+            hidden: ${{ inputs.container.source != 'pull' }}
+            ignore: ${{ inputs.container.source != 'pull' }}
+          
+          vllm_path:
+            label: vLLM Container Path
+            type: string
+            placeholder: /path/to/vllm.sif
+            tooltip: Full path to existing vllm.sif container
+            hidden: ${{ inputs.container.source != 'path' }}
+            ignore: ${{ inputs.container.source != 'path' }}
+          
+          rag_path:
+            label: RAG Container Path
+            type: string
+            placeholder: /path/to/rag.sif
+            tooltip: Full path to existing rag.sif container (only needed for vLLM+RAG mode)
+            hidden: ${{ inputs.container.source != 'path' || inputs.runtype != 'all' }}
+            ignore: ${{ inputs.container.source != 'path' || inputs.runtype != 'all' }}
 
       # ========================================================================
       # SLURM Configuration
