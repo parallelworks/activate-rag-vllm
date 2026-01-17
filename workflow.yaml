@@ -762,7 +762,7 @@ jobs:
           source:
             type: dropdown
             label: Model Source
-            default: local
+            default: huggingface
             tooltip: Use a pre-downloaded model (local) or clone from HuggingFace using git-lfs
             options:
               - value: local
