@@ -275,8 +275,26 @@ jobs:
             REPO_URL="https://huggingface.co/$MODEL_ID"
             [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
             
-            git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
-            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Model clone incomplete"; exit 1; }
+            # Clone with LFS and pull large files
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+            cd "$TARGET_DIR"
+            git lfs pull
+            cd ..
+            
+            # Verify model weights exist (not just LFS pointers)
+            if [[ -f "$TARGET_DIR/model.safetensors" ]]; then
+              actual_size=$(stat -c%s "$TARGET_DIR/model.safetensors" 2>/dev/null || stat -f%z "$TARGET_DIR/model.safetensors" 2>/dev/null)
+              [[ $actual_size -lt 1000000 ]] && { echo "ERROR: model.safetensors appears to be an LFS pointer, not actual weights"; exit 1; }
+            elif ls "$TARGET_DIR"/model*.safetensors 1>/dev/null 2>&1; then
+              # Multiple sharded safetensors files
+              for f in "$TARGET_DIR"/model*.safetensors; do
+                actual_size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
+                [[ $actual_size -lt 1000000 ]] && { echo "ERROR: $f appears to be an LFS pointer, not actual weights"; exit 1; }
+                break  # Just check the first one
+              done
+            fi
+            
+            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Model clone incomplete - missing config.json"; exit 1; }
           fi
           
           # Update environment file
