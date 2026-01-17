@@ -468,6 +468,12 @@ jobs:
 
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
           CACHE_DIR="${{ inputs.rag.embedding_cache_dir }}"
+          if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
+            CACHE_DIR="${{ inputs.model.cache_dir }}"
+          fi
+          if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
+            CACHE_DIR="~/pw/models"
+          fi
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
 
