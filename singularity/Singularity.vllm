@@ -27,18 +27,14 @@ From: vllm/vllm-openai:latest
     echo "export CC=clang"  >> /etc/profile.d/clang.sh
     echo "export CXX=clang++" >> /etc/profile.d/clang.sh
 
-    # Upgrade packaging tooling
-    $PY -m pip install -U pip setuptools wheel
-
-    # Ensure Transformers has the ministral3 config mapping
-    $PY -m pip uninstall -y transformers || true
-    $PY -m pip install -U git+https://github.com/huggingface/transformers
-
+    # Note: Do NOT upgrade transformers - the vllm-openai base image has
+    # compatible versions pinned. Upgrading breaks compatibility.
+    
     $PY - << 'PY'
 import transformers
-from transformers.models.auto import CONFIG_MAPPING
+import vllm
 print("Transformers:", transformers.__version__)
-print("ministral3 in CONFIG_MAPPING:", "ministral3" in CONFIG_MAPPING)
+print("vLLM:", vllm.__version__)
 PY
 
 %runscript

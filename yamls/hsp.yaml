@@ -368,7 +368,8 @@ jobs:
 
               if [ -f SESSION_PORT ]; then
                   echo "$(date) Success: SESSION_PORT file found!"
-                  cat SESSION_PORT | tee -a "$OUTPUTS"
+                  SESSION_PORT=$(cat SESSION_PORT)
+                  echo "SESSION_PORT=${SESSION_PORT}" | tee -a "$OUTPUTS"
                   exit 0
               elif [ -f job.ended ]; then
                   echo "$(date) Job was completed but SESSION_PORT was never created. Exiting..."

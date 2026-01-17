@@ -1,0 +1,262 @@
+# ==============================================================================
+# ACTIVATE RAG-vLLM HPC Environment Presets
+# ==============================================================================
+# These presets provide recommended configurations for different HPC environments.
+# Use as reference when configuring the workflow for your specific system.
+# ==============================================================================
+
+presets:
+  # ============================================================================
+  # Navy DSRC Systems (e.g., Gaffney, Koehr, Nautilus)
+  # ============================================================================
+  navy-dsrc:
+    description: "Configuration for Navy DSRC HPC systems"
+    scheduler: slurm
+    container_source: bucket
+    offline_mode: true
+    
+    environment:
+      TRANSFORMERS_OFFLINE: "1"
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    slurm:
+      # Navy systems typically require these
+      constraint: mla
+      qos: standard
+      time: "04:00:00"
+      scheduler_directives: |
+        #SBATCH --gres=gpu:4
+        #SBATCH --constraint=mla
+    
+    model:
+      # Models should be pre-staged to work directory
+      default_path: /p/work1/${USER}/models
+      recommended:
+        - Llama-3_3-Nemotron-Super-49B-v1_5
+        - Meta-Llama-3.1-70B-Instruct
+    
+    notes:
+      - "Models must be pre-downloaded to work directory"
+      - "Use constraint=mla for A100 GPU nodes"
+      - "Container .sif files should be pre-staged"
+
+  # ============================================================================
+  # AFRL DSRC Systems
+  # ============================================================================
+  afrl-dsrc:
+    description: "Configuration for AFRL DSRC HPC systems"
+    scheduler: slurm
+    container_source: bucket
+    offline_mode: true
+    
+    environment:
+      TRANSFORMERS_OFFLINE: "1"
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    slurm:
+      partition: gpu
+      qos: normal
+      time: "04:00:00"
+      scheduler_directives: |
+        #SBATCH --gres=gpu:4
+    
+    model:
+      default_path: /p/work/${USER}/models
+    
+    notes:
+      - "Similar to Navy DSRC with minor partition differences"
+
+  # ============================================================================
+  # PBS-based HPC Systems (e.g., ERDC, some DoD systems)
+  # ============================================================================
+  pbs-hpc:
+    description: "Configuration for PBS-based HPC systems"
+    scheduler: pbs
+    container_source: bucket
+    offline_mode: true
+    
+    environment:
+      TRANSFORMERS_OFFLINE: "1"
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    pbs:
+      queue: gpu
+      scheduler_directives: |
+        #!/bin/bash
+        #PBS -q gpu
+        #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=4
+        #PBS -l walltime=04:00:00
+        #PBS -V
+    
+    model:
+      default_path: ${WORKDIR}/models
+    
+    notes:
+      - "Adjust ncpus and ngpus based on node configuration"
+      - "PBS -V exports current environment to job"
+
+  # ============================================================================
+  # AWS Cloud (ParallelWorks managed)
+  # ============================================================================
+  aws-cloud:
+    description: "Configuration for AWS cloud instances via ParallelWorks"
+    scheduler: slurm
+    container_source: pull
+    offline_mode: false
+    
+    environment:
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    slurm:
+      partition: gpu
+      time: "08:00:00"
+      scheduler_directives: |
+        #SBATCH --gres=gpu:4
+    
+    model:
+      source: huggingface
+      cache_dir: ~/pw/models
+      recommended:
+        - meta-llama/Llama-3.1-8B-Instruct
+        - meta-llama/Llama-3.1-70B-Instruct
+        - mistralai/Mistral-7B-Instruct-v0.3
+    
+    notes:
+      - "Models can be downloaded from HuggingFace"
+      - "Ensure sufficient EBS storage for model cache"
+      - "p4d.24xlarge recommended for 70B+ models"
+
+  # ============================================================================
+  # GCP Cloud
+  # ============================================================================
+  gcp-cloud:
+    description: "Configuration for GCP cloud instances"
+    scheduler: slurm
+    container_source: pull
+    offline_mode: false
+    
+    environment:
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    model:
+      source: huggingface
+      cache_dir: ~/pw/models
+    
+    notes:
+      - "A2 or A3 instances recommended for GPU workloads"
+      - "Consider using GCS for model storage"
+
+  # ============================================================================
+  # Local Development (Docker)
+  # ============================================================================
+  local-docker:
+    description: "Configuration for local development with Docker"
+    scheduler: ssh
+    container_runtime: docker
+    container_source: pull
+    offline_mode: false
+    
+    environment:
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    model:
+      source: huggingface
+      cache_dir: ~/pw/models
+      recommended:
+        - meta-llama/Llama-3.2-1B-Instruct
+        - meta-llama/Llama-3.1-8B-Instruct
+    
+    vllm_args:
+      # Smaller defaults for local development
+      dtype: float16
+      max_model_len: 4096
+      gpu_memory_utilization: 0.8
+    
+    notes:
+      - "Use smaller models (1B-8B) for local testing"
+      - "Requires NVIDIA GPU with Docker GPU support"
+      - "Run: ./scripts/configure.sh for interactive setup"
+
+  # ============================================================================
+  # Local Development (Singularity)
+  # ============================================================================
+  local-singularity:
+    description: "Configuration for local development with Singularity"
+    scheduler: ssh
+    container_runtime: singularity
+    container_source: build
+    offline_mode: false
+    
+    environment:
+      VLLM_ATTENTION_BACKEND: FLASH_ATTN
+    
+    model:
+      source: huggingface
+      cache_dir: ~/pw/models
+    
+    notes:
+      - "Singularity must be installed locally"
+      - "Building containers requires fakeroot or sudo"
+      - "Good for testing HPC deployments locally"
+
+# ==============================================================================
+# vLLM Extra Arguments Reference
+# ==============================================================================
+vllm_args_reference:
+  # Data types
+  dtype:
+    options: [auto, float16, bfloat16, float32]
+    default: auto
+    description: "Model weights data type"
+  
+  # Model parallelism
+  tensor_parallel_size:
+    options: [1, 2, 4, 8]
+    default: 1
+    description: "Number of GPUs for tensor parallelism"
+  
+  # Memory management
+  gpu_memory_utilization:
+    range: [0.5, 0.95]
+    default: 0.9
+    description: "Fraction of GPU memory to use"
+  
+  max_model_len:
+    range: [1024, 131072]
+    default: null  # Auto-detected from model
+    description: "Maximum context length"
+  
+  # Performance
+  async_scheduling:
+    type: boolean
+    default: true
+    description: "Enable async scheduling for better throughput"
+  
+  # Trust settings
+  trust_remote_code:
+    type: boolean
+    default: false
+    description: "Allow execution of model's custom code"
+
+# ==============================================================================
+# Attention Backend Reference
+# ==============================================================================
+attention_backends:
+  FLASH_ATTN:
+    description: "Flash Attention 2 - Fast, memory efficient"
+    supported_gpus: [A100, H100, A10, L40, RTX_30xx, RTX_40xx]
+    recommended: true
+  
+  TRITON_ATTN:
+    description: "Triton-based attention - Good compatibility"
+    supported_gpus: [All NVIDIA]
+    notes: "Good fallback if Flash Attention has issues"
+  
+  FLASHINFER:
+    description: "FlashInfer backend - Optimized for serving"
+    supported_gpus: [A100, H100]
+  
+  TORCH_SDPA:
+    description: "PyTorch native scaled dot-product attention"
+    supported_gpus: [All]
+    notes: "Fallback option, may be slower"

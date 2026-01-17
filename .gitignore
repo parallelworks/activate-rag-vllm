@@ -1,5 +1,9 @@
 cache
-docs
+# docs directory is for RAG documents, but allow documentation files
+docs/*
+!docs/*.md
+!docs/IMPLEMENTATION_PLAN.md
+!docs/ARCHITECTURE.md
 .env
 env.sh
 *.sif

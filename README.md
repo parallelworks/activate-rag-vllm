@@ -1,64 +1,149 @@
 # ACTIVATE — vLLM + RAG
 
-This Compose stack runs from the [github repo here](https://github.com/parallelworks/activate-rag-vllm) and executes the below services in Docker or Singularity modes:
+Deploy GPU-accelerated language model inference with optional RAG (Retrieval-Augmented Generation) capabilities on the ACTIVATE platform. Optimized for HPC environments using Apptainer/Singularity.
 
-- **vLLM** model server (OpenAI-compatible)
-- **RAG** retrieval API (Chroma)
-- **Indexer** (filesystem → Chroma, auto-updates)
-- **Enhanced Proxy** exposing **/v1/chat/completions**, **/v1/completions**, **/v1/embeddings**, **/v1/models**
-- **Open WebUI** (optional) pointing to the Proxy
+## Overview
 
-See a turnkey demonstration of the workflow running on ACTIVATE at the link below:
-
-<a href="https://www.youtube.com/watch?v=6LiwXEOkuUc">
-<img target="_blank" src="https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1" width="350">
-</a>
-
-## Workflow Instructions
-
-Pull down the weights of your choice into a known directory. For example we recommend using git lfs to pull down weights as this is more widely open to firewalls and is relatively fast at pulls:
+This workflow deploys an OpenAI-compatible inference server powered by [vLLM](https://github.com/vllm-project/vllm), with optional RAG capabilities for context-aware responses using your own documents.
 
 ```
-cd /mymodeldir/
-git lfs install
-git clone https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+┌──────────────────────────────────────────────────────────────┐
+│                    ACTIVATE Platform                          │
+│  ┌────────────────┐   ┌────────────────┐   ┌──────────────┐  │
+│  │  Your Browser  │──▶│  RAG Proxy     │──▶│  vLLM Server │  │
+│  │  (OpenWebUI,   │   │  (context      │   │  (LLM        │  │
+│  │   Cline, etc)  │   │   injection)   │   │   inference) │  │
+│  └────────────────┘   └───────┬────────┘   └──────────────┘  │
+│                               │                               │
+│                       ┌───────▼────────┐                      │
+│                       │  RAG Server    │                      │
+│                       │  + ChromaDB    │                      │
+│                       │  + Indexer     │                      │
+│                       └────────────────┘                      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-The workflow will provide a field to also pull down a prebuilt vllm singularity container if running in this mode, but you can also pull this down manually for example using the authenticated pw cli:
+### Components
 
-```
-cd ~/pw/activate-rag-vllm
-pw buckets cp pw://mshaxted/codeassist/vllm.sif ./
-```
+| Component | Purpose |
+|-----------|---------|
+| **vLLM Server** | High-performance LLM inference with PagedAttention |
+| **RAG Proxy** | OpenAI-compatible API with automatic context injection |
+| **RAG Server** | Semantic search over indexed documents |
+| **ChromaDB** | Vector database for document embeddings |
+| **Auto-Indexer** | Watches document directory and indexes new files |
 
-## Manual Quickstart
+## Quick Start (ACTIVATE Platform)
+
+### 1. Deploy from Marketplace
+
+1. Navigate to the ACTIVATE workflow marketplace
+2. Select **vLLM + RAG** workflow
+3. Choose your compute cluster and scheduler (SLURM/PBS/SSH)
+
+### 2. Configure Model Source
+
+Choose how to provide model weights:
+
+| Option | When to Use |
+|--------|-------------|
+| **📁 Local Path** | Model weights pre-staged on cluster |
+| **🤗 HuggingFace Clone** | Clone from HuggingFace using git-lfs (HPC-friendly, caches locally) |
+
+The HuggingFace Clone option uses `git clone` with git-lfs, which is more widely supported on HPC systems than the HuggingFace API. Models are cloned once to your cache directory and reused for subsequent runs.
+
+### 3. Set vLLM Parameters
+
+Common configurations:
+
 ```bash
-export HF_TOKEN=hf_xyz
-export RUNMODE=docker # or singularity
-export BUILD=true
-export RUNTYPE=all # or vllm only
+# 4-GPU with bfloat16 (recommended for large models)
+--dtype bfloat16 --tensor-parallel-size 4 --gpu-memory-utilization 0.85
 
-# run the service
-./run.sh
+# Single GPU with memory constraints
+--dtype float16 --max-model-len 4096 --gpu-memory-utilization 0.8
 ```
 
-## Files you might care about
-- `docker-compose.yml` — stack definition
-- `Dockerfile.rag` — builds the RAG + Indexer + Proxy image
-- `rag_proxy.py` — enhanced OpenAI-compatible proxy with streaming + extra endpoints
-- `rag_server.py` — RAG search API
-- `indexer.py`, `indexer_config.yaml` — auto indexer for filesystem changes
-- `docs/` — mount point for your documents
-- `cache/` — workload specific data storage
+### 4. Submit and Connect
 
-## Smoke tests
+- Submit the workflow
+- Click the **Open WebUI** link in the job output, or
+- Connect your IDE (Cline, Continue, etc.) to the provided endpoint
+
+## Deployment Modes
+
+| Mode | Description |
+|------|-------------|
+| **vLLM + RAG** | Full stack with document retrieval |
+| **vLLM Only** | Inference server without RAG |
+
+## API Endpoints
+
+Once running, the service exposes OpenAI-compatible endpoints:
+
 ```bash
-# Health
-curl http://localhost:${PROXY_PORT}/health | jq
+# List models
+curl http://localhost:8081/v1/models
 
-# Chat (non-stream)
-curl -sS http://localhost:${PROXY_PORT}/v1/chat/completions  -H 'content-type: application/json'  -d '{"model":"'"${MODEL_NAME}"'","messages":[{"role":"user","content":"Summarize the docs."}], "max_tokens":200}' | jq
+# Chat completion
+curl -X POST http://localhost:8081/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "your-model", "messages": [{"role": "user", "content": "Hello!"}]}'
 
-# Chat (stream)
-curl -N http://localhost:${PROXY_PORT}/v1/chat/completions  -H 'content-type: application/json'  -d '{"model":"'"${MODEL_NAME}"'","messages":[{"role":"user","content":"Hello"}], "stream": true}'
+# Health check
+curl http://localhost:8081/health
 ```
+
+## Project Structure
+
+```
+activate-rag-vllm/
+├── workflow.yaml          # ACTIVATE workflow definition
+├── start_service.sh       # Service entrypoint
+├── rag_proxy.py           # OpenAI-compatible proxy
+├── rag_server.py          # RAG search server
+├── indexer.py             # Document indexer
+├── run_local.sh           # Local development runner
+├── singularity/           # Apptainer/Singularity container configs
+├── docker/                # Docker configs (local dev)
+├── lib/                   # Shared utilities
+├── configs/               # HPC preset configurations
+└── docs/                  # Additional documentation
+```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Local Development Guide](docs/LOCAL_DEVELOPMENT.md) | Running locally for debugging |
+| [Workflow Configuration](docs/WORKFLOW_CONFIGURATION.md) | YAML workflow customization |
+| [Architecture](docs/ARCHITECTURE.md) | System design details |
+| [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) | Development roadmap |
+
+## Demo
+
+[![Demo Video](https://www.dropbox.com/scl/fi/xyjf75inw6pa5uk2kyv1p/vllmragthumb.png?rlkey=498wwpesf90nfdon3xj5vyhwy&raw=1)](https://www.youtube.com/watch?v=6LiwXEOkuUc)
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| CUDA out of memory | Reduce `--gpu-memory-utilization` or `--max-model-len` |
+| Model not found | Verify path exists with `config.json`; check HF_TOKEN for gated models |
+| git-lfs not found | Workflow auto-installs git-lfs locally if missing |
+| Apptainer/Singularity not found | Load module: `module load apptainer` or `module load singularity` |
+| Port in use | Service auto-finds available ports; check for existing instances |
+
+### Logs
+
+```bash
+tail -f logs/vllm.out   # vLLM server
+tail -f logs/rag.out    # RAG services
+```
+
+## License
+
+See [LICENSE.md](LICENSE.md)
+
