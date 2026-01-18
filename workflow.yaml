@@ -908,10 +908,11 @@ jobs:
                 ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
       
       runmode:
-        label: Apptainer / Singularity
+        label: Container Type
         type: dropdown
         default: singularity
         tooltip: Apptainer/Singularity is recommended for HPC environments
+        hidden: true
         options:
           - value: singularity
             label: Apptainer / Singularity
