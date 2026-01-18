@@ -788,6 +788,59 @@ jobs:
         tooltip: Resource to run the service
 
       # ========================================================================
+      # Model Configuration
+      # ========================================================================
+      model:
+        type: group
+        label: Model Configuration
+        items:
+          source:
+            type: dropdown
+            label: Model Source
+            default: huggingface
+            tooltip: Use a pre-downloaded model (local) or clone from HuggingFace using git-lfs
+            options:
+              - value: local
+                label: "📁 Local Path (pre-staged weights)"
+              - value: huggingface
+                label: "🤗 HuggingFace Clone (git-lfs)"
+          
+          local_path:
+            type: string
+            label: Model Path
+            placeholder: /path/to/model/weights
+            default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
+            tooltip: Full path to directory containing model weights
+            hidden: ${{ inputs.model.source != 'local' }}
+            ignore: ${{ inputs.model.source != 'local' }}
+          
+          hf_model_id:
+            type: string
+            label: HuggingFace Model ID
+            placeholder: Qwen/Qwen2.5-Coder-7B-Instruct
+            default: Qwen/Qwen2.5-Coder-7B-Instruct
+            tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-Coder-7B optimized for code assist on single GPU.
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+          
+          hf_token:
+            label: HuggingFace Token
+            optional: true
+            default: ${{ org.HF_TOKEN }}
+            type: password
+            tooltip: Required for gated models (Llama, etc.)
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+          
+          cache_dir:
+            type: string
+            label: Model Cache Directory
+            default: ~/pw/models
+            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+
+      # ========================================================================
       # Deployment Type
       # ========================================================================
       runtype:
@@ -949,60 +1002,6 @@ jobs:
             label: Apptainer / Singularity
           - value: docker
             label: Docker
-
-      # ========================================================================
-      # Model Configuration
-      # ========================================================================
-      model:
-        type: group
-        label: Model Configuration
-        collapsed: true
-        items:
-          source:
-            type: dropdown
-            label: Model Source
-            default: huggingface
-            tooltip: Use a pre-downloaded model (local) or clone from HuggingFace using git-lfs
-            options:
-              - value: local
-                label: "📁 Local Path (pre-staged weights)"
-              - value: huggingface
-                label: "🤗 HuggingFace Clone (git-lfs)"
-          
-          local_path:
-            type: string
-            label: Model Path
-            placeholder: /path/to/model/weights
-            default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
-            tooltip: Full path to directory containing model weights
-            hidden: ${{ inputs.model.source != 'local' }}
-            ignore: ${{ inputs.model.source != 'local' }}
-          
-          hf_model_id:
-            type: string
-            label: HuggingFace Model ID
-            placeholder: Qwen/Qwen2.5-Coder-7B-Instruct
-            default: Qwen/Qwen2.5-Coder-7B-Instruct
-            tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-Coder-7B optimized for code assist on single GPU.
-            hidden: ${{ inputs.model.source != 'huggingface' }}
-            ignore: ${{ inputs.model.source != 'huggingface' }}
-          
-          hf_token:
-            label: HuggingFace Token
-            optional: true
-            default: ${{ org.HF_TOKEN }}
-            type: password
-            tooltip: Required for gated models (Llama, etc.)
-            hidden: ${{ inputs.model.source != 'huggingface' }}
-            ignore: ${{ inputs.model.source != 'huggingface' }}
-          
-          cache_dir:
-            type: string
-            label: Model Cache Directory
-            default: ~/pw/models
-            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
-            hidden: ${{ inputs.model.source != 'huggingface' }}
-            ignore: ${{ inputs.model.source != 'huggingface' }}
 
       # ========================================================================
       # vLLM Configuration
