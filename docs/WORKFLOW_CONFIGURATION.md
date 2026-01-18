@@ -60,6 +60,24 @@ Common patterns:
 - `ignore: ${{ inputs.X != 'value' }}` - Don't include in submission
 - `hidden: ${{ inputs.runmode != 'singularity' }}` - Apptainer-specific options
 
+## RAG Configuration
+
+Embedding model options are configured under the `rag` group:
+
+```yaml
+rag:
+  items:
+    embedding_model_source:
+      type: dropdown
+      default: huggingface
+      options:
+        - value: local
+        - value: huggingface
+        - value: bucket
+```
+
+The HSP preset (`yamls/hsp.yaml`) defaults `embedding_model_source` to `huggingface` so embeddings are cloned via git-lfs instead of pulling from a bucket on each run.
+
 ## Scheduler Configuration
 
 ### SLURM
