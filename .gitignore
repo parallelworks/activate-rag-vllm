@@ -18,3 +18,4 @@ job.ended
 cancel.sh
 run.sh
 .run.env
+__pycache__
