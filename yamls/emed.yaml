@@ -486,8 +486,15 @@ jobs:
           HF_TOKEN="${{ inputs.model.hf_token }}"
 
           mkdir -p "$CACHE_DIR"
+          MODEL_BASENAME="${MODEL_ID##*/}"
           SAFE_MODEL_ID="${MODEL_ID//\//__}"
-          TARGET_DIR="$CACHE_DIR/$SAFE_MODEL_ID"
+          LEGACY_DIR="$CACHE_DIR/$SAFE_MODEL_ID"
+          TARGET_DIR="$CACHE_DIR/$MODEL_BASENAME"
+          
+          if [[ -d "$LEGACY_DIR" && ! -d "$TARGET_DIR" ]]; then
+            echo "Renaming legacy cache dir $LEGACY_DIR to $TARGET_DIR"
+            mv "$LEGACY_DIR" "$TARGET_DIR"
+          fi
 
           # Check if already cached
           if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
@@ -499,10 +506,26 @@ jobs:
                 BUCKET="pw://mshaxted/codeassist"
               fi
               BUCKET="${BUCKET%/}"
-              echo "Pulling embedding model from ${BUCKET}/${SAFE_MODEL_ID} to ${CACHE_DIR}"
-
-              if ! pw bucket cp -r "${BUCKET}/${SAFE_MODEL_ID}" "$CACHE_DIR" 2>/dev/null; then
-                pw bucket cp "${BUCKET}/${SAFE_MODEL_ID}" "$TARGET_DIR"
+              echo "Pulling embedding model from ${BUCKET} to ${TARGET_DIR}"
+              pulled=false
+              if pw bucket cp -r "${BUCKET}/${MODEL_BASENAME}" "$CACHE_DIR" 2>/dev/null; then
+                pulled=true
+              elif pw bucket cp -r "${BUCKET}/${SAFE_MODEL_ID}" "$CACHE_DIR" 2>/dev/null; then
+                pulled=true
+              elif pw bucket cp "${BUCKET}/${MODEL_BASENAME}" "$TARGET_DIR" 2>/dev/null; then
+                pulled=true
+              elif pw bucket cp "${BUCKET}/${SAFE_MODEL_ID}" "$LEGACY_DIR" 2>/dev/null; then
+                pulled=true
+              fi
+              
+              if [[ "$pulled" != "true" ]]; then
+                echo "ERROR: Failed to pull embedding model from bucket"
+                exit 1
+              fi
+              
+              if [[ -d "$LEGACY_DIR" && ! -d "$TARGET_DIR" ]]; then
+                echo "Renaming legacy cache dir $LEGACY_DIR to $TARGET_DIR"
+                mv "$LEGACY_DIR" "$TARGET_DIR"
               fi
             else
               echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
