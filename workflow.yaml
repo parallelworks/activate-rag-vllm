@@ -757,6 +757,20 @@ jobs:
         autoselect: true
         include-workspace: false
         tooltip: Resource to run the service
+
+      # ========================================================================
+      # Deployment Type
+      # ========================================================================
+      runtype:
+        label: Deployment Type
+        type: dropdown
+        default: vllm
+        tooltip: Deploy vLLM only or full vLLM+RAG stack
+        options:
+          - value: vllm
+            label: vLLM Only
+          - value: all
+            label: vLLM + RAG (Chroma)
       
       # ========================================================================
       # Scheduler Configuration (for SLURM/PBS job submission)
@@ -765,19 +779,21 @@ jobs:
         type: group
         label: Scheduler Options
         tooltip: Configure job scheduler (SLURM/PBS) for HPC execution
+        hidden: ${{ inputs.resource.schedulerType != 'slurm' && inputs.resource.schedulerType != 'pbs' }}
         items:
           enabled:
             type: boolean
             label: Submit to Job Scheduler
             tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
             default: false
+            hidden: ${{ inputs.resource.schedulerType != 'slurm' && inputs.resource.schedulerType != 'pbs' }}
 
           type_override:
             type: dropdown
             label: Scheduler Type Override
             tooltip: Use when resource metadata is missing/incorrect. Auto uses the resource scheduler type.
             default: auto
-            hidden: ${{ inputs.scheduler.enabled != true }}
+            hidden: true
             options:
               - value: auto
                 label: Auto (resource)
@@ -918,17 +934,6 @@ jobs:
             label: Apptainer / Singularity
           - value: docker
             label: Docker
-      
-      runtype:
-        label: Deployment Type
-        type: dropdown
-        default: vllm
-        tooltip: Deploy vLLM only or full vLLM+RAG stack
-        options:
-          - value: vllm
-            label: vLLM Only
-          - value: all
-            label: vLLM + RAG (Full Stack)
 
       # ========================================================================
       # Model Configuration
@@ -936,6 +941,7 @@ jobs:
       model:
         type: group
         label: Model Configuration
+        collapsed: true
         items:
           source:
             type: dropdown
