@@ -16,7 +16,7 @@
 # Organized Input Sections:
 #   1. Resource Selection          - Compute cluster target
 #   2. Scheduler Options           - SLURM/PBS configuration for HPC execution
-#   3. Container Runtime           - Apptainer/Singularity or Docker
+#   3. Container Runtime           - Apptainer / Singularity or Docker
 #   4. Model Configuration         - HuggingFace or local model paths
 #   5. vLLM Settings               - GPU count, memory, context length, dtype
 #   6. RAG Settings                - Documents directory, system prompt
@@ -454,7 +454,7 @@ jobs:
   # ============================================================================
   prepare_embedding_model:
     needs: [setup]
-    if: ${{ inputs.runtype == 'all' && inputs.rag.embedding_model_source == 'huggingface' }}
+    if: ${{ inputs.runtype == 'all' && (inputs.rag.embedding_model_source == 'huggingface' || inputs.rag.embedding_model_source == 'bucket') }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     outputs:
@@ -467,8 +467,9 @@ jobs:
           set -x
           cd ${{ needs.setup.outputs.rundir }}
 
+          SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
-          CACHE_DIR="${{ inputs.rag.embedding_cache_dir }}"
+          CACHE_DIR="${{ inputs.rag.embedding_model_cache_dir }}"
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
             CACHE_DIR="${{ inputs.model.cache_dir }}"
           fi
@@ -486,37 +487,50 @@ jobs:
           if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
             echo "Embedding model already cached at $TARGET_DIR"
           else
-            echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
+            if [[ "$SOURCE" == "bucket" ]]; then
+              BUCKET="${{ inputs.rag.embedding_model_bucket }}"
+              if [[ -z "$BUCKET" || "$BUCKET" == "undefined" ]]; then
+                BUCKET="pw://mshaxted/codeassist"
+              fi
+              BUCKET="${BUCKET%/}"
+              echo "Pulling embedding model from ${BUCKET}/${SAFE_MODEL_ID} to ${CACHE_DIR}"
 
-            # Ensure git-lfs is available
-            if ! git lfs version >/dev/null 2>&1; then
-              echo "Installing git-lfs locally..."
-              mkdir -p $HOME/bin
-              cd /tmp
-              LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
-              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
-              wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
-              tar -xzf git-lfs-linux-amd64.tar.gz
-              ./git-lfs-*/install.sh --local
-              rm -rf git-lfs-*
-              export PATH="$HOME/bin:$PATH"
-              cd ${{ needs.setup.outputs.rundir }}
-              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
+              if ! pw bucket cp -r "${BUCKET}/${SAFE_MODEL_ID}" "$CACHE_DIR" 2>/dev/null; then
+                pw bucket cp "${BUCKET}/${SAFE_MODEL_ID}" "$TARGET_DIR"
+              fi
+            else
+              echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
+
+              # Ensure git-lfs is available
+              if ! git lfs version >/dev/null 2>&1; then
+                echo "Installing git-lfs locally..."
+                mkdir -p $HOME/bin
+                cd /tmp
+                LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
+                [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
+                wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+                tar -xzf git-lfs-linux-amd64.tar.gz
+                ./git-lfs-*/install.sh --local
+                rm -rf git-lfs-*
+                export PATH="$HOME/bin:$PATH"
+                cd ${{ needs.setup.outputs.rundir }}
+                git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
+              fi
+
+              git lfs install
+
+              # Build clone URL
+              REPO_URL="https://huggingface.co/$MODEL_ID"
+              [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+
+              # Clone with LFS and pull large files
+              GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+              cd "$TARGET_DIR"
+              git lfs pull
+              cd ..
             fi
 
-            git lfs install
-
-            # Build clone URL
-            REPO_URL="https://huggingface.co/$MODEL_ID"
-            [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
-
-            # Clone with LFS and pull large files
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
-            cd "$TARGET_DIR"
-            git lfs pull
-            cd ..
-
-            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model clone incomplete - missing config.json"; exit 1; }
+            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model download incomplete - missing config.json"; exit 1; }
           fi
 
           # Update environment file
@@ -894,13 +908,13 @@ jobs:
                 ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
       
       runmode:
-        label: Container Runtime
+        label: Apptainer / Singularity
         type: dropdown
         default: singularity
         tooltip: Apptainer/Singularity is recommended for HPC environments
         options:
           - value: singularity
-            label: Apptainer
+            label: Apptainer / Singularity
           - value: docker
             label: Docker
       
@@ -1074,18 +1088,20 @@ jobs:
             default: huggingface
             tooltip: How to load the embedding model for RAG
             options:
-              - value: huggingface
-                label: HuggingFace Hub
               - value: local
-                label: Local path
+                label: "📁 Local Path (pre-staged weights)"
+              - value: huggingface
+                label: "🤗 HuggingFace Clone (git-lfs)"
+              - value: bucket
+                label: "📥 Pull from bucket"
 
           embedding_model_id:
             label: Embedding Model ID
             type: string
             default: sentence-transformers/all-MiniLM-L6-v2
-            tooltip: HuggingFace model ID for embeddings
-            hidden: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
-            ignore: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
+            tooltip: HuggingFace model ID for embeddings (also used to resolve bucket folder name)
+            hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
+            ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
 
           embedding_model_path:
             label: Embedding Model Path
@@ -1099,9 +1115,17 @@ jobs:
             label: Embedding Model Cache Directory
             type: string
             default: ~/pw/models
-            tooltip: Directory to clone the embedding model into (HuggingFace)
-            hidden: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
-            ignore: ${{ inputs.rag.embedding_model_source != 'huggingface' }}
+            tooltip: Directory to store the embedding model (HuggingFace or bucket)
+            hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
+            ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
+
+          embedding_model_bucket:
+            label: Embedding Model Bucket
+            type: string
+            default: pw://mshaxted/codeassist
+            tooltip: Bucket base path containing embedding models by safe ID (e.g., sentence-transformers__all-MiniLM-L6-v2)
+            hidden: ${{ inputs.rag.embedding_model_source != 'bucket' }}
+            ignore: ${{ inputs.rag.embedding_model_source != 'bucket' }}
           
           systemprompt:
             type: string
@@ -1229,23 +1253,4 @@ jobs:
             label: vLLM Attention Backend
             default: FLASH_ATTN
             tooltip: Attention implementation used by vLLM
-            options:
-              - value: FLASH_ATTN
-              - value: TRITON_ATTN
-              - value: FLASHINFER
-              - value: FLASHINFER_MLA
-              - value: TRITON_MLA
-              - value: CUTLASS_MLA
-              - value: FLASHMLA
-              - value: FLASHMLA_SPARSE
-              - value: FLASH_ATTN_MLA
-              - value: TORCH_SDPA
-              - value: ROCM_ATTN
-              - value: ROCM_AITER_MLA
-              - value: ROCM_AITER_TRITON_MLA
-              - value: ROCM_AITER_FA
-              - value: PALLAS
-              - value: IPEX
-              - value: CPU_ATTN
-              - value: NO_ATTENTION
-              - value: CUSTOM
+            options: [FLASH_ATTN, TRITON_ATTN, FLASHINFER, FLASHINFER_MLA, TRITON_MLA, CUTLASS_MLA, FLASHMLA, FLASHMLA_SPARSE, FLASH_ATTN_MLA, TORCH_SDPA, ROCM_ATTN, ROCM_AITER_MLA, ROCM_AITER_TRITON_MLA, ROCM_AITER_FA, PALLAS, IPEX, CPU_ATTN, NO_ATTENTION, CUSTOM]
