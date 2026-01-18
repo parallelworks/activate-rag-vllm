@@ -782,10 +782,34 @@ jobs:
       # ========================================================================
       resource:
         type: compute-clusters
-        label: Compute Cluster
+        label: GPU Cluster
         autoselect: true
         include-workspace: false
         tooltip: Resource to run the service
+
+      # ========================================================================
+      # Deployment Type
+      # ========================================================================
+      runtype:
+        label: Deployment Type
+        type: dropdown
+        default: vllm
+        tooltip: Deploy vLLM only or full vLLM+RAG stack
+        options:
+          - value: vllm
+            label: vLLM Only
+          - value: all
+            label: vLLM + RAG (Chroma)
+      
+      # ========================================================================
+      # Scheduler Submission
+      # ========================================================================
+      submit_to_scheduler:
+        type: boolean
+        label: Submit to Job Scheduler
+        tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
+        default: true
+        hidden: true
 
       # ========================================================================
       # Model Configuration
@@ -839,30 +863,6 @@ jobs:
             tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
-
-      # ========================================================================
-      # Deployment Type
-      # ========================================================================
-      runtype:
-        label: Deployment Type
-        type: dropdown
-        default: vllm
-        tooltip: Deploy vLLM only or full vLLM+RAG stack
-        options:
-          - value: vllm
-            label: vLLM Only
-          - value: all
-            label: vLLM + RAG (Chroma)
-      
-      # ========================================================================
-      # Scheduler Submission
-      # ========================================================================
-      submit_to_scheduler:
-        type: boolean
-        label: Submit to Job Scheduler
-        tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
-        default: true
-        hidden: true
 
       # ========================================================================
       # SLURM Configuration
