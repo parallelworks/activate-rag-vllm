@@ -581,26 +581,26 @@ jobs:
           rundir: ${{ needs.setup.outputs.rundir }}
           use_existing_script: true
           script_path: ${{ needs.setup.outputs.rundir }}/start_service.sh
-          scheduler: ${{ inputs.scheduler.enabled }}
+          scheduler: ${{ inputs.submit_to_scheduler }}
           inject_markers: true
           slurm:
-            is_disabled: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-            account: ${{ inputs.scheduler.slurm.account }}
-            partition: ${{ inputs.scheduler.slurm.partition }}
-            qos: ${{ inputs.scheduler.slurm.qos }}
-            time: ${{ inputs.scheduler.slurm.time }}
-            cpus_per_task: ${{ inputs.scheduler.slurm.cpus_per_task }}
-            gres: ${{ inputs.scheduler.slurm.gres }}
+            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+            account: ${{ inputs.slurm.account }}
+            partition: ${{ inputs.slurm.partition }}
+            qos: ${{ inputs.slurm.qos }}
+            time: ${{ inputs.slurm.time }}
+            cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
+            gres: ${{ inputs.slurm.gres }}
             scheduler_directives: |
-              ${{ inputs.scheduler.slurm.scheduler_directives }}
+              ${{ inputs.slurm.scheduler_directives }}
           pbs:
-            is_disabled: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-            account: ${{ inputs.scheduler.pbs.account }}
-            queue: ${{ inputs.scheduler.pbs.queue }}
-            walltime: ${{ inputs.scheduler.pbs.walltime }}
-            select: ${{ inputs.scheduler.pbs.select }}
+            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+            account: ${{ inputs.pbs.account }}
+            queue: ${{ inputs.pbs.queue }}
+            walltime: ${{ inputs.pbs.walltime }}
+            select: ${{ inputs.pbs.select }}
             scheduler_directives: |
-              ${{ inputs.scheduler.pbs.scheduler_directives }}
+              ${{ inputs.pbs.scheduler_directives }}
 
   # ============================================================================
   # Session Management
@@ -647,7 +647,7 @@ jobs:
             target_hostname=$(cat HOSTNAME 2>/dev/null | head -1)
           else
             # Fallback: if no HOSTNAME file, try getting from scheduler or localhost
-            if [[ "${{ inputs.scheduler.enabled }}" == "true" ]]; then
+            if [[ "${{ inputs.submit_to_scheduler }}" == "true" ]]; then
               source jobid 2>/dev/null || true
               if [[ -n "$jobid" ]]; then
                 # Try SLURM first
@@ -773,155 +773,140 @@ jobs:
             label: vLLM + RAG (Chroma)
       
       # ========================================================================
-      # Scheduler Configuration (for SLURM/PBS job submission)
+      # Scheduler Submission
       # ========================================================================
-      scheduler:
-        type: group
-        label: Scheduler Options
-        tooltip: Configure job scheduler (SLURM/PBS) for HPC execution
-        items:
-          enabled:
-            type: boolean
-            label: Submit to Job Scheduler
-            tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
-            default: true
-            hidden: true
+      submit_to_scheduler:
+        type: boolean
+        label: Submit to Job Scheduler
+        tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
+        default: true
+        hidden: true
 
-          type_override:
-            type: dropdown
-            label: Scheduler Type Override
-            tooltip: Use when resource metadata is missing/incorrect. Auto uses the resource scheduler type.
-            default: auto
+      # ========================================================================
+      # SLURM Configuration
+      # ========================================================================
+      slurm:
+        type: group
+        label: SLURM Configuration
+        hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+        items:
+          is_disabled:
+            type: boolean
+            default: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
             hidden: true
+          
+          account:
+            label: Account
+            type: slurm-accounts
+            resource: ${{ inputs.resource }}
+            tooltip: SLURM account for job submission (--account)
+            optional: true
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+          
+          partition:
+            type: slurm-partitions
+            label: Partition
+            optional: true
+            resource: ${{ inputs.resource }}
+            tooltip: Partition for job submission (--partition)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+          
+          qos:
+            label: Quality of Service (QoS)
+            type: slurm-qos
+            resource: ${{ inputs.resource }}
+            tooltip: SLURM QoS setting (--qos)
+            optional: true
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+          
+          cpus_per_task:
+            type: number
+            label: CPUs per Task
+            min: 1
+            max: 256
+            default: 1
+            tooltip: Number of CPUs for the job (--cpus-per-task)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+          
+          time:
+            label: Walltime
+            type: string
+            default: 04:00:00
+            tooltip: Maximum job duration, e.g., 04:00:00 (--time)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+          
+          gres:
+            label: GPUs (gres)
+            type: dropdown
+            default: "gpu:4"
+            tooltip: GPU resource specification (--gres). Keep in sync with vLLM GPU count.
             options:
-              - value: auto
-                label: Auto (resource)
-              - value: slurm
-                label: SLURM
-              - value: pbs
-                label: PBS
+              - value: "gpu:1"
+                label: "1 GPU (gpu:1)"
+              - value: "gpu:2"
+                label: "2 GPUs (gpu:2)"
+              - value: "gpu:4"
+                label: "4 GPUs (gpu:4)"
+              - value: "gpu:8"
+                label: "8 GPUs (gpu:8)"
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
           
-          slurm:
-            type: group
-            label: SLURM Configuration
-            hidden: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-            collapsed: true
-            items:
-              is_disabled:
-                type: boolean
-                default: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-                hidden: true
-              
-              account:
-                label: Account
-                type: slurm-accounts
-                resource: ${{ inputs.resource }}
-                tooltip: SLURM account for job submission (--account)
-                optional: true
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-              
-              partition:
-                type: slurm-partitions
-                label: Partition
-                optional: true
-                resource: ${{ inputs.resource }}
-                tooltip: Partition for job submission (--partition)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-              
-              qos:
-                label: Quality of Service (QoS)
-                type: slurm-qos
-                resource: ${{ inputs.resource }}
-                tooltip: SLURM QoS setting (--qos)
-                optional: true
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-              
-              cpus_per_task:
-                type: number
-                label: CPUs per Task
-                min: 1
-                max: 256
-                default: 1
-                tooltip: Number of CPUs for the job (--cpus-per-task)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-              
-              time:
-                label: Walltime
-                type: string
-                default: 04:00:00
-                tooltip: Maximum job duration, e.g., 04:00:00 (--time)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-              
-              gres:
-                label: GPUs (gres)
-                type: dropdown
-                default: "gpu:4"
-                tooltip: GPU resource specification (--gres). Keep in sync with vLLM GPU count.
-                options:
-                  - value: "gpu:1"
-                    label: "1 GPU (gpu:1)"
-                  - value: "gpu:2"
-                    label: "2 GPUs (gpu:2)"
-                  - value: "gpu:4"
-                    label: "4 GPUs (gpu:4)"
-                  - value: "gpu:8"
-                    label: "8 GPUs (gpu:8)"
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
-              
-              scheduler_directives:
-                type: editor
-                label: Additional Directives
-                optional: true
-                tooltip: Additional SLURM directives (include #SBATCH prefix)
-                default: "##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems"
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'slurm') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'slurm') }}
+          scheduler_directives:
+            type: editor
+            label: Additional Directives
+            optional: true
+            tooltip: Additional SLURM directives (include #SBATCH prefix)
+            default: "##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems"
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+
+      # ========================================================================
+      # PBS Configuration
+      # ========================================================================
+      pbs:
+        type: group
+        label: PBS Configuration
+        hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+        items:
+          is_disabled:
+            type: boolean
+            default: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+            hidden: true
           
-          pbs:
-            type: group
-            label: PBS Configuration
-            hidden: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-            collapsed: true
-            items:
-              is_disabled:
-                type: boolean
-                default: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-                hidden: true
-              
-              account:
-                label: Account
-                type: string
-                optional: true
-                tooltip: PBS account for job submission (-A)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-              
-              queue:
-                label: Queue
-                type: string
-                optional: true
-                tooltip: PBS queue name (-q)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-              
-              walltime:
-                label: Walltime
-                type: string
-                default: 04:00:00
-                tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-              
-              select:
-                label: Resource Selection
-                type: string
-                default: "1:ncpus=8:ngpus=4"
-                placeholder: "1:ncpus=8:ngpus=4"
-                tooltip: PBS resource selection string, e.g., 1:ncpus=8:ngpus=4 (-l select=)
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
-              
-              scheduler_directives:
-                label: Additional Directives
-                type: editor
-                tooltip: Additional PBS directives (include #PBS prefix)
-                optional: true
-                ignore: ${{ inputs.scheduler.enabled != true || (inputs.scheduler.type_override == 'auto' && inputs.resource.schedulerType != 'pbs') || (inputs.scheduler.type_override != 'auto' && inputs.scheduler.type_override != 'pbs') }}
+          account:
+            label: Account
+            type: string
+            optional: true
+            tooltip: PBS account for job submission (-A)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+          
+          queue:
+            label: Queue
+            type: string
+            optional: true
+            tooltip: PBS queue name (-q)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+          
+          walltime:
+            label: Walltime
+            type: string
+            default: 04:00:00
+            tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+          
+          select:
+            label: Resource Selection
+            type: string
+            default: "1:ncpus=8:ngpus=4"
+            placeholder: "1:ncpus=8:ngpus=4"
+            tooltip: PBS resource selection string, e.g., 1:ncpus=8:ngpus=4 (-l select=)
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+          
+          scheduler_directives:
+            label: Additional Directives
+            type: editor
+            tooltip: Additional PBS directives (include #PBS prefix)
+            optional: true
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
       
       runmode:
         label: Container Type

@@ -117,7 +117,7 @@ class TestWorkflowConfigs(unittest.TestCase):
     def test_hsp_defaults(self):
         data = load_yaml("yamls/hsp.yaml")
         inputs = get_inputs(data)
-        self.assertTrue(inputs["scheduler"]["items"]["enabled"]["default"])
+        self.assertTrue(inputs["submit_to_scheduler"]["default"])
         self.assertEqual(inputs["vllm"]["items"]["num_gpus"]["default"], "4")
         self.assertEqual(inputs["container"]["items"]["source"]["default"], "pull")
         self.assertEqual(
@@ -127,10 +127,10 @@ class TestWorkflowConfigs(unittest.TestCase):
         self.assertEqual(inputs["model"]["items"]["cache_dir"]["default"], "${WORKDIR}")
         self.assertEqual(inputs["rag"]["items"]["embedding_model_source"]["default"], "bucket")
         self.assertEqual(inputs["rag"]["items"]["embedding_model_cache_dir"]["default"], "${WORKDIR}")
-        self.assertEqual(inputs["scheduler"]["items"]["slurm"]["items"]["gres"]["default"], "gpu:4")
+        self.assertEqual(inputs["slurm"]["items"]["gres"]["default"], "gpu:4")
         self.assertIn(
             "##SBATCH --constraint=mla",
-            inputs["scheduler"]["items"]["slurm"]["items"]["scheduler_directives"]["default"],
+            inputs["slurm"]["items"]["scheduler_directives"]["default"],
         )
 
     def test_wait_server_localhost_fallback(self):
@@ -143,7 +143,7 @@ class TestWorkflowConfigs(unittest.TestCase):
     def test_emed_hpc4_overrides(self):
         data = load_yaml("yamls/emed.yaml")
         inputs = get_inputs(data)
-        slurm = inputs["scheduler"]["items"]["slurm"]["items"]
+        slurm = inputs["slurm"]["items"]
         self.assertIn("cluster", slurm)
         self.assertIn("partition_hpc4", slurm)
         self.assertIn("gres_gpu_hpc4", slurm)
