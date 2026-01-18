@@ -386,8 +386,14 @@ jobs:
           HF_TOKEN="${{ inputs.model.hf_token }}"
           
           mkdir -p "$CACHE_DIR"
-          SAFE_MODEL_ID="${MODEL_ID//\//__}"
-          TARGET_DIR="$CACHE_DIR/$SAFE_MODEL_ID"
+          MODEL_BASENAME="${MODEL_ID##*/}"
+          LEGACY_DIR="$CACHE_DIR/${MODEL_ID//\//__}"
+          TARGET_DIR="$CACHE_DIR/$MODEL_BASENAME"
+          
+          if [[ -d "$LEGACY_DIR" && ! -d "$TARGET_DIR" ]]; then
+            echo "Renaming legacy cache dir $LEGACY_DIR to $TARGET_DIR"
+            mv "$LEGACY_DIR" "$TARGET_DIR"
+          fi
           
           # Check if already cached
           if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
