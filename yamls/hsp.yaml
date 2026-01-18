@@ -789,6 +789,7 @@ jobs:
         type: group
         label: SLURM Configuration
         hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+        collapsed: true
         items:
           is_disabled:
             type: boolean
@@ -866,6 +867,7 @@ jobs:
         type: group
         label: PBS Configuration
         hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+        collapsed: true
         items:
           is_disabled:
             type: boolean
