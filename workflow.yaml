@@ -20,7 +20,7 @@
 #   4. Model Configuration         - HuggingFace or local model paths
 #   5. vLLM Settings               - GPU count, memory, context length, dtype
 #   6. RAG Settings                - Documents directory, system prompt
-#   7. Container Options           - Container source (path, pull, build)
+#   7. Container Options           - Container source (lfs, path, pull, build)
 #   8. Advanced Settings           - Ports, API keys, repository branch
 #
 # Usage:
@@ -223,15 +223,15 @@ jobs:
           git -C "$LFS_DIR" lfs install --local
 
           git -C "$LFS_DIR" sparse-checkout init --no-cone
-          patterns=("vllm.*.sif" "vllm.sif.part_*" "vllm.sif" "scripts/sif_parts.sh")
+          patterns=("vllm/vllm.*.sif" "vllm/vllm.sif.part_*" "vllm/vllm.sif" "vllm.*.sif" "vllm.sif.part_*" "vllm.sif" "scripts/sif_parts.sh")
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            patterns+=("rag.*.sif" "rag.sif.part_*" "rag.sif")
+            patterns+=("rag/rag.*.sif" "rag/rag.sif.part_*" "rag/rag.sif" "rag.*.sif" "rag.sif.part_*" "rag.sif")
           fi
           git -C "$LFS_DIR" sparse-checkout set --no-cone "${patterns[@]}"
 
-          lfs_include="vllm.*.sif,vllm.sif.part_*,vllm.sif"
+          lfs_include="vllm/vllm.*.sif,vllm/vllm.sif.part_*,vllm/vllm.sif,vllm.*.sif,vllm.sif.part_*,vllm.sif"
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            lfs_include="${lfs_include},rag.*.sif,rag.sif.part_*,rag.sif"
+            lfs_include="${lfs_include},rag/rag.*.sif,rag/rag.sif.part_*,rag/rag.sif,rag.*.sif,rag.sif.part_*,rag.sif"
           fi
           git -C "$LFS_DIR" config lfs.concurrenttransfers 4
           git -C "$LFS_DIR" config lfs.transfer.maxretries 10
@@ -257,29 +257,45 @@ jobs:
           assemble_sif() {
             local prefix=$1
             local target=$2
-            local full="$LFS_DIR/${prefix}.sif"
+            local dir_prefix="$LFS_DIR/${prefix}"
+            local full_sub="$dir_prefix/${prefix}.sif"
+            local full_root="$LFS_DIR/${prefix}.sif"
             mkdir -p "$(dirname "$target")"
 
-            if [[ -f "$full" ]]; then
-              cp "$full" "$target"
+            if [[ -f "$full_sub" ]]; then
+              cp "$full_sub" "$target"
+              return 0
+            fi
+            if [[ -f "$full_root" ]]; then
+              cp "$full_root" "$target"
               return 0
             fi
 
             local script="$LFS_DIR/scripts/sif_parts.sh"
             shopt -s nullglob
-            local numeric_parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
+            local numeric_parts_sub=("$dir_prefix/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
+            local numeric_parts_root=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
             shopt -u nullglob
-            if [[ -x "$script" && ${#numeric_parts[@]} -gt 0 ]]; then
-              bash "$script" join --prefix "$prefix" --in-dir "$LFS_DIR" --output "$target"
-              return 0
+            if [[ -x "$script" ]]; then
+              if [[ ${#numeric_parts_sub[@]} -gt 0 ]]; then
+                bash "$script" join --prefix "$prefix" --in-dir "$dir_prefix" --output "$target"
+                return 0
+              fi
+              if [[ ${#numeric_parts_root[@]} -gt 0 ]]; then
+                bash "$script" join --prefix "$prefix" --in-dir "$LFS_DIR" --output "$target"
+                return 0
+              fi
             fi
 
             shopt -s nullglob
-            local parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$LFS_DIR/${prefix}.sif.part_"*)
+            local parts=("$dir_prefix/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$dir_prefix/${prefix}.sif.part_"*)
+            if ((${#parts[@]} == 0)); then
+              parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$LFS_DIR/${prefix}.sif.part_"*)
+            fi
             shopt -u nullglob
 
             if ((${#parts[@]} == 0)); then
-              echo "ERROR: No parts found for ${prefix} in ${LFS_DIR}"
+              echo "ERROR: No parts found for ${prefix} in ${dir_prefix} or ${LFS_DIR}"
               exit 1
             fi
 
@@ -1183,7 +1199,7 @@ jobs:
             label: LFS Repo
             type: string
             default: https://github.com/parallelworks/singularity-containers.git
-            tooltip: Git repo containing LFS SIF parts (vllm.*.sif, rag.*.sif)
+            tooltip: Git repo containing LFS SIF parts (vllm.*.sif or vllm/vllm.*.sif; rag.*.sif or rag/rag.*.sif)
             hidden: ${{ inputs.container.source != 'lfs' }}
             ignore: ${{ inputs.container.source != 'lfs' }}
 

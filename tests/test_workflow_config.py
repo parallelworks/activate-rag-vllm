@@ -125,7 +125,7 @@ class TestWorkflowConfigs(unittest.TestCase):
             "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5",
         )
         self.assertEqual(inputs["model"]["items"]["cache_dir"]["default"], "${WORKDIR}")
-        self.assertEqual(inputs["rag"]["items"]["embedding_model_source"]["default"], "bucket")
+        self.assertEqual(inputs["rag"]["items"]["embedding_model_source"]["default"], "huggingface")
         self.assertEqual(inputs["rag"]["items"]["embedding_model_cache_dir"]["default"], "${WORKDIR}")
         self.assertEqual(inputs["slurm"]["items"]["gres"]["default"], "gpu:4")
         self.assertIn(
