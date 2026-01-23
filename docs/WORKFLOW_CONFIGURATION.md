@@ -100,14 +100,14 @@ Job script generation:
 ```yaml
 steps:
   - name: Submit SLURM Job
-    if: ${{ inputs.scheduler.type == 'slurm' }}
+    if: ${{ inputs.submit_to_scheduler.type == 'slurm' }}
     run: |
       sbatch <<EOF
       #!/bin/bash
       #SBATCH --job-name=vllm-rag
-      #SBATCH --partition=${{ inputs.scheduler.slurm.partition }}
+      #SBATCH --partition=${{ inputs.submit_to_scheduler.slurm.partition }}
       #SBATCH --gres=gpu:4
-      #SBATCH --constraint=${{ inputs.scheduler.slurm.constraint }}
+      #SBATCH --constraint=${{ inputs.submit_to_scheduler.slurm.constraint }}
       ...
       EOF
 ```
@@ -127,13 +127,13 @@ pbs:
 Job script generation:
 ```yaml
 - name: Submit PBS Job
-  if: ${{ inputs.scheduler.type == 'pbs' }}
+  if: ${{ inputs.submit_to_scheduler.type == 'pbs' }}
   run: |
     qsub <<EOF
     #!/bin/bash
     #PBS -N vllm-rag
-    #PBS -q ${{ inputs.scheduler.pbs.queue }}
-    #PBS -l select=${{ inputs.scheduler.pbs.select }}
+    #PBS -q ${{ inputs.submit_to_scheduler.pbs.queue }}
+    #PBS -l select=${{ inputs.submit_to_scheduler.pbs.select }}
     ...
     EOF
 ```
@@ -142,7 +142,7 @@ Job script generation:
 
 ```yaml
 - name: Run via SSH
-  if: ${{ inputs.scheduler.type == 'ssh' }}
+  if: ${{ inputs.submit_to_scheduler.type == 'ssh' }}
   run: |
     cd ${{ inputs.rundir }}
     ./start_service.sh &
@@ -326,7 +326,7 @@ jobs:
 
 # Run only for SLURM scheduler
 - name: Submit SLURM Job
-  if: ${{ inputs.scheduler.type == 'slurm' }}
+  if: ${{ inputs.submit_to_scheduler.type == 'slurm' }}
 ```
 
 ### Error Handling
@@ -388,7 +388,7 @@ scheduler:
 2. Add configuration group:
 ```yaml
   my_scheduler:
-    hidden: ${{ inputs.scheduler.type != 'my_scheduler' }}
+    hidden: ${{ inputs.submit_to_scheduler.type != 'my_scheduler' }}
     items:
       queue:
         type: string
@@ -398,7 +398,7 @@ scheduler:
 3. Add job step:
 ```yaml
 - name: Submit My Scheduler Job
-  if: ${{ inputs.scheduler.type == 'my_scheduler' }}
+  if: ${{ inputs.submit_to_scheduler.type == 'my_scheduler' }}
   run: |
     my-scheduler-submit ...
 ```
