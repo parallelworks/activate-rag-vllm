@@ -609,42 +609,11 @@ jobs:
           echo "Tiktoken encodings downloaded"
 
   # ============================================================================
-  # Derive Scheduler Overrides (HPC4)
-  # ============================================================================
-  derive_scheduler:
-    needs: [setup]
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      slurm_partition: ${{ needs.derive_scheduler.steps.compute.outputs.slurm_partition }}
-      slurm_gres: ${{ needs.derive_scheduler.steps.compute.outputs.slurm_gres }}
-      slurm_directives: ${{ needs.derive_scheduler.steps.compute.outputs.slurm_directives }}
-    steps:
-      - name: Compute SLURM Overrides
-        id: compute
-        run: |
-          set -x
-          cluster="${{ inputs.slurm.cluster }}"
-          partition="${{ inputs.slurm.partition }}"
-          gres="${{ inputs.slurm.gres }}"
-          directives=""
-
-          if [[ "$cluster" == "hpc4" ]]; then
-            partition="${{ inputs.slurm.partition_hpc4 }}"
-            gres="gpu:${{ inputs.slurm.gres_gpu_hpc4 }}"
-            directives="#SBATCH -M hpc4"
-          fi
-
-          echo "slurm_partition=${partition}" | tee -a "$OUTPUTS"
-          echo "slurm_gres=${gres}" | tee -a "$OUTPUTS"
-          echo "slurm_directives=${directives}" | tee -a "$OUTPUTS"
-
-  # ============================================================================
   # Run Service (using marketplace job_runner)
   # ============================================================================
   run_service:
     working-directory: ${{ needs.setup.outputs.rundir }}
-    needs: [setup, prepare_containers, prepare_model, prepare_embedding_model, prepare_tiktoken, derive_scheduler]
+    needs: [setup, prepare_containers, prepare_model, prepare_embedding_model, prepare_tiktoken]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
@@ -664,8 +633,8 @@ jobs:
             partition_hpc4: ${{ inputs.slurm.partition_hpc4 }}
             cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
             mem: ${{ inputs.slurm.mem }}
-            gres_gpu_default: ${{ inputs.slurm.gres_gpu_default }}
-            gres_gpu_hpc4: ${{ inputs.slurm.gres_gpu_hpc4 }}
+            gres_gpu_default: ${{ inputs.vllm.num_gpus }}
+            gres_gpu_hpc4: ${{ inputs.vllm.num_gpus }}
             time: ${{ inputs.slurm.time }}
             scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
           pbs:
