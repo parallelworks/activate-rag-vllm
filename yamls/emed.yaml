@@ -1325,7 +1325,7 @@ jobs:
           
           rundir:
             label: Run Directory
-            default: ${HOME}/pw/activate-rag-vllm2
+            default: ${HOME}/pw/activate-rag-vllm
             type: string
             tooltip: Directory where the service will be deployed
           
