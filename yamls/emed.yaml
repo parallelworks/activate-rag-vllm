@@ -873,8 +873,8 @@ jobs:
           local_path:
             type: string
             label: Model Path
-            placeholder: /path/to/model/weights
-            default: /gs/gsfs0/home/avidaltorr/pw/software/Llama-3_3-Nemotron-Super-49B-v1_5
+            placeholder: /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
+            default: /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
             tooltip: Full path to directory containing model weights
             hidden: ${{ inputs.model.source != 'local' }}
             ignore: ${{ inputs.model.source != 'local' }}
@@ -1337,7 +1337,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: nemotron-aecm
+            default: aecm-dev
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
