@@ -1,6 +1,5 @@
 #!/bin/bash
 set -x
-
 # Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
 # when inject_markers=true (default)
 
