@@ -496,7 +496,7 @@ jobs:
             CACHE_DIR="${{ inputs.model.cache_dir }}"
           fi
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
-            CACHE_DIR="~/pw/models"
+            CACHE_DIR="/public/codelab/models"
           fi
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
@@ -900,7 +900,7 @@ jobs:
           cache_dir:
             type: string
             label: Model Cache Directory
-            default: ~/pw/models
+            default: /public/codelab/models
             tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
@@ -1211,7 +1211,7 @@ jobs:
           embedding_model_cache_dir:
             label: Embedding Model Cache Directory
             type: string
-            default: ~/pw/models
+            default: /public/codelab/models
             tooltip: Directory to store the embedding model (HuggingFace or bucket)
             hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
