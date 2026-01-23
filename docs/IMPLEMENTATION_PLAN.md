@@ -144,9 +144,9 @@ inputs:
 
   # Conditional scheduler options shown based on selection
   slurm_partition:
-    hidden: inputs.scheduler != 'slurm'
+    hidden: inputs.submit_to_scheduler != 'slurm'
   pbs_queue:
-    hidden: inputs.scheduler != 'pbs'
+    hidden: inputs.submit_to_scheduler != 'pbs'
 ```
 
 ### 1.3 Unify Entrypoint Scripts

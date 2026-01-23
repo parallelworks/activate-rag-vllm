@@ -150,6 +150,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
+          module load singularity || module load apptainer
           command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "ERROR: singularity/apptainer not found"; exit 1; }
           singularity --version || apptainer --version
           echo "Singularity/Apptainer ready"
@@ -496,7 +497,7 @@ jobs:
             CACHE_DIR="${{ inputs.model.cache_dir }}"
           fi
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
-            CACHE_DIR="~/pw/models"
+            CACHE_DIR="/public/codelab/models"
           fi
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
@@ -609,47 +610,15 @@ jobs:
           echo "Tiktoken encodings downloaded"
 
   # ============================================================================
-  # Derive Scheduler Overrides (HPC4)
-  # ============================================================================
-  derive_scheduler:
-    needs: [setup]
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      slurm_partition: ${{ needs.derive_scheduler.steps.compute.outputs.slurm_partition }}
-      slurm_gres: ${{ needs.derive_scheduler.steps.compute.outputs.slurm_gres }}
-      slurm_directives: ${{ needs.derive_scheduler.steps.compute.outputs.slurm_directives }}
-    steps:
-      - name: Compute SLURM Overrides
-        id: compute
-        run: |
-          set -x
-          cluster="${{ inputs.slurm.cluster }}"
-          partition="${{ inputs.slurm.partition }}"
-          gres="${{ inputs.slurm.gres }}"
-          directives=""
-
-          if [[ "$cluster" == "hpc4" ]]; then
-            partition="${{ inputs.slurm.partition_hpc4 }}"
-            gres="gpu:${{ inputs.slurm.gres_gpu_hpc4 }}"
-            directives="#SBATCH -M hpc4"
-          fi
-
-          echo "slurm_partition=${partition}" | tee -a "$OUTPUTS"
-          echo "slurm_gres=${gres}" | tee -a "$OUTPUTS"
-          echo "slurm_directives=${directives}" | tee -a "$OUTPUTS"
-
-  # ============================================================================
   # Run Service (using marketplace job_runner)
   # ============================================================================
   run_service:
-    needs: [setup, prepare_containers, prepare_model, prepare_embedding_model, prepare_tiktoken, derive_scheduler]
     working-directory: ${{ needs.setup.outputs.rundir }}
+    needs: [setup, prepare_containers, prepare_model, prepare_embedding_model, prepare_tiktoken]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - name: Run Service
-        uses: marketplace/job_runner/v4.0
+      - uses: marketplace/script_submitter/v3.5
         early-cancel: any-job-failed
         with:
           resource: ${{ inputs.resource }}
@@ -658,26 +627,22 @@ jobs:
           use_existing_script: true
           script_path: ${{ needs.setup.outputs.rundir }}/start_service.sh
           scheduler: ${{ inputs.submit_to_scheduler }}
-          inject_markers: true
           slurm:
-            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-            account: ${{ inputs.slurm.account }}
-            partition: ${{ needs.derive_scheduler.outputs.slurm_partition }}
-            qos: ${{ inputs.slurm.qos }}
-            time: ${{ inputs.slurm.time }}
+            is_disabled: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
+            slurm_options: ${{ inputs.slurm.slurm_options }}
+            partition_default: ${{ inputs.slurm.partition_default }}
+            partition_hpc4: ${{ inputs.slurm.partition_hpc4 }}
             cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
-            gres: ${{ needs.derive_scheduler.outputs.slurm_gres }}
+            mem: ${{ inputs.slurm.mem }}
+            gres_gpu_default: ${{ inputs.vllm.num_gpus }}
+            gres_gpu_hpc4: ${{ inputs.vllm.num_gpus }}
+            time: ${{ inputs.slurm.time }}
             scheduler_directives: |
-              ${{ needs.derive_scheduler.outputs.slurm_directives }}
-              ${{ inputs.slurm.scheduler_directives }}
+                ${{ inputs.slurm.scheduler_directives }}
+                module load singularity || module load apptainer
           pbs:
-            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-            account: ${{ inputs.pbs.account }}
-            queue: ${{ inputs.pbs.queue }}
-            walltime: ${{ inputs.pbs.walltime }}
-            select: ${{ inputs.pbs.select }}
-            scheduler_directives: |
-              ${{ inputs.pbs.scheduler_directives }}
+            is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
+            scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
 
   # ============================================================================
   # Session Management
@@ -880,8 +845,8 @@ jobs:
           local_path:
             type: string
             label: Model Path
-            placeholder: /path/to/model/weights
-            default: /gs/gsfs0/home/avidaltorr/pw/software/Llama-3_3-Nemotron-Super-49B-v1_5
+            placeholder: /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
+            default: /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
             tooltip: Full path to directory containing model weights
             hidden: ${{ inputs.model.source != 'local' }}
             ignore: ${{ inputs.model.source != 'local' }}
@@ -907,7 +872,7 @@ jobs:
           cache_dir:
             type: string
             label: Model Cache Directory
-            default: ~/pw/models
+            default: /public/codelab/models
             tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
@@ -917,160 +882,87 @@ jobs:
       # ========================================================================
       slurm:
         type: group
-        label: SLURM Configuration
-        hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-        collapsed: true
+        label: SLURM Directives
+        hidden: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
+        ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
         items:
+          slurm_options:
+            type: dropdown
+            label: Select Cluster
+            optional: true
+            default: ''
+            options:
+              - value: ''
+                label: Default
+              - value: '-M hpc4'
+                label: HPC4
           is_disabled:
             type: boolean
-            default: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
             hidden: true
-
-          cluster:
-            type: dropdown
-            label: SLURM Cluster
-            default: default
-            options:
-              - value: default
-                label: Default
-              - value: hpc4
-                label: HPC4 (-M hpc4)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
-          account:
-            label: Account
-            type: slurm-accounts
-            resource: ${{ inputs.resource }}
-            tooltip: SLURM account for job submission (--account)
-            optional: true
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
-          partition:
+            default: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
+            label: Is SLURM disabled?
+          partition_default:
             type: slurm-partitions
-            label: Partition
+            label: SLURM partition
+            ignore: ${{ '-M hpc4' == inputs.slurm.slurm_options }}
+            hidden: ${{ .ignore }}
             optional: true
             resource: ${{ inputs.resource }}
-            tooltip: Partition for job submission (--partition)
-            hidden: ${{ inputs.slurm.cluster == 'hpc4' }}
-            ignore: ${{ inputs.slurm.cluster == 'hpc4' || inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-
+            tooltip: Select a partition from the drop down menu. Leave empty to let SLURM pick a partition.
           partition_hpc4:
             type: dropdown
-            label: Partition (HPC4)
+            label: SLURM partition
             optional: true
-            tooltip: Partition for HPC4 (-M hpc4)
+            tooltip: Select a partition from the drop down menu. Leave empty to let SLURM pick a partition.
+            ignore: ${{ '-M hpc4' != inputs.slurm.slurm_options }}
+            hidden: ${{ .ignore }}
             default: normal
-            options: [normal, gpu, gpu-h200, gpu-quick, ht, large-mem, quick, test, unlimited]
-            hidden: ${{ inputs.slurm.cluster != 'hpc4' }}
-            ignore: ${{ inputs.slurm.cluster != 'hpc4' || inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
-          qos:
-            label: Quality of Service (QoS)
-            type: slurm-qos
-            resource: ${{ inputs.resource }}
-            tooltip: SLURM QoS setting (--qos)
-            optional: true
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
+            options:
+              - gpu
+              - gpu-h200
+              - gpu-quick
           cpus_per_task:
             type: number
-            label: CPUs per Task
+            label: CPUs per task
             min: 1
-            max: 256
+            max: 32
             default: 1
-            tooltip: Number of CPUs for the job (--cpus-per-task)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
+            tooltip: '--cpus-per-task=value slurm directive'
+            ignore: ${{ 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
+          mem:
+            type: string
+            label: Minimum total memory required
+            default: 8GB
+            tooltip: '--mem=value slurm directive'
+            hidden: ${{ 'existing' != inputs.resource.provider }}
+            ignore: ${{ .hidden }}
+            optional: true
           time:
             label: Walltime
             type: string
-            default: 01:00:00
-            tooltip: Maximum job duration, e.g., 04:00:00 (--time)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
-          gres:
-            label: GPUs (gres)
-            type: dropdown
-            default: "gpu:4"
-            tooltip: GPU resource specification (--gres). Keep in sync with vLLM GPU count.
-            options:
-              - value: "gpu:1"
-                label: "1 GPU (gpu:1)"
-              - value: "gpu:2"
-                label: "2 GPUs (gpu:2)"
-              - value: "gpu:4"
-                label: "4 GPUs (gpu:4)"
-              - value: "gpu:8"
-                label: "8 GPUs (gpu:8)"
-            hidden: ${{ inputs.slurm.cluster == 'hpc4' }}
-            ignore: ${{ inputs.slurm.cluster == 'hpc4' || inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-
-          gres_gpu_hpc4:
-            type: number
-            label: Number of GPUs (HPC4)
-            min: 1
-            max: 4
-            default: 4
-            tooltip: GPUs per node for HPC4 (mapped to --gres=gpu:X)
-            hidden: ${{ inputs.slurm.cluster != 'hpc4' }}
-            ignore: ${{ inputs.slurm.cluster != 'hpc4' || inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          
+            default: '01:00:00'
+            tooltip: '--time= SLURM directive to set the maximum wall-clock time limit for the job'
           scheduler_directives:
             type: editor
-            label: Additional Directives
             optional: true
-            tooltip: Additional SLURM directives (include #SBATCH prefix)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-
-      # ========================================================================
-      # PBS Configuration
-      # ========================================================================
+            tooltip: |
+              Type in additional scheduler directives. 
       pbs:
         type: group
-        label: PBS Configuration
-        hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-        collapsed: true
+        label: PBS Directives
+        hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
+        ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
         items:
           is_disabled:
             type: boolean
-            default: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
             hidden: true
-          
-          account:
-            label: Account
-            type: string
-            optional: true
-            tooltip: PBS account for job submission (-A)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-          
-          queue:
-            label: Queue
-            type: string
-            optional: true
-            tooltip: PBS queue name (-q)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-          
-          walltime:
-            label: Walltime
-            type: string
-            default: 04:00:00
-            tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-          
-          select:
-            label: Resource Selection
-            type: string
-            default: "1:ncpus=8:ngpus=1"
-            placeholder: "1:ncpus=8:ngpus=1"
-            tooltip: PBS resource selection string, e.g., 1:ncpus=8:ngpus=1 (-l select=)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-          
+            default: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
+            label: Is PBS disabled?
           scheduler_directives:
-            label: Additional Directives
+            label: Scheduler Directives
             type: editor
-            tooltip: Additional PBS directives (include #PBS prefix)
-            optional: true
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+            tooltip: Type the PBS scheduler directives
       
       runmode:
         label: Container Type
@@ -1216,7 +1108,7 @@ jobs:
           embedding_model_cache_dir:
             label: Embedding Model Cache Directory
             type: string
-            default: ~/pw/models
+            default: /public/codelab/models
             tooltip: Directory to store the embedding model (HuggingFace or bucket)
             hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
@@ -1248,7 +1140,7 @@ jobs:
           source:
             type: dropdown
             label: Container Source
-            default: pull
+            default: path
             tooltip: How to obtain Apptainer/Singularity containers
             options:
               - value: lfs
@@ -1287,8 +1179,8 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: ~/pw/singularity/vllm.sif
-            placeholder: ~/pw/singularity/vllm.sif
+            default: /public/codelab/singularity/vllm.sif
+            placeholder: /public/codelab/singularity/vllm.sif
             tooltip: Path to vllm.sif container (use existing or build destination)
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
@@ -1296,8 +1188,8 @@ jobs:
           rag_path:
             label: RAG Container Path
             type: string
-            default: ~/pw/singularity/rag.sif
-            placeholder: ~/pw/singularity/rag.sif
+            default: /public/codelab/singularity/rag.sif
+            placeholder: /public/codelab/singularity/rag.sif
             tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
@@ -1330,7 +1222,7 @@ jobs:
           
           rundir:
             label: Run Directory
-            default: ${HOME}/pw/activate-rag-vllm2
+            default: ${HOME}/pw/activate-rag-vllm
             type: string
             tooltip: Directory where the service will be deployed
           
@@ -1342,7 +1234,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: nemotron-aecm
+            default: aecm-dev
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
