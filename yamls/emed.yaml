@@ -1243,7 +1243,7 @@ jobs:
           source:
             type: dropdown
             label: Container Source
-            default: pull
+            default: path
             tooltip: How to obtain Apptainer/Singularity containers
             options:
               - value: lfs
@@ -1282,8 +1282,8 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: /public/codelab/models/singularity/vllm.sif
-            placeholder: /public/codelab/models/singularity/vllm.sif
+            default: /public/codelab/singularity/vllm.sif
+            placeholder: /public/codelab/singularity/vllm.sif
             tooltip: Path to vllm.sif container (use existing or build destination)
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
@@ -1291,8 +1291,8 @@ jobs:
           rag_path:
             label: RAG Container Path
             type: string
-            default: /public/codelab/models/singularity/rag.sif
-            placeholder: /public/codelab/models/singularity/rag.sif
+            default: /public/codelab/singularity/rag.sif
+            placeholder: /public/codelab/singularity/rag.sif
             tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
