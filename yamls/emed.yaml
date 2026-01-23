@@ -1282,8 +1282,8 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: ~/pw/singularity/vllm.sif
-            placeholder: ~/pw/singularity/vllm.sif
+            default: /public/codelab/models/singularity/vllm.sif
+            placeholder: /public/codelab/models/singularity/vllm.sif
             tooltip: Path to vllm.sif container (use existing or build destination)
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
@@ -1291,8 +1291,8 @@ jobs:
           rag_path:
             label: RAG Container Path
             type: string
-            default: ~/pw/singularity/rag.sif
-            placeholder: ~/pw/singularity/rag.sif
+            default: /public/codelab/models/singularity/rag.sif
+            placeholder: /public/codelab/models/singularity/rag.sif
             tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
