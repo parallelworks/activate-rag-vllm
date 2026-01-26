@@ -175,6 +175,7 @@ jobs:
         run: |
           set -euo pipefail
           cd ${{ needs.setup.outputs.rundir }}
+          export PATH=/public/codelab/git-lfs-3.7.1:$PATH
 
           command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
           git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found"; exit 1; }
@@ -396,6 +397,7 @@ jobs:
         run: |
           set -x
           cd ${{ needs.setup.outputs.rundir }}
+          export PATH=/public/codelab/git-lfs-3.7.1:$PATH
           
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
@@ -619,7 +621,6 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - uses: marketplace/script_submitter/v3.5
-        early-cancel: any-job-failed
         with:
           resource: ${{ inputs.resource }}
           shebang: '#!/bin/bash'
@@ -660,7 +661,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          timeout=600
+          timeout=3600
           elapsed=0
           while [ ! -f ${{ needs.setup.outputs.rundir }}/job.started ]; do
             echo "Waiting for job to start... (${elapsed}s/${timeout}s)"
