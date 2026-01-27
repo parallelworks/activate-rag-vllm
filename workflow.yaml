@@ -604,12 +604,26 @@ jobs:
         id: download_tiktoken
         early-cancel: any-job-failed
         run: |
-          set -x
+          set -xe
           cd ${{ needs.setup.outputs.rundir }}
           mkdir -p cache/tiktoken_encodings
-          wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
-          wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-          echo "Tiktoken encodings downloaded"
+
+          # Download with retry and fail on error
+          wget --tries=3 --timeout=30 -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
+          wget --tries=3 --timeout=30 -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+
+          # Verify files are not empty (o200k ~4.5MB, cl100k ~1.7MB)
+          if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]]; then
+            echo "ERROR: o200k_base.tiktoken download failed or file is empty"
+            exit 1
+          fi
+          if [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
+            echo "ERROR: cl100k_base.tiktoken download failed or file is empty"
+            exit 1
+          fi
+
+          ls -la cache/tiktoken_encodings/
+          echo "Tiktoken encodings downloaded and verified"
 
   # ============================================================================
   # Run Service (using marketplace job_runner)
