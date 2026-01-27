@@ -132,10 +132,7 @@ jobs:
           
           # Additional settings
           [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]] && echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
-          if [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]]; then
-            echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
-            echo "export TIKTOKEN_RS_CACHE_DIR=/root/.cache/tiktoken_encodings" >> .run.env
-          fi
+          [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]] && echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
           
           echo "Environment file created"
 
@@ -494,6 +491,7 @@ jobs:
         run: |
           set -x
           cd ${{ inputs.advanced_settings.rundir }}
+          export PATH=/public/codelab/git-lfs-3.7.1:$PATH
 
           SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
@@ -610,32 +608,9 @@ jobs:
           set -x
           cd ${{ inputs.advanced_settings.rundir }}
           mkdir -p cache/tiktoken_encodings
-
-          # Method 1: Try direct download from OpenAI public URL
-          echo "Attempting download from openaipublic.blob.core.windows.net..."
-          wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken" 2>/dev/null || true
-          wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken" 2>/dev/null || true
-
-          # Method 2: If wget failed or files are empty, fallback to PW bucket
-          if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]] || [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
-            echo "Direct download failed or files empty, falling back to PW bucket..."
-            rm -f cache/tiktoken_encodings/*.tiktoken 2>/dev/null || true
-            pw bucket cp "pw://mshaxted/codeassist/o200k_base.tiktoken" cache/tiktoken_encodings/
-            pw bucket cp "pw://mshaxted/codeassist/cl100k_base.tiktoken" cache/tiktoken_encodings/
-          fi
-
-          # Final verification
-          if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]]; then
-            echo "ERROR: o200k_base.tiktoken download failed or file is empty"
-            exit 1
-          fi
-          if [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
-            echo "ERROR: cl100k_base.tiktoken download failed or file is empty"
-            exit 1
-          fi
-
-          ls -la cache/tiktoken_encodings/
-          echo "Tiktoken encodings downloaded and verified"
+          wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
+          wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+          echo "Tiktoken encodings downloaded"
 
   # ============================================================================
   # Run Session (using marketplace session_runner)
@@ -964,7 +939,7 @@ jobs:
           docsdir:
             label: Documents Directory
             optional: true
-            default: ./docs
+            default: /public/codelab/docs
             type: string
             tooltip: Directory containing documents to index for RAG
 
