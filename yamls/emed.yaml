@@ -45,8 +45,6 @@ jobs:
   setup:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      rundir: ${{ needs.setup.steps.clone_repo.outputs.rundir }}
     steps:
       - name: Clone Repository
         id: clone_repo
@@ -75,15 +73,17 @@ jobs:
           
           # Create cache directories (needed for bind mounts even if not used)
           mkdir -p cache/tiktoken_encodings
-          
-          echo "rundir=$RUNDIR" >> $OUTPUTS
-      
+
+          # Needed for session_runner
+          touch inputs.sh
+          touch controller.sh
+
       - name: Create Environment File
         id: create_env
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.steps.clone_repo.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           # Core configuration
           cat > .run.env << 'ENVEOF'
@@ -161,7 +161,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           [[ ! -f "vllm.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" ./ || echo "vllm.sif exists"
           [[ "${{ inputs.runtype }}" == "all" && ! -f "rag.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./ || echo "rag.sif exists or not needed"
@@ -174,7 +174,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -euo pipefail
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           export PATH=/public/codelab/git-lfs-3.7.1:$PATH
 
           command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
@@ -326,7 +326,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           VLLM_PATH="${{ inputs.container.vllm_path }}"
           VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
@@ -347,7 +347,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           
           # Resolve container paths (expand ~ to $HOME)
           VLLM_PATH="${{ inputs.container.vllm_path }}"
@@ -396,7 +396,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           export PATH=/public/codelab/git-lfs-3.7.1:$PATH
           
           MODEL_ID="${{ inputs.model.hf_model_id }}"
@@ -432,7 +432,7 @@ jobs:
               ./git-lfs-*/install.sh --local
               rm -rf git-lfs-*
               export PATH="$HOME/bin:$PATH"
-              cd ${{ needs.setup.outputs.rundir }}
+              cd ${{ inputs.advanced_settings.rundir }}
               git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
             fi
             
@@ -490,7 +490,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
 
           SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
@@ -561,7 +561,7 @@ jobs:
                 ./git-lfs-*/install.sh --local
                 rm -rf git-lfs-*
                 export PATH="$HOME/bin:$PATH"
-                cd ${{ needs.setup.outputs.rundir }}
+                cd ${{ inputs.advanced_settings.rundir }}
                 git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
               fi
 
@@ -605,185 +605,50 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          cd ${{ inputs.advanced_settings.rundir }}
           mkdir -p cache/tiktoken_encodings
           wget -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
           wget -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
           echo "Tiktoken encodings downloaded"
 
   # ============================================================================
-  # Run Service (using marketplace job_runner)
+  # Run Session (using marketplace session_runner)
   # ============================================================================
-  run_service:
-    working-directory: ${{ needs.setup.outputs.rundir }}
+  session_runner:
+    working-directory: ${{ inputs.advanced_settings.rundir }}
     needs: [setup, prepare_containers, prepare_model, prepare_embedding_model, prepare_tiktoken]
     ssh:
-      remoteHost: ${{ inputs.resource.ip }}
+        remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - uses: marketplace/script_submitter/v3.5
+      - uses: marketplace/session_runner/v1.3
+        early-cancel: any-job-failed
         with:
+          session: ${{ sessions.session }}
           resource: ${{ inputs.resource }}
-          shebang: '#!/bin/bash'
-          rundir: ${{ needs.setup.outputs.rundir }}
-          use_existing_script: true
-          script_path: ${{ needs.setup.outputs.rundir }}/start_service.sh
-          scheduler: ${{ inputs.submit_to_scheduler }}
-          slurm:
-            is_disabled: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
-            slurm_options: ${{ inputs.slurm.slurm_options }}
-            partition_default: ${{ inputs.slurm.partition_default }}
-            partition_hpc4: ${{ inputs.slurm.partition_hpc4 }}
-            cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
-            mem: ${{ inputs.slurm.mem }}
-            gres_gpu_default: ${{ inputs.vllm.num_gpus }}
-            gres_gpu_hpc4: ${{ inputs.vllm.num_gpus }}
-            time: ${{ inputs.slurm.time }}
-            scheduler_directives: |
-                ${{ inputs.slurm.scheduler_directives }}
-                module load singularity || module load apptainer
-          pbs:
-            is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
-            scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
+          cluster:
+            scheduler: ${{ inputs.submit_to_scheduler }}
+            slurm:
+              is_disabled: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
+              slurm_options: ${{ inputs.slurm.slurm_options }}
+              partition_default: ${{ inputs.slurm.partition_default }}
+              partition_hpc4: ${{ inputs.slurm.partition_hpc4 }}
+              cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
+              mem: ${{ inputs.slurm.mem }}
+              gres_gpu_default: ${{ inputs.vllm.num_gpus }}
+              gres_gpu_hpc4: ${{ inputs.vllm.num_gpus }}
+              time: ${{ inputs.slurm.time }}
+              scheduler_directives: |
+                  ${{ inputs.slurm.scheduler_directives }}
+                  module load singularity || module load apptainer
+            pbs:
+              is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
+              scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
+          service:
+            start_service_script: ${{ inputs.advanced_settings.rundir }}/start_service.sh
+            controller_script: ${{ inputs.advanced_settings.rundir }}/controller.sh
+            inputs_sh: ${{ inputs.advanced_settings.rundir }}/inputs.sh
+            rundir: ${{ inputs.advanced_settings.rundir }}
 
-  # ============================================================================
-  # Session Management
-  # ============================================================================
-  create_session:
-    needs: [setup]
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      target_hostname: ${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}
-      SESSION_PORT: ${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}
-    steps:
-      - name: Wait for Job to Start
-        id: wait_job
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          timeout=3600
-          elapsed=0
-          while [ ! -f ${{ needs.setup.outputs.rundir }}/job.started ]; do
-            echo "Waiting for job to start... (${elapsed}s/${timeout}s)"
-            sleep 5
-            ((elapsed+=5))
-            [[ $elapsed -ge $timeout ]] && { echo "ERROR: Timeout waiting for job"; exit 1; }
-          done
-          echo "Job started"
-      
-      - name: Get Hostname
-        id: get_hostname
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ needs.setup.outputs.rundir }}
-          
-          # Wait for HOSTNAME file (written by start_service.sh via script_submitter)
-          timeout=120; elapsed=0
-          while [ ! -f HOSTNAME ]; do
-            sleep 2; ((elapsed+=2))
-            echo "Waiting for HOSTNAME file... (${elapsed}s/${timeout}s)"
-            [[ $elapsed -ge $timeout ]] && break
-          done
-          
-          if [ -f HOSTNAME ]; then
-            target_hostname=$(cat HOSTNAME 2>/dev/null | head -1)
-          else
-            # Fallback: if no HOSTNAME file, try getting from scheduler or localhost
-            if [[ "${{ inputs.submit_to_scheduler }}" == "true" ]]; then
-              source jobid 2>/dev/null || true
-              if [[ -n "$jobid" ]]; then
-                # Try SLURM first
-                target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null || true)
-              fi
-            fi
-            # Last resort: use login node
-            [[ -z "${target_hostname}" ]] && target_hostname=$(hostname)
-          fi
-          
-          [[ -z "${target_hostname}" ]] && { echo "$(date) Failed to get target hostname"; exit 1; }
-          echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-      
-      - name: Get Session Port
-        id: get_port
-        early-cancel: any-job-failed
-        run: |
-          set -euo pipefail
-          set -x
-          
-          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
-          RETRY_INTERVAL=3
-          cd ${{ needs.setup.outputs.rundir }}
-          
-          attempt=1; elapsed=0
-          while true; do
-            echo "$(date) Attempt $attempt: Checking for SESSION_PORT..."
-            
-            if [ -f SESSION_PORT ]; then
-              echo "$(date) Success: SESSION_PORT found!"
-              PORT=$(cat SESSION_PORT)
-              echo "SESSION_PORT=$PORT" | tee -a "$OUTPUTS"
-              exit 0
-            elif [ -f job.ended ]; then
-              echo "$(date) Job ended without SESSION_PORT"
-              exit 1
-            else
-              echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
-              sleep "$RETRY_INTERVAL"
-              ((attempt++)); ((elapsed+=RETRY_INTERVAL))
-              [[ $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
-            fi
-          done
-      
-      - name: Wait for Server
-        id: wait_server
-        early-cancel: any-job-failed
-        run: |
-          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
-          RETRY_INTERVAL=3
-          remote_host="${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}"
-          remote_port="${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}"
-          local_host=""
-          if [[ -n "${remote_host}" ]]; then
-            host_short=$(hostname 2>/dev/null || true)
-            host_fqdn=$(hostname -f 2>/dev/null || true)
-            if [[ "${remote_host}" == "${host_short}" || "${remote_host}" == "${host_fqdn}" ]]; then
-              local_host="127.0.0.1"
-            fi
-          fi
-          
-          cd ${{ needs.setup.outputs.rundir }}
-          
-          attempt=1; elapsed=0
-          while true; do
-            echo "$(date) Attempt $attempt: Checking ${remote_host}:${remote_port}..."
-            
-            if curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1; then
-              echo "$(date) Success: Server is listening!"
-              exit 0
-            elif [[ -n "${local_host}" ]] && curl --silent --connect-timeout 5 "http://${local_host}:${remote_port}" >/dev/null 2>&1; then
-              echo "$(date) Success: Server is listening on ${local_host}:${remote_port}!"
-              exit 0
-            elif [ -f job.ended ]; then
-              echo "$(date) Job completed"
-              exit 0
-            else
-              echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
-              sleep "$RETRY_INTERVAL"
-              ((attempt++)); ((elapsed+=RETRY_INTERVAL))
-              [[ $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
-            fi
-          done
-      
-      - name: Update Session
-        id: update_session
-        uses: parallelworks/update-session
-        with:
-          remotePort: '${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}'
-          target: '${{ inputs.resource.id }}'
-          name: '${{ sessions.session }}'
-          remoteHost: '${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}'
-          localPort: '${{ inputs.advanced_settings.localport }}'
 
 # ==============================================================================
 # INPUT DEFINITIONS
@@ -934,7 +799,7 @@ jobs:
           mem:
             type: string
             label: Minimum total memory required
-            default: 8GB
+            default: 400GB
             tooltip: '--mem=value slurm directive'
             hidden: ${{ 'existing' != inputs.resource.provider }}
             ignore: ${{ .hidden }}
