@@ -607,15 +607,24 @@ jobs:
         id: download_tiktoken
         early-cancel: any-job-failed
         run: |
-          set -xe
+          set -x
           cd ${{ inputs.advanced_settings.rundir }}
           mkdir -p cache/tiktoken_encodings
 
-          # Download with retry and fail on error
-          wget --tries=3 --timeout=30 -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
-          wget --tries=3 --timeout=30 -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+          # Method 1: Try direct download from OpenAI public URL
+          echo "Attempting download from openaipublic.blob.core.windows.net..."
+          wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken" 2>/dev/null || true
+          wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken" 2>/dev/null || true
 
-          # Verify files are not empty (o200k ~4.5MB, cl100k ~1.7MB)
+          # Method 2: If wget failed or files are empty, fallback to PW bucket
+          if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]] || [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
+            echo "Direct download failed or files empty, falling back to PW bucket..."
+            rm -f cache/tiktoken_encodings/*.tiktoken 2>/dev/null || true
+            pw bucket cp "pw://mshaxted/codeassist/o200k_base.tiktoken" cache/tiktoken_encodings/
+            pw bucket cp "pw://mshaxted/codeassist/cl100k_base.tiktoken" cache/tiktoken_encodings/
+          fi
+
+          # Final verification
           if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]]; then
             echo "ERROR: o200k_base.tiktoken download failed or file is empty"
             exit 1
