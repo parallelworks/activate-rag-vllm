@@ -2,7 +2,7 @@
 set -x
 # Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
 # when inject_markers=true (default)
-
+touch job.started
 source .run.env > /dev/null 2>&1
 #rm .run.env > /dev/null 2>&1
 
