@@ -494,7 +494,8 @@ jobs:
         run: |
           set -x
           cd ${{ inputs.advanced_settings.rundir }}
-
+          export PATH=/public/codelab/git-lfs-3.7.1:$PATH
+          
           SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
           CACHE_DIR="${{ inputs.rag.embedding_model_cache_dir }}"
