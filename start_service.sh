@@ -130,7 +130,8 @@ if [ "$RUNMODE" == "docker" ];then
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" .env
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" .env
     sed -i "s|^EMBEDDING_MODEL=.*|EMBEDDING_MODEL=${EMBEDDING_MODEL}|" .env
-    
+    [[ -n "$VLLM_ATTENTION_BACKEND" ]] && echo "VLLM_ATTENTION_BACKEND=${VLLM_ATTENTION_BACKEND}" >> .env
+
     if [[ "$DOCS_DIR" != "undefined" ]]; then
         sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
         mkdir -p $DOCS_DIR
@@ -217,6 +218,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMBEDDING_MODEL|" env.sh
+    [[ -n "$VLLM_ATTENTION_BACKEND" ]] && sed -i "s|^export VLLM_ATTENTION_BACKEND=.*|export VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND|" env.sh
 
     # Get model path and basename for bind mounts
     MODEL_PATH="${MODEL_NAME}"
