@@ -1211,7 +1211,7 @@ jobs:
 
           session_timeout:
             label: Session Wait Timeout (seconds)
-            default: 1800
+            default: 3600
             tooltip: How long to wait for the server to start before timing out
             type: number
           
