@@ -132,6 +132,12 @@ if [ "$RUNMODE" == "docker" ];then
     sed -i "s|^EMBEDDING_MODEL=.*|EMBEDDING_MODEL=${EMBEDDING_MODEL}|" .env
     [[ -n "$VLLM_ATTENTION_BACKEND" ]] && echo "VLLM_ATTENTION_BACKEND=${VLLM_ATTENTION_BACKEND}" >> .env
 
+    # Tiktoken encodings for offline tokenizer support (standard tiktoken + openai_harmony for GPT-OSS)
+    if [[ -n "$TIKTOKEN_ENCODINGS_BASE" ]]; then
+        echo "TIKTOKEN_ENCODINGS_BASE=${TIKTOKEN_ENCODINGS_BASE}" >> .env
+        echo "TIKTOKEN_RS_CACHE_DIR=${TIKTOKEN_ENCODINGS_BASE}" >> .env
+    fi
+
     if [[ "$DOCS_DIR" != "undefined" ]]; then
         sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|DOCS_DIR=$DOCS_DIR|" .env
         mkdir -p $DOCS_DIR
@@ -219,6 +225,12 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMBEDDING_MODEL|" env.sh
     [[ -n "$VLLM_ATTENTION_BACKEND" ]] && sed -i "s|^export VLLM_ATTENTION_BACKEND=.*|export VLLM_ATTENTION_BACKEND=$VLLM_ATTENTION_BACKEND|" env.sh
+
+    # Tiktoken encodings for offline tokenizer support (standard tiktoken + openai_harmony for GPT-OSS)
+    if [[ -n "$TIKTOKEN_ENCODINGS_BASE" ]]; then
+        sed -i "s|^#*export TIKTOKEN_ENCODINGS_BASE=.*|export TIKTOKEN_ENCODINGS_BASE=$TIKTOKEN_ENCODINGS_BASE|" env.sh
+        sed -i "s|^#*export TIKTOKEN_RS_CACHE_DIR=.*|export TIKTOKEN_RS_CACHE_DIR=$TIKTOKEN_ENCODINGS_BASE|" env.sh
+    fi
 
     # Get model path and basename for bind mounts
     MODEL_PATH="${MODEL_NAME}"

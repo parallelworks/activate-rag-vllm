@@ -132,7 +132,10 @@ jobs:
           
           # Additional settings
           [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]] && echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
-          [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]] && echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
+          if [[ "${{ inputs.advanced_settings.tiktoken_encodings }}" == "true" ]]; then
+            echo "export TIKTOKEN_ENCODINGS_BASE=/root/.cache/tiktoken_encodings" >> .run.env
+            echo "export TIKTOKEN_RS_CACHE_DIR=/root/.cache/tiktoken_encodings" >> .run.env
+          fi
           
           echo "Environment file created"
 
