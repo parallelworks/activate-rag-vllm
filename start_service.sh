@@ -3,6 +3,8 @@ set -x
 # Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
 # when inject_markers=true (default)
 touch job.started
+hostname | cut -d'.' -f1 > HOSTNAME
+
 source .run.env > /dev/null 2>&1
 #rm .run.env > /dev/null 2>&1
 
