@@ -45,8 +45,6 @@ jobs:
   setup:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      rundir: ${{ needs.setup.steps.clone_repo.outputs.rundir }}
     steps:
       - name: Clone Repository
         id: clone_repo
@@ -389,8 +387,6 @@ jobs:
     if: ${{ inputs.model.source == 'huggingface' }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      model_path: ${{ needs.prepare_model.steps.clone_model.outputs.model_path }}
     steps:
       - name: Clone HuggingFace Model
         id: clone_model
@@ -482,8 +478,6 @@ jobs:
     if: ${{ inputs.runtype == 'all' && (inputs.rag.embedding_model_source == 'huggingface' || inputs.rag.embedding_model_source == 'bucket') }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      embedding_model_path: ${{ needs.prepare_embedding_model.steps.clone_embedding.outputs.embedding_model_path }}
     steps:
       - name: Clone Embedding Model
         id: clone_embedding
@@ -680,9 +674,6 @@ jobs:
     needs: [setup]
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
-    outputs:
-      target_hostname: ${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}
-      SESSION_PORT: ${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}
     steps:
       - name: Wait for Job to Start
         id: wait_job
