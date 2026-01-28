@@ -65,7 +65,7 @@ jobs:
           else
             echo "Cloning fresh repository..."
             git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} "$RUNDIR"
-          fi
+          fi 
           
           cd "$RUNDIR"
           rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
@@ -965,14 +965,14 @@ jobs:
           docsdir:
             label: Documents Directory
             optional: true
-            default: ./docs
+            default: /public/codelab/docs
             type: string
             tooltip: Directory containing documents to index for RAG
 
           embedding_model_source:
             label: Embedding Model Source
             type: dropdown
-            default: bucket
+            default: local
             tooltip: How to load the embedding model for RAG
             options:
               - value: local
@@ -993,6 +993,7 @@ jobs:
           embedding_model_path:
             label: Embedding Model Path
             type: string
+            default: /public/codelab/models/all-MiniLM-L6-v2
             optional: true
             tooltip: Local path to an embedding model directory
             hidden: ${{ inputs.rag.embedding_model_source != 'local' }}
@@ -1127,7 +1128,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: aecm-dev
+            default: main
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
