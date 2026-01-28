@@ -318,7 +318,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     trap cleanup EXIT
 
     # Create cancel script
-    cat > cancel.sh << 'EOF'
+    cat > cancel.sh << EOF
 #!/bin/bash
 set -x
 singularity instance stop vllm 2>/dev/null || true
