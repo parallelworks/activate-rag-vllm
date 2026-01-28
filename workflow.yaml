@@ -47,7 +47,6 @@ jobs:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
       - name: Clone Repository
-        id: clone_repo
         early-cancel: any-job-failed
         run: |
           set -x
@@ -81,7 +80,7 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.steps.clone_repo.outputs.rundir }}
+          cd ${{ needs.setup.outputs.rundir }}
           
           # Core configuration
           cat > .run.env << 'ENVEOF'
