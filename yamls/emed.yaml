@@ -426,7 +426,7 @@ jobs:
             # Ensure git-lfs is available
             if ! git lfs version >/dev/null 2>&1; then
               echo "Installing git-lfs locally..."
-              mkdir -p $HOME/bin
+              mkdir -p $HOME/.local
               cd /tmp
               LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
               [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
@@ -434,17 +434,17 @@ jobs:
               tar -xzf git-lfs-linux-amd64.tar.gz
               ./git-lfs-*/install.sh --local
               rm -rf git-lfs-*
-              export PATH="$HOME/bin:$PATH"
+              export PATH="$HOME/.local/bin:$PATH"
               cd ${{ inputs.advanced_settings.rundir }}
               git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
             fi
-            
+
             git lfs install
-            
+
             # Build clone URL
             REPO_URL="https://huggingface.co/$MODEL_ID"
             [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
-            
+
             # Clone with LFS and pull large files
             GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
@@ -556,7 +556,7 @@ jobs:
               # Ensure git-lfs is available
               if ! git lfs version >/dev/null 2>&1; then
                 echo "Installing git-lfs locally..."
-                mkdir -p $HOME/bin
+                mkdir -p $HOME/.local
                 cd /tmp
                 LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
                 [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
@@ -564,7 +564,7 @@ jobs:
                 tar -xzf git-lfs-linux-amd64.tar.gz
                 ./git-lfs-*/install.sh --local
                 rm -rf git-lfs-*
-                export PATH="$HOME/bin:$PATH"
+                export PATH="$HOME/.local/bin:$PATH"
                 cd ${{ inputs.advanced_settings.rundir }}
                 git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
               fi
