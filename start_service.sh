@@ -367,7 +367,6 @@ EOF
         singularity instance start \
             $COMMON_BINDS \
             --bind ./cache/chroma:/chroma_data \
-            --bind ./docs:/docs \
             --bind ${DOCS_DIR}:/docs \
             --bind "${MODEL_PATH}:/${MODEL_BASE}" \
             $RAG_EMBED_BIND \
