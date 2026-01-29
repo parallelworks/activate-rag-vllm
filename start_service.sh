@@ -325,8 +325,8 @@ singularity instance stop vllm 2>/dev/null || true
 singularity instance stop rag 2>/dev/null || true
 if [ -d "${TMPDIR}" ]; then
     tmp_dir="tmp-$(date +%s)"
-    mv ${TMPDIR} ${tmp_dir} 
-    rm -Rf ${tmp_dir}
+    mv ${TMPDIR} \${tmp_dir} 
+    rm -Rf \${tmp_dir}
 fi
 EOF
     chmod +x cancel.sh
