@@ -247,7 +247,8 @@ jobs:
           max_attempts=2
           while true; do
             echo "LFS pull attempt ${attempt}/${max_attempts}..."
-            if git -C "$LFS_DIR" lfs fetch; then
+            echo "Downloading container files (this may take a while for large files)..."
+            if git -C "$LFS_DIR" lfs fetch --progress; then
               break
             fi
             if [[ $attempt -ge $max_attempts ]]; then
@@ -257,6 +258,7 @@ jobs:
             sleep $((attempt * 5))
             ((attempt++))
           done
+          echo "Checking out LFS files..."
           git -C "$LFS_DIR" lfs checkout
 
           assemble_sif() {
@@ -448,9 +450,10 @@ jobs:
             # Clone with LFS and pull large files
             GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
-            git lfs pull
+            echo "Downloading model weights (this may take a while for large models)..."
+            git lfs pull --progress
             cd ..
-            
+
             # Verify model weights exist (not just LFS pointers)
             if [[ -f "$TARGET_DIR/model.safetensors" ]]; then
               actual_size=$(stat -c%s "$TARGET_DIR/model.safetensors" 2>/dev/null || stat -f%z "$TARGET_DIR/model.safetensors" 2>/dev/null)
@@ -578,7 +581,8 @@ jobs:
               # Clone with LFS and pull large files
               GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
               cd "$TARGET_DIR"
-              git lfs pull
+              echo "Downloading embedding model weights..."
+              git lfs pull --progress
               cd ..
             fi
 
@@ -740,6 +744,7 @@ jobs:
             label: Model Path
             placeholder: /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
             default: /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
+            prefillDefault: true
             tooltip: Full path to directory containing model weights
             hidden: ${{ inputs.model.source != 'local' }}
             ignore: ${{ inputs.model.source != 'local' }}
@@ -749,6 +754,7 @@ jobs:
             label: HuggingFace Model ID
             placeholder: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
             default: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+            prefillDefault: true
             tooltip: Model ID to clone from HuggingFace.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
@@ -766,6 +772,7 @@ jobs:
             type: string
             label: Model Cache Directory
             default: /public/codelab/models
+            prefillDefault: true
             tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
@@ -835,6 +842,7 @@ jobs:
             label: Walltime
             type: string
             default: '01:00:00'
+            prefillDefault: true
             tooltip: '--time= SLURM directive to set the maximum wall-clock time limit for the job'
           scheduler_directives:
             type: editor
@@ -1066,6 +1074,7 @@ jobs:
             label: Container Bucket
             type: string
             default: pw://mshaxted/codeassist
+            prefillDefault: true
             tooltip: Bucket containing vllm.sif and rag.sif containers
             hidden: ${{ inputs.container.source != 'pull' }}
             ignore: ${{ inputs.container.source != 'pull' }}
@@ -1104,8 +1113,8 @@ jobs:
 
           session_timeout:
             label: Session Wait Timeout (seconds)
-            default: 3600
-            tooltip: How long to wait for the server to start before timing out
+            default: 0
+            tooltip: How long to wait for server to start (0 = wait indefinitely until canceled)
             type: number
           
           apikey:

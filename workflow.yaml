@@ -242,7 +242,8 @@ jobs:
           max_attempts=2
           while true; do
             echo "LFS pull attempt ${attempt}/${max_attempts}..."
-            if git -C "$LFS_DIR" lfs fetch; then
+            echo "Downloading container files (this may take a while for large files)..."
+            if git -C "$LFS_DIR" lfs fetch --progress; then
               break
             fi
             if [[ $attempt -ge $max_attempts ]]; then
@@ -252,6 +253,7 @@ jobs:
             sleep $((attempt * 5))
             ((attempt++))
           done
+          echo "Checking out LFS files..."
           git -C "$LFS_DIR" lfs checkout
 
           assemble_sif() {
@@ -440,7 +442,8 @@ jobs:
             # Clone with LFS and pull large files
             GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
-            git lfs pull
+            echo "Downloading model weights (this may take a while for large models)..."
+            git lfs pull --progress
             cd ..
             
             # Verify model weights exist (not just LFS pointers)
@@ -567,7 +570,8 @@ jobs:
               # Clone with LFS and pull large files
               GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
               cd "$TARGET_DIR"
-              git lfs pull
+              echo "Downloading embedding model weights..."
+              git lfs pull --progress
               cd ..
             fi
 
@@ -679,13 +683,17 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          timeout=600
+          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
           elapsed=0
           while [ ! -f ${{ needs.setup.outputs.rundir }}/job.started ]; do
-            echo "Waiting for job to start... (${elapsed}s/${timeout}s)"
+            if [[ $TIMEOUT -eq 0 ]]; then
+              echo "Waiting for job to start... (${elapsed}s, no timeout - waiting until canceled)"
+            else
+              echo "Waiting for job to start... (${elapsed}s/${TIMEOUT}s)"
+            fi
             sleep 5
             ((elapsed+=5))
-            [[ $elapsed -ge $timeout ]] && { echo "ERROR: Timeout waiting for job"; exit 1; }
+            [[ $TIMEOUT -gt 0 && $elapsed -ge $TIMEOUT ]] && { echo "ERROR: Timeout waiting for job"; exit 1; }
           done
           echo "Job started"
       
@@ -728,15 +736,15 @@ jobs:
         run: |
           set -euo pipefail
           set -x
-          
+
           TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
           RETRY_INTERVAL=3
           cd ${{ needs.setup.outputs.rundir }}
-          
+
           attempt=1; elapsed=0
           while true; do
             echo "$(date) Attempt $attempt: Checking for SESSION_PORT..."
-            
+
             if [ -f SESSION_PORT ]; then
               echo "$(date) Success: SESSION_PORT found!"
               PORT=$(cat SESSION_PORT)
@@ -746,10 +754,14 @@ jobs:
               echo "$(date) Job ended without SESSION_PORT"
               exit 1
             else
-              echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
+              if [[ $TIMEOUT -eq 0 ]]; then
+                echo "$(date) Waiting... (${elapsed}s, no timeout)"
+              else
+                echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
+              fi
               sleep "$RETRY_INTERVAL"
               ((attempt++)); ((elapsed+=RETRY_INTERVAL))
-              [[ $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
+              [[ $TIMEOUT -gt 0 && $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
             fi
           done
       
@@ -775,7 +787,7 @@ jobs:
           attempt=1; elapsed=0
           while true; do
             echo "$(date) Attempt $attempt: Checking ${remote_host}:${remote_port}..."
-            
+
             if curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1; then
               echo "$(date) Success: Server is listening!"
               exit 0
@@ -786,10 +798,14 @@ jobs:
               echo "$(date) Job completed"
               exit 0
             else
-              echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
+              if [[ $TIMEOUT -eq 0 ]]; then
+                echo "$(date) Waiting... (${elapsed}s, no timeout)"
+              else
+                echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
+              fi
               sleep "$RETRY_INTERVAL"
               ((attempt++)); ((elapsed+=RETRY_INTERVAL))
-              [[ $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
+              [[ $TIMEOUT -gt 0 && $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
             fi
           done
       
@@ -866,6 +882,7 @@ jobs:
             label: Model Path
             placeholder: /path/to/model/weights
             default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
+            prefillDefault: true
             tooltip: Full path to directory containing model weights
             hidden: ${{ inputs.model.source != 'local' }}
             ignore: ${{ inputs.model.source != 'local' }}
@@ -875,6 +892,7 @@ jobs:
             label: HuggingFace Model ID
             placeholder: Qwen/Qwen2.5-Coder-7B-Instruct
             default: Qwen/Qwen2.5-Coder-7B-Instruct
+            prefillDefault: true
             tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-Coder-7B optimized for code assist on single GPU.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
@@ -892,6 +910,7 @@ jobs:
             type: string
             label: Model Cache Directory
             default: ~/pw/models
+            prefillDefault: true
             tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
@@ -947,6 +966,7 @@ jobs:
             label: Walltime
             type: string
             default: 04:00:00
+            prefillDefault: true
             tooltip: Maximum job duration, e.g., 04:00:00 (--time)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
           
@@ -1005,6 +1025,7 @@ jobs:
             label: Walltime
             type: string
             default: 04:00:00
+            prefillDefault: true
             tooltip: Maximum job duration, e.g., 04:00:00 (-l walltime=)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
           
@@ -1012,6 +1033,7 @@ jobs:
             label: Resource Selection
             type: string
             default: "1:ncpus=8:ngpus=1"
+            prefillDefault: true
             placeholder: "1:ncpus=8:ngpus=1"
             tooltip: PBS resource selection string, e.g., 1:ncpus=8:ngpus=1 (-l select=)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
@@ -1231,6 +1253,7 @@ jobs:
             label: Container Bucket
             type: string
             default: pw://mshaxted/codeassist
+            prefillDefault: true
             tooltip: Bucket containing vllm.sif and rag.sif containers
             hidden: ${{ inputs.container.source != 'pull' }}
             ignore: ${{ inputs.container.source != 'pull' }}
@@ -1269,8 +1292,8 @@ jobs:
 
           session_timeout:
             label: Session Wait Timeout (seconds)
-            default: 1800
-            tooltip: How long to wait for the server to start before timing out
+            default: 0
+            tooltip: How long to wait for server to start (0 = wait indefinitely until canceled)
             type: number
           
           apikey:
