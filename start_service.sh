@@ -236,6 +236,9 @@ elif [ "$RUNMODE" == "singularity" ]; then
     MODEL_PATH="${MODEL_NAME}"
     MODEL_BASE=$(basename "$MODEL_NAME")
 
+    # Update MODEL_NAME in env.sh to use the container path (for rag_proxy.py tokenizer)
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=/${MODEL_BASE}|" env.sh
+
     # Disable weight download if cache exists
     if [ -d "cache/huggingface" ]; then
         sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
@@ -360,11 +363,13 @@ EOF
         echo "$(date) Starting RAG instance..."
         
         # Start RAG instance
+        # Note: Model is bind-mounted so rag_proxy.py can load the tokenizer
         singularity instance start \
             $COMMON_BINDS \
             --bind ./cache/chroma:/chroma_data \
             --bind ./docs:/docs \
             --bind ${DOCS_DIR}:/docs \
+            --bind "${MODEL_PATH}:/${MODEL_BASE}" \
             $RAG_EMBED_BIND \
             $RAG_INDEXER_BIND \
             $RAG_APP_BINDS \
