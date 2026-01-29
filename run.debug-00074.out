@@ -1,796 +1,0 @@
-
-
-Thu Jan 29 03:39:27 EST 2026 STARTING SERVICE
-
-+ touch job.started
-+ cut -d. -f1
-+ hostname
-+ source .run.env
-+ export RUNMODE=singularity
-+ RUNMODE=singularity
-+ export BUILD=false
-+ BUILD=false
-+ export RUNTYPE=all
-+ RUNTYPE=all
-+ export MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-+ MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-+ export DOCS_DIR=/public/codelab/docs
-+ DOCS_DIR=/public/codelab/docs
-+ export API_KEY=undefined
-+ API_KEY=undefined
-+ export MAX_MODEL_LEN=8192
-+ MAX_MODEL_LEN=8192
-+ echo ''
-
-+ echo 'Running workflow with the below inputs:'
-Running workflow with the below inputs:
-+ echo '  RUNMODE=singularity'
-  RUNMODE=singularity
-+ echo '  BUILD=false'
-  BUILD=false
-+ echo '  RUNTYPE=all'
-  RUNTYPE=all
-+ echo '  MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'
-  MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-+ echo '  DOCS_DIR=/public/codelab/docs'
-  DOCS_DIR=/public/codelab/docs
-+ echo '  API_KEY=undefined'
-  API_KEY=undefined
-+ echo '  MAX_MODEL_LEN=8192'
-  MAX_MODEL_LEN=8192
-+ echo ''
-
-+ echo '#!/bin/bash'
-+ chmod +x cancel.sh
-+ '[' singularity == docker ']'
-+ '[' singularity == singularity ']'
-+ command -v singularity
-+ cp singularity/env.sh.example env.sh
-+ cp singularity/Singularity.rag singularity/Singularity.vllm ./
-++ pw agent open-port
-+ VLLM_SERVER_PORT=34405
-++ pw agent open-port
-+ RAG_PORT=34291
-++ pw agent open-port
-+ CHROMA_PORT=35525
-++ pw agent open-port
-+ PROXY_PORT=34673
-+ '[' all == all ']'
-+ echo 34673
-+ sed -i 's/^export VLLM_SERVER_PORT=.*/export VLLM_SERVER_PORT=34405/' env.sh
-+ sed -i 's/^export RAG_PORT=.*/export RAG_PORT=34291/' env.sh
-+ sed -i 's/^export PROXY_PORT=.*/export PROXY_PORT=34673/' env.sh
-+ sed -i 's/^export CHROMA_PORT=.*/export CHROMA_PORT=35525/' env.sh
-+ sed -i 's/\(.*HF_TOKEN="\)[^"]*\(".*\)/\1\2/' env.sh
-+ sed -i 's|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/|' env.sh
-+ sed -i 's|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=/public/codelab/docs|' env.sh
-+ sed -i 's|__VLLM_EXTRA_ARGS__|--dtype bfloat16 --tensor-parallel-size 4 --gpu-memory-utilization 0.85 --trust_remote_code --async-scheduling|' env.sh
-+ sed -i 's|^[#[:space:]]*\(export[[:space:]]\+\)\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=/public/codelab/models/all-MiniLM-L6-v2|' env.sh
-+ [[ -n FLASH_ATTN ]]
-+ sed -i 's|^export VLLM_ATTENTION_BACKEND=.*|export VLLM_ATTENTION_BACKEND=FLASH_ATTN|' env.sh
-+ [[ -n '' ]]
-+ MODEL_PATH=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-++ basename /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-+ MODEL_BASE=Llama-3_3-Nemotron-Super-49B-v1_5
-+ '[' -d cache/huggingface ']'
-+ sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
-++ date
-+ echo 'Thu Jan 29 03:39:27 EST 2026 Disabled model weight download'
-Thu Jan 29 03:39:27 EST 2026 Disabled model weight download
-+ source env.sh
-++ export VLLM_SERVER_PORT=34405
-++ VLLM_SERVER_PORT=34405
-++ export RAG_PORT=34291
-++ RAG_PORT=34291
-++ export PROXY_PORT=34673
-++ PROXY_PORT=34673
-++ export CHROMA_PORT=35525
-++ CHROMA_PORT=35525
-++ export CHROMA_HOST=127.0.0.1
-++ CHROMA_HOST=127.0.0.1
-++ export RUN_OPENWEBUI=0
-++ RUN_OPENWEBUI=0
-++ export OPENWEBUI_PORT=3000
-++ OPENWEBUI_PORT=3000
-++ export RAG_URL=http://127.0.0.1:34291
-++ RAG_URL=http://127.0.0.1:34291
-++ export VLLM_URL=http://127.0.0.1:34405/v1
-++ VLLM_URL=http://127.0.0.1:34405/v1
-++ export MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-++ MODEL_NAME=/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/
-++ export MAX_CONTEXT=8192
-++ MAX_CONTEXT=8192
-++ export HF_TOKEN=
-++ HF_TOKEN=
-++ export HF_HOME=/root/.cache/huggingface
-++ HF_HOME=/root/.cache/huggingface
-++ export TRANSFORMERS_OFFLINE=1
-++ TRANSFORMERS_OFFLINE=1
-++ export PYTHONNOUSERSITE=1
-++ PYTHONNOUSERSITE=1
-++ export DOCS_DIR=/public/codelab/docs
-++ DOCS_DIR=/public/codelab/docs
-++ export VLLM_ATTENTION_BACKEND=FLASH_ATTN
-++ VLLM_ATTENTION_BACKEND=FLASH_ATTN
-++ export 'VLLM_EXTRA_ARGS=--dtype bfloat16 --tensor-parallel-size 4 --gpu-memory-utilization 0.85 --trust_remote_code --async-scheduling'
-++ VLLM_EXTRA_ARGS='--dtype bfloat16 --tensor-parallel-size 4 --gpu-memory-utilization 0.85 --trust_remote_code --async-scheduling'
-++ export TRITON_CC=gcc
-++ TRITON_CC=gcc
-++ export CC=/usr/bin/gcc
-++ CC=/usr/bin/gcc
-++ export CXX=/usr/bin/g++
-++ CXX=/usr/bin/g++
-++ export TMPDIR=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp
-++ TMPDIR=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp
-++ export CUDA_CACHE_PATH=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/cuda_cache
-++ CUDA_CACHE_PATH=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/cuda_cache
-++ export TORCH_EXTENSIONS_DIR=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/torch_extensions
-++ TORCH_EXTENSIONS_DIR=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/torch_extensions
-++ export FLASHINFER_JIT_DIR=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/flashinfer_jit
-++ FLASHINFER_JIT_DIR=/gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/flashinfer_jit
-++ export VLLM_LOGGING_LEVEL=INFO
-++ VLLM_LOGGING_LEVEL=INFO
-++ export MAX_TOKENS=256
-++ MAX_TOKENS=256
-++ export TEMPERATURE=0.2
-++ TEMPERATURE=0.2
-++ export TOP_K=4
-++ TOP_K=4
-++ export EMBEDDING_MODEL=/public/codelab/models/all-MiniLM-L6-v2
-++ EMBEDDING_MODEL=/public/codelab/models/all-MiniLM-L6-v2
-++ export EMBEDDING_DEVICE=cpu
-++ EMBEDDING_DEVICE=cpu
-++ export CHROMA_AUTO_RESET=0
-++ CHROMA_AUTO_RESET=0
-++ export CHROMA_HOST=127.0.0.1
-++ CHROMA_HOST=127.0.0.1
-++ export CHROMA_PORT=35525
-++ CHROMA_PORT=35525
-++ export ANONYMIZED_TELEMETRY=False
-++ ANONYMIZED_TELEMETRY=False
-++ export INDEXER_RESCAN_SECONDS=10
-++ INDEXER_RESCAN_SECONDS=10
-++ export INDEXER_LOGLEVEL=INFO
-++ INDEXER_LOGLEVEL=INFO
-++ export STREAM_BRIDGE=1
-++ STREAM_BRIDGE=1
-++ export DEBUG_SSE=0
-++ DEBUG_SSE=0
-++ export IGNORE_CLIENT_STOP=1
-++ IGNORE_CLIENT_STOP=1
-+ mkdir -p /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/cuda_cache /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/torch_extensions /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp/flashinfer_jit
-+ chmod -R 777 /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/tmp
-+ mkdir -p logs cache cache/chroma cache/tiktoken_encodings cache/sagemaker_sessions
-+ chmod 700 cache/sagemaker_sessions
-+ mkdir -p /dev/shm/sagemaker_sessions
-+ chmod 700 /dev/shm/sagemaker_sessions
-+ '[' /public/codelab/docs '!=' ./docs ']'
-+ '[' -n /public/codelab/docs ']'
-+ mkdir -p /public/codelab/docs
-+ ln -sf /public/codelab/docs ./docs
-+ VLLM_SIF=/public/codelab/singularity/vllm.sif
-+ VLLM_SIF=/public/codelab/singularity/vllm.sif
-+ RAG_SIF=/public/codelab/singularity/rag.sif
-+ RAG_SIF=/public/codelab/singularity/rag.sif
-+ [[ ! -f /public/codelab/singularity/vllm.sif ]]
-+ [[ all == \a\l\l ]]
-+ [[ ! -f /public/codelab/singularity/rag.sif ]]
-+ COMMON_BINDS='--bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh'
-+ RAG_EMBED_BIND=
-+ RAG_INDEXER_BIND=
-+ RAG_APP_BINDS=
-+ EMBEDDING_MODEL_CONTAINER=/public/codelab/models/all-MiniLM-L6-v2
-+ [[ -n /public/codelab/models/all-MiniLM-L6-v2 ]]
-+ [[ /public/codelab/models/all-MiniLM-L6-v2 != /* ]]
-+ [[ -n /public/codelab/models/all-MiniLM-L6-v2 ]]
-+ [[ /public/codelab/models/all-MiniLM-L6-v2 == /* ]]
-+ EMB_MODEL_PATH=/public/codelab/models/all-MiniLM-L6-v2
-++ basename /public/codelab/models/all-MiniLM-L6-v2
-+ EMB_MODEL_BASE=all-MiniLM-L6-v2
-+ EMBEDDING_MODEL_CONTAINER=/all-MiniLM-L6-v2
-+ sed -i 's|^[#[:space:]]*\(export[[:space:]]\+\)\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=/all-MiniLM-L6-v2|' env.sh
-+ RAG_EMBED_BIND='--bind /public/codelab/models/all-MiniLM-L6-v2:/all-MiniLM-L6-v2'
-+ [[ -n /all-MiniLM-L6-v2 ]]
-+ INDEXER_CFG=./indexer_config.runtime.yaml
-+ cp -f indexer_config.yaml ./indexer_config.runtime.yaml
-+ sed -i 's|^embedding_model:.*|embedding_model: /all-MiniLM-L6-v2|' ./indexer_config.runtime.yaml
-+ RAG_INDEXER_BIND='--bind ./indexer_config.runtime.yaml:/app/indexer_config.yaml'
-+ for app_file in rag_server.py rag_proxy.py indexer.py
-+ [[ -f rag_server.py ]]
-+ RAG_APP_BINDS=' --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_server.py:/app/rag_server.py'
-+ for app_file in rag_server.py rag_proxy.py indexer.py
-+ [[ -f rag_proxy.py ]]
-+ RAG_APP_BINDS=' --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_server.py:/app/rag_server.py --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_proxy.py:/app/rag_proxy.py'
-+ for app_file in rag_server.py rag_proxy.py indexer.py
-+ [[ -f indexer.py ]]
-+ RAG_APP_BINDS=' --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_server.py:/app/rag_server.py --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_proxy.py:/app/rag_proxy.py --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/indexer.py:/app/indexer.py'
-+ trap cleanup EXIT
-+ cat
-++ date +%s
-+ chmod +x cancel.sh
-++ date
-+ echo 'Thu Jan 29 03:39:27 EST 2026 Starting vLLM instance...'
-Thu Jan 29 03:39:27 EST 2026 Starting vLLM instance...
-+ singularity instance start --nv --bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh --bind ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions --bind ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings --bind /public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/:/Llama-3_3-Nemotron-Super-49B-v1_5 /public/codelab/singularity/vllm.sif vllm
-INFO:    Converting SIF file to temporary sandbox...
-WARNING: underlay of /usr/bin/nvidia-smi required more than 50 (485) bind mounts
-mkdir: cannot create directory '/app': Read-only file system
-/.singularity.d/startscript: 4: cd: can't cd to /app
-/bin/bash: -c: option requires an argument
-
-INFO:    instance started successfully
-+ singularity exec instance://vllm bash -c '
-        source /.singularity.d/env/env.sh
-        nohup python3 -m vllm.entrypoints.openai.api_server             --model '\''/Llama-3_3-Nemotron-Super-49B-v1_5'\''             --tokenizer '\''/Llama-3_3-Nemotron-Super-49B-v1_5'\''             --host 0.0.0.0             --port 34405             --dtype bfloat16 --tensor-parallel-size 4 --gpu-memory-utilization 0.85 --trust_remote_code --async-scheduling             > /logs/vllm.out 2>&1 &
-        echo $! > /logs/vllm.pid
-    '
-++ date
-+ echo 'Thu Jan 29 03:44:03 EST 2026 vLLM server starting on port 34405'
-Thu Jan 29 03:44:03 EST 2026 vLLM server starting on port 34405
-+ '[' all == all ']'
-++ date
-+ echo 'Thu Jan 29 03:44:03 EST 2026 Starting RAG instance...'
-Thu Jan 29 03:44:03 EST 2026 Starting RAG instance...
-+ singularity instance start --bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh --bind ./cache/chroma:/chroma_data --bind ./docs:/docs --bind /public/codelab/docs:/docs --bind /public/codelab/models/all-MiniLM-L6-v2:/all-MiniLM-L6-v2 --bind ./indexer_config.runtime.yaml:/app/indexer_config.yaml --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_server.py:/app/rag_server.py --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/rag_proxy.py:/app/rag_proxy.py --bind /gs/gsfs0/users/avidaltorr/pw/activate-rag-vllm/indexer.py:/app/indexer.py /public/codelab/singularity/rag.sif rag
-INFO:    Converting SIF file to temporary sandbox...
-WARNING: While bind mounting '/public/codelab/docs:/docs': destination is already in the mount point list
-WARNING: underlay of /etc/localtime required more than 50 (76) bind mounts
-
-INFO:    instance started successfully
-+ singularity exec instance://rag bash -c '
-            source /.singularity.d/env/env.sh
-            # Start ChromaDB
-            nohup chroma run --host 127.0.0.1 --port 35525 --path /chroma_data > /logs/chroma.out 2>&1 &
-            echo $! > /logs/chroma.pid
-            # Wait for ChromaDB
-            sleep 3
-            # Start RAG server
-            nohup python3 /app/rag_server.py --embedding_model "/all-MiniLM-L6-v2" --port 34291 > /logs/rag_server.out 2>&1 &
-            echo $! > /logs/rag_server.pid
-            # Start RAG proxy
-            nohup python3 /app/rag_proxy.py > /logs/rag_proxy.out 2>&1 &
-            echo $! > /logs/rag_proxy.pid
-            # Start indexer
-            nohup python3 /app/indexer.py --config /app/indexer_config.yaml > /logs/indexer.out 2>&1 &
-            echo $! > /logs/indexer.pid
-        '
-++ date
-+ echo 'Thu Jan 29 03:50:03 EST 2026 RAG services starting (ChromaDB: 35525, RAG: 34291, Proxy: 34673)'
-Thu Jan 29 03:50:03 EST 2026 RAG services starting (ChromaDB: 35525, RAG: 34291, Proxy: 34673)
-++ date
-+ echo 'Thu Jan 29 03:50:03 EST 2026 All services started. Tailing logs...'
-Thu Jan 29 03:50:03 EST 2026 All services started. Tailing logs...
-+ sleep 2
-+ shopt -s nullglob
-+ logs=(logs/*.out)
-+ (( 5 > 0 ))
-+ tail_pid=683610
-+ wait 683610
-+ tail -F logs/chroma.out logs/indexer.out logs/rag_proxy.out logs/rag_server.out logs/vllm.out
-==> logs/chroma.out <==
-
-==> logs/indexer.out <==
-
-==> logs/rag_proxy.out <==
-
-==> logs/rag_server.out <==
-
-==> logs/vllm.out <==
-[0;36m(APIServer pid=21)[0;0m The argument `trust_remote_code` is to be used with Auto classes. It has no effect here and is ignored.
-[0;36m(APIServer pid=21)[0;0m [2026-01-29 03:45:18] WARNING configuration_utils.py:697: The argument `trust_remote_code` is to be used with Auto classes. It has no effect here and is ignored.
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:45:20 [model.py:514] Resolved architecture: DeciLMForCausalLM
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:45:20 [model.py:1661] Using max model len 131072
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:45:20 [scheduler.py:230] Chunked prefill is enabled with max_num_batched_tokens=2048.
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:45:20 [vllm.py:598] Disabling NCCL for DP synchronization when using async scheduling.
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:46:35 [core.py:93] Initializing a V1 LLM engine (v0.13.0) with config: model='/Llama-3_3-Nemotron-Super-49B-v1_5', speculative_config=None, tokenizer='/Llama-3_3-Nemotron-Super-49B-v1_5', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=131072, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False), seed=0, served_model_name=/Llama-3_3-Nemotron-Super-49B-v1_5, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'level': None, 'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::kda_attention', 'vllm::sparse_attn_indexer'], 'compile_mm_encoder': False, 'compile_sizes': [], 'compile_ranges_split_points': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'eliminate_noops': True, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False}, 'local_cache_dir': None}
-INFO 01-29 03:47:37 [parallel_state.py:1203] world_size=4 rank=0 local_rank=0 distributed_init_method=tcp://127.0.0.1:42417 backend=nccl
-INFO 01-29 03:48:31 [parallel_state.py:1203] world_size=4 rank=1 local_rank=1 distributed_init_method=tcp://127.0.0.1:42417 backend=nccl
-INFO 01-29 03:49:26 [parallel_state.py:1203] world_size=4 rank=2 local_rank=2 distributed_init_method=tcp://127.0.0.1:42417 backend=nccl
-
-==> logs/chroma.out <==
-[1m
-
-                [38;5;069m(((((((((    [38;5;203m((((([38;5;220m####
-             [38;5;069m((((((((((((([38;5;203m((((((((([38;5;220m#########
-           [38;5;069m((((((((((((([38;5;203m((((((((((([38;5;220m###########
-         [38;5;069m(((((((((((((([38;5;203m(((((((((((([38;5;220m############
-        [38;5;069m((((((((((((([38;5;203m(((((((((((((([38;5;220m#############
-        [38;5;069m((((((((((((([38;5;203m(((((((((((((([38;5;220m#############
-         [38;5;069m(((((((((((([38;5;203m((((((((((((([38;5;220m##############
-         [38;5;069m(((((((((((([38;5;203m(((((((((((([38;5;220m##############
-           [38;5;069m(((((((((([38;5;203m((((((((((([38;5;220m#############
-             [38;5;069m(((((((([38;5;203m(((((((([38;5;220m##############
-                [38;5;069m((((([38;5;203m((((    [38;5;220m#########[0m
-
-    
-[1m
-Running Chroma
-[0m
-Saving data to: /chroma_data
-Connect to chroma at: http://127.0.0.1:35525
-Getting started guide: https://docs.trychroma.com/getting-started
-
-
-INFO:     [29-01-2026 03:50:12] Set chroma_server_nofile to 65535
-DEBUG:    [29-01-2026 03:50:13] Starting component System
-DEBUG:    [29-01-2026 03:50:13] Starting component OpenTelemetryClient
-DEBUG:    [29-01-2026 03:50:13] Starting component SqliteDB
-DEBUG:    [29-01-2026 03:50:13] Starting component QuotaEnforcer
-DEBUG:    [29-01-2026 03:50:13] Starting component Posthog
-DEBUG:    [29-01-2026 03:50:13] Starting component LocalSegmentManager
-DEBUG:    [29-01-2026 03:50:13] Starting component SegmentAPI
-ERROR:    [29-01-2026 03:50:13] Failed to send telemetry event ServerStartEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:13] Started server process [19]
-INFO:     [29-01-2026 03:50:13] Waiting for application startup.
-INFO:     [29-01-2026 03:50:13] Application startup complete.
-INFO:     [29-01-2026 03:50:13] Uvicorn running on http://127.0.0.1:35525 (Press CTRL+C to quit)
-
-==> logs/rag_proxy.out <==
-/app/rag_proxy.py:203: DeprecationWarning: 
-        on_event is deprecated, use lifespan event handlers instead.
-
-        Read more about it in the
-        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
-        
-  @app.on_event("shutdown")
-INFO:     Started server process [22]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:34673 (Press CTRL+C to quit)
-INFO:     10.56.10.205:49114 - "GET / HTTP/1.1" 200 OK
-
-==> logs/vllm.out <==
-INFO 01-29 03:50:28 [parallel_state.py:1203] world_size=4 rank=3 local_rank=3 distributed_init_method=tcp://127.0.0.1:42417 backend=nccl
-INFO 01-29 03:50:29 [pynccl.py:111] vLLM is using nccl==2.27.5
-WARNING 01-29 03:50:32 [symm_mem.py:67] SymmMemCommunicator: Device capability 8.0 not supported, communicator is not available.
-WARNING 01-29 03:50:32 [symm_mem.py:67] SymmMemCommunicator: Device capability 8.0 not supported, communicator is not available.
-WARNING 01-29 03:50:32 [symm_mem.py:67] SymmMemCommunicator: Device capability 8.0 not supported, communicator is not available.
-WARNING 01-29 03:50:32 [symm_mem.py:67] SymmMemCommunicator: Device capability 8.0 not supported, communicator is not available.
-WARNING 01-29 03:50:32 [custom_all_reduce.py:154] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
-WARNING 01-29 03:50:32 [custom_all_reduce.py:154] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
-WARNING 01-29 03:50:32 [custom_all_reduce.py:154] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
-WARNING 01-29 03:50:32 [custom_all_reduce.py:154] Custom allreduce is disabled because it's not supported on more than two PCIe-only GPUs. To silence this warning, specify disable_custom_all_reduce=True explicitly.
-INFO 01-29 03:50:34 [parallel_state.py:1411] rank 3 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 3, EP rank 3
-INFO 01-29 03:50:34 [parallel_state.py:1411] rank 2 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 2, EP rank 2
-INFO 01-29 03:50:34 [parallel_state.py:1411] rank 0 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0
-INFO 01-29 03:50:34 [parallel_state.py:1411] rank 1 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 1, EP rank 1
-
-==> logs/chroma.out <==
-INFO:     [29-01-2026 03:50:35] 127.0.0.1:44834 - "GET /api/v1/tenants/default_tenant HTTP/1.1" 200
-INFO:     [29-01-2026 03:50:35] 127.0.0.1:44834 - "GET /api/v1/databases/default_database?tenant=default_tenant HTTP/1.1" 200
-
-==> logs/rag_server.out <==
-Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
-
-==> logs/chroma.out <==
-INFO:     [29-01-2026 03:50:36] 127.0.0.1:56362 - "GET /api/v1/tenants/default_tenant HTTP/1.1" 200
-INFO:     [29-01-2026 03:50:36] 127.0.0.1:56362 - "GET /api/v1/databases/default_database?tenant=default_tenant HTTP/1.1" 200
-DEBUG:    [29-01-2026 03:50:36] Collection activate_rag already exists, returning existing collection.
-ERROR:    [29-01-2026 03:50:36] Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:36] 127.0.0.1:56364 - "POST /api/v1/collections?tenant=default_tenant&database=default_database HTTP/1.1" 200
-
-==> logs/indexer.out <==
-2026-01-29 03:50:36,018 [INFO] HTTP Request: GET http://127.0.0.1:35525/api/v1/tenants/default_tenant "HTTP/1.1 200 OK"
-2026-01-29 03:50:36,027 [INFO] HTTP Request: GET http://127.0.0.1:35525/api/v1/databases/default_database?tenant=default_tenant "HTTP/1.1 200 OK"
-2026-01-29 03:50:36,038 [ERROR] Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
-2026-01-29 03:50:36,045 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections?tenant=default_tenant&database=default_database "HTTP/1.1 200 OK"
-2026-01-29 03:50:36,045 [INFO] Load pretrained SentenceTransformer: /all-MiniLM-L6-v2
-/opt/conda/lib/python3.10/site-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
-  warnings.warn(
-2026-01-29 03:50:40,270 [INFO] Initial scan: ['/docs']
-2026-01-29 03:50:40,286 [INFO] [EMBED] /docs/ARCHITECTURE.md -> 27 chunks
-2026-01-29 03:50:40,325 [INFO] [EMBED] /docs/IMPLEMENTATION_PLAN.md -> 38 chunks
-2026-01-29 03:50:40,343 [INFO] [EMBED] /docs/LOCAL_DEVELOPMENT.md -> 12 chunks
-2026-01-29 03:50:40,369 [INFO] [EMBED] /docs/WORKFLOW_CONFIGURATION.md -> 16 chunks
-2026-01-29 03:50:40,442 [INFO] Periodic rescan enabled: every 10s
-2026-01-29 03:50:40,442 [INFO] Watching: /docs (recursive)
-
-==> logs/rag_server.out <==
-/opt/conda/lib/python3.10/site-packages/transformers/tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
-  warnings.warn(
-INFO:     Started server process [21]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:34291 (Press CTRL+C to quit)
-
-==> logs/vllm.out <==
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:50:41 [gpu_model_runner.py:3562] Starting to load model /Llama-3_3-Nemotron-Super-49B-v1_5...
-[0;36m(Worker_TP1 pid=43)[0;0m INFO 01-29 03:50:43 [cuda.py:315] Using AttentionBackendEnum.FLASH_ATTN backend.
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:50:43 [cuda.py:315] Using AttentionBackendEnum.FLASH_ATTN backend.
-[0;36m(Worker_TP3 pid=63)[0;0m INFO 01-29 03:50:43 [cuda.py:315] Using AttentionBackendEnum.FLASH_ATTN backend.
-[0;36m(Worker_TP2 pid=51)[0;0m INFO 01-29 03:50:43 [cuda.py:315] Using AttentionBackendEnum.FLASH_ATTN backend.
-
-==> logs/chroma.out <==
-DEBUG:    [29-01-2026 03:50:52] Starting component PersistentLocalHnswSegment
-ERROR:    [29-01-2026 03:50:52] Failed to send telemetry event CollectionDeleteEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:52] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete HTTP/1.1" 200
-INFO:     [29-01-2026 03:50:52] 127.0.0.1:53324 - "GET /api/v1/pre-flight-checks HTTP/1.1" 200
-ERROR:    [29-01-2026 03:50:52] Failed to send telemetry event CollectionAddEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:52] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add HTTP/1.1" 201
-
-==> logs/indexer.out <==
-2026-01-29 03:50:52,528 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete "HTTP/1.1 200 OK"
-2026-01-29 03:50:52,535 [INFO] HTTP Request: GET http://127.0.0.1:35525/api/v1/pre-flight-checks "HTTP/1.1 200 OK"
-2026-01-29 03:50:52,641 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add "HTTP/1.1 201 Created"
-2026-01-29 03:50:52,641 [WARNING] [VERIFY] read-back failed for /docs/LOCAL_DEVELOPMENT.md: Expected include item to be one of embeddings, documents, metadatas, uris, data, got ids
-2026-01-29 03:50:52,799 [INFO] [UPSERT] /docs/LOCAL_DEVELOPMENT.md -> added=12, verified=12
-
-==> logs/chroma.out <==
-ERROR:    [29-01-2026 03:50:53] Failed to send telemetry event CollectionDeleteEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:53] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete HTTP/1.1" 200
-INFO:     [29-01-2026 03:50:54] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add HTTP/1.1" 201
-
-==> logs/indexer.out <==
-2026-01-29 03:50:53,820 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete "HTTP/1.1 200 OK"
-2026-01-29 03:50:54,067 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add "HTTP/1.1 201 Created"
-2026-01-29 03:50:54,067 [WARNING] [VERIFY] read-back failed for /docs/WORKFLOW_CONFIGURATION.md: Expected include item to be one of embeddings, documents, metadatas, uris, data, got ids
-2026-01-29 03:50:54,213 [INFO] [UPSERT] /docs/WORKFLOW_CONFIGURATION.md -> added=16, verified=16
-
-==> logs/chroma.out <==
-ERROR:    [29-01-2026 03:50:56] Failed to send telemetry event CollectionDeleteEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:56] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete HTTP/1.1" 200
-INFO:     [29-01-2026 03:50:57] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add HTTP/1.1" 201
-
-==> logs/indexer.out <==
-2026-01-29 03:50:56,836 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete "HTTP/1.1 200 OK"
-2026-01-29 03:50:57,040 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add "HTTP/1.1 201 Created"
-2026-01-29 03:50:57,040 [WARNING] [VERIFY] read-back failed for /docs/ARCHITECTURE.md: Expected include item to be one of embeddings, documents, metadatas, uris, data, got ids
-2026-01-29 03:50:57,381 [INFO] [UPSERT] /docs/ARCHITECTURE.md -> added=27, verified=27
-
-==> logs/chroma.out <==
-ERROR:    [29-01-2026 03:50:58] Failed to send telemetry event CollectionDeleteEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 03:50:58] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete HTTP/1.1" 200
-INFO:     [29-01-2026 03:50:58] 127.0.0.1:53324 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add HTTP/1.1" 201
-
-==> logs/indexer.out <==
-2026-01-29 03:50:58,180 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/delete "HTTP/1.1 200 OK"
-2026-01-29 03:50:58,362 [INFO] HTTP Request: POST http://127.0.0.1:35525/api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/add "HTTP/1.1 201 Created"
-2026-01-29 03:50:58,363 [WARNING] [VERIFY] read-back failed for /docs/IMPLEMENTATION_PLAN.md: Expected include item to be one of embeddings, documents, metadatas, uris, data, got ids
-2026-01-29 03:50:58,499 [INFO] [UPSERT] /docs/IMPLEMENTATION_PLAN.md -> added=38, verified=38
-
-==> logs/vllm.out <==
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:   0% Completed | 0/21 [00:00<?, ?it/s]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:   5% Completed | 1/21 [00:06<02:07,  6.38s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  10% Completed | 2/21 [00:14<02:16,  7.20s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  14% Completed | 3/21 [00:18<01:46,  5.93s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  19% Completed | 4/21 [00:25<01:46,  6.25s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  24% Completed | 5/21 [00:31<01:40,  6.26s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  29% Completed | 6/21 [00:38<01:35,  6.35s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  33% Completed | 7/21 [00:44<01:29,  6.43s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  38% Completed | 8/21 [00:51<01:23,  6.39s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  43% Completed | 9/21 [00:57<01:17,  6.49s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  48% Completed | 10/21 [01:04<01:11,  6.49s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  52% Completed | 11/21 [01:10<01:04,  6.41s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  57% Completed | 12/21 [01:17<00:58,  6.54s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  62% Completed | 13/21 [01:23<00:52,  6.53s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  67% Completed | 14/21 [01:30<00:45,  6.52s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  71% Completed | 15/21 [01:37<00:39,  6.59s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  76% Completed | 16/21 [01:43<00:33,  6.70s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  81% Completed | 17/21 [01:50<00:26,  6.71s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  86% Completed | 18/21 [01:57<00:19,  6.62s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  90% Completed | 19/21 [02:03<00:13,  6.68s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards:  95% Completed | 20/21 [02:10<00:06,  6.73s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards: 100% Completed | 21/21 [02:17<00:00,  6.68s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Loading safetensors checkpoint shards: 100% Completed | 21/21 [02:17<00:00,  6.54s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m 
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:54:06 [default_loader.py:308] Loading weights took 137.53 seconds
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:54:08 [gpu_model_runner.py:3659] Model loading took 23.2619 GiB memory and 204.449072 seconds
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:55:07 [backends.py:643] Using cache directory: /gs/gsfs0/users/avidaltorr/.cache/vllm/torch_compile_cache/af99e34a11/rank_0_0/backbone for vLLM's torch.compile
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:55:07 [backends.py:703] Dynamo bytecode transform time: 57.76 s
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:55:08 [shm_broadcast.py:542] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:55:57 [backends.py:261] Cache the graph of compile range (1, 2048) for later use
-[0;36m(Worker_TP3 pid=63)[0;0m INFO 01-29 03:55:57 [backends.py:261] Cache the graph of compile range (1, 2048) for later use
-[0;36m(Worker_TP1 pid=43)[0;0m INFO 01-29 03:55:57 [backends.py:261] Cache the graph of compile range (1, 2048) for later use
-[0;36m(Worker_TP2 pid=51)[0;0m INFO 01-29 03:55:57 [backends.py:261] Cache the graph of compile range (1, 2048) for later use
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:56:08 [shm_broadcast.py:542] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:57:08 [shm_broadcast.py:542] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
-
-==> logs/rag_proxy.out <==
-INFO:     10.56.10.205:53684 - "GET /v1/models HTTP/1.1" 502 Bad Gateway
-
-==> logs/vllm.out <==
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:57:48 [backends.py:278] Compiling a graph for compile range (1, 2048) takes 133.34 s
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:57:48 [monitor.py:34] torch.compile takes 191.11 s in total
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:57:55 [gpu_worker.py:375] Available KV cache memory: 42.75 GiB
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:57:57 [kv_cache_utils.py:1291] GPU KV cache size: 914,832 tokens
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:57:57 [kv_cache_utils.py:1296] Maximum concurrency for 131,072 tokens per request: 6.98x
-[0;36m(Worker_TP0 pid=40)[0;0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   2%|▏         | 1/51 [00:01<01:37,  1.94s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   4%|▍         | 2/51 [00:03<01:34,  1.92s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   6%|▌         | 3/51 [00:05<01:30,  1.89s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   8%|▊         | 4/51 [00:07<01:27,  1.85s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  10%|▉         | 5/51 [00:09<01:25,  1.87s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  12%|█▏        | 6/51 [00:11<01:21,  1.82s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  14%|█▎        | 7/51 [00:12<01:17,  1.77s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  16%|█▌        | 8/51 [00:14<01:15,  1.75s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  18%|█▊        | 9/51 [00:16<01:12,  1.72s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  20%|█▉        | 10/51 [00:17<01:08,  1.67s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  22%|██▏       | 11/51 [00:19<01:04,  1.61s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  24%|██▎       | 12/51 [00:20<01:00,  1.56s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  25%|██▌       | 13/51 [00:22<00:57,  1.52s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  27%|██▋       | 14/51 [00:23<00:55,  1.51s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  29%|██▉       | 15/51 [00:24<00:51,  1.44s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  31%|███▏      | 16/51 [00:26<00:49,  1.41s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  33%|███▎      | 17/51 [00:27<00:47,  1.39s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  35%|███▌      | 18/51 [00:28<00:44,  1.35s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  37%|███▋      | 19/51 [00:29<00:41,  1.30s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  39%|███▉      | 20/51 [00:31<00:39,  1.28s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  41%|████      | 21/51 [00:32<00:38,  1.27s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  43%|████▎     | 22/51 [00:33<00:35,  1.21s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  45%|████▌     | 23/51 [00:34<00:34,  1.21s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  47%|████▋     | 24/51 [00:35<00:32,  1.19s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  49%|████▉     | 25/51 [00:36<00:30,  1.17s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  51%|█████     | 26/51 [00:38<00:28,  1.14s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  53%|█████▎    | 27/51 [00:39<00:27,  1.15s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  55%|█████▍    | 28/51 [00:40<00:26,  1.14s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  57%|█████▋    | 29/51 [00:41<00:24,  1.11s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  59%|█████▉    | 30/51 [00:42<00:22,  1.09s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  61%|██████    | 31/51 [00:43<00:21,  1.07s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  63%|██████▎   | 32/51 [00:44<00:20,  1.05s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  65%|██████▍   | 33/51 [00:45<00:18,  1.02s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  67%|██████▋   | 34/51 [00:46<00:17,  1.00s/it]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  69%|██████▊   | 35/51 [00:47<00:15,  1.01it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  71%|███████   | 36/51 [00:48<00:14,  1.05it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  73%|███████▎  | 37/51 [00:49<00:13,  1.07it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  75%|███████▍  | 38/51 [00:49<00:11,  1.08it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  76%|███████▋  | 39/51 [00:50<00:10,  1.13it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  78%|███████▊  | 40/51 [00:51<00:09,  1.13it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  80%|████████  | 41/51 [00:52<00:08,  1.15it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  82%|████████▏ | 42/51 [00:53<00:07,  1.14it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  84%|████████▍ | 43/51 [00:54<00:06,  1.18it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  86%|████████▋ | 44/51 [00:55<00:06,  1.16it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  88%|████████▊ | 45/51 [00:56<00:05,  1.13it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  90%|█████████ | 46/51 [00:56<00:04,  1.15it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  92%|█████████▏| 47/51 [00:57<00:03,  1.18it/s][0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:58:58 [shm_broadcast.py:542] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
-Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  94%|█████████▍| 48/51 [00:58<00:02,  1.19it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  96%|█████████▌| 49/51 [00:59<00:01,  1.21it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  98%|█████████▊| 50/51 [01:00<00:00,  1.20it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 51/51 [01:00<00:00,  1.18it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 51/51 [01:00<00:00,  1.20s/it]
-[0;36m(Worker_TP0 pid=40)[0;0m Capturing CUDA graphs (decode, FULL):   0%|          | 0/35 [00:00<?, ?it/s]Capturing CUDA graphs (decode, FULL):   3%|▎         | 1/35 [00:01<00:41,  1.23s/it]Capturing CUDA graphs (decode, FULL):   6%|▌         | 2/35 [00:02<00:38,  1.16s/it]Capturing CUDA graphs (decode, FULL):   9%|▊         | 3/35 [00:03<00:35,  1.11s/it]Capturing CUDA graphs (decode, FULL):  11%|█▏        | 4/35 [00:04<00:33,  1.08s/it]Capturing CUDA graphs (decode, FULL):  14%|█▍        | 5/35 [00:05<00:31,  1.05s/it]Capturing CUDA graphs (decode, FULL):  17%|█▋        | 6/35 [00:06<00:29,  1.02s/it]Capturing CUDA graphs (decode, FULL):  20%|██        | 7/35 [00:07<00:27,  1.00it/s]Capturing CUDA graphs (decode, FULL):  23%|██▎       | 8/35 [00:08<00:26,  1.02it/s]Capturing CUDA graphs (decode, FULL):  26%|██▌       | 9/35 [00:09<00:24,  1.04it/s]Capturing CUDA graphs (decode, FULL):  29%|██▊       | 10/35 [00:10<00:23,  1.05it/s]Capturing CUDA graphs (decode, FULL):  31%|███▏      | 11/35 [00:11<00:22,  1.07it/s]Capturing CUDA graphs (decode, FULL):  34%|███▍      | 12/35 [00:11<00:20,  1.10it/s]Capturing CUDA graphs (decode, FULL):  37%|███▋      | 13/35 [00:12<00:19,  1.13it/s]Capturing CUDA graphs (decode, FULL):  40%|████      | 14/35 [00:13<00:17,  1.18it/s]Capturing CUDA graphs (decode, FULL):  43%|████▎     | 15/35 [00:14<00:16,  1.23it/s]Capturing CUDA graphs (decode, FULL):  46%|████▌     | 16/35 [00:14<00:15,  1.26it/s]Capturing CUDA graphs (decode, FULL):  49%|████▊     | 17/35 [00:15<00:13,  1.29it/s]Capturing CUDA graphs (decode, FULL):  51%|█████▏    | 18/35 [00:16<00:12,  1.33it/s]Capturing CUDA graphs (decode, FULL):  54%|█████▍    | 19/35 [00:17<00:11,  1.38it/s]Capturing CUDA graphs (decode, FULL):  57%|█████▋    | 20/35 [00:17<00:10,  1.42it/s]Capturing CUDA graphs (decode, FULL):  60%|██████    | 21/35 [00:18<00:09,  1.45it/s]Capturing CUDA graphs (decode, FULL):  63%|██████▎   | 22/35 [00:18<00:08,  1.53it/s]Capturing CUDA graphs (decode, FULL):  66%|██████▌   | 23/35 [00:19<00:07,  1.60it/s]Capturing CUDA graphs (decode, FULL):  69%|██████▊   | 24/35 [00:20<00:06,  1.63it/s]Capturing CUDA graphs (decode, FULL):  71%|███████▏  | 25/35 [00:20<00:06,  1.63it/s]Capturing CUDA graphs (decode, FULL):  74%|███████▍  | 26/35 [00:21<00:05,  1.72it/s]Capturing CUDA graphs (decode, FULL):  77%|███████▋  | 27/35 [00:21<00:04,  1.76it/s]Capturing CUDA graphs (decode, FULL):  80%|████████  | 28/35 [00:22<00:03,  1.82it/s]Capturing CUDA graphs (decode, FULL):  83%|████████▎ | 29/35 [00:22<00:03,  1.87it/s]Capturing CUDA graphs (decode, FULL):  86%|████████▌ | 30/35 [00:23<00:02,  1.89it/s]Capturing CUDA graphs (decode, FULL):  89%|████████▊ | 31/35 [00:23<00:02,  1.87it/s]Capturing CUDA graphs (decode, FULL):  91%|█████████▏| 32/35 [00:24<00:01,  1.88it/s]Capturing CUDA graphs (decode, FULL):  94%|█████████▍| 33/35 [00:24<00:01,  1.91it/s]Capturing CUDA graphs (decode, FULL):  97%|█████████▋| 34/35 [00:25<00:00,  1.93it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 35/35 [00:25<00:00,  1.92it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 35/35 [00:25<00:00,  1.35it/s]
-[0;36m(Worker_TP0 pid=40)[0;0m INFO 01-29 03:59:29 [gpu_model_runner.py:4587] Graph capturing finished in 91 secs, took 6.03 GiB
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:59:29 [core.py:259] init engine (profile, create kv cache, warmup model) took 320.81 seconds
-[0;36m(EngineCore_DP0 pid=30)[0;0m INFO 01-29 03:59:33 [core.py:182] Batch queue is enabled with size 2
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [api_server.py:1099] Supported tasks: ['generate']
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [api_server.py:1425] Starting vLLM API server 0 on http://0.0.0.0:34405
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:38] Available routes are:
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /openapi.json, Methods: GET, HEAD
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /docs, Methods: GET, HEAD
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /docs/oauth2-redirect, Methods: GET, HEAD
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /redoc, Methods: GET, HEAD
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /scale_elastic_ep, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /is_scaling_elastic_ep, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /tokenize, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /detokenize, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /inference/v1/generate, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /pause, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /resume, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /is_paused, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /metrics, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /health, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /load, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/models, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /version, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/responses, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/responses/{response_id}, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/responses/{response_id}/cancel, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/messages, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/chat/completions, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/completions, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/audio/transcriptions, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/audio/translations, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /ping, Methods: GET
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /ping, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /invocations, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /classify, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/embeddings, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /score, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/score, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /rerank, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v1/rerank, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /v2/rerank, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO 01-29 03:59:35 [launcher.py:46] Route: /pooling, Methods: POST
-[0;36m(APIServer pid=21)[0;0m INFO:     Started server process [21]
-[0;36m(APIServer pid=21)[0;0m INFO:     Waiting for application startup.
-[0;36m(APIServer pid=21)[0;0m INFO:     Application startup complete.
-
-==> logs/rag_proxy.out <==
-2026-01-29 04:01:14,462 [INFO] HTTP Request: GET http://127.0.0.1:34405/v1/models "HTTP/1.1 200 OK"
-INFO:     10.56.10.205:56068 - "GET /v1/models HTTP/1.1" 200 OK
-
-==> logs/vllm.out <==
-[0;36m(APIServer pid=21)[0;0m INFO:     127.0.0.1:35218 - "GET /v1/models HTTP/1.1" 200 OK
-
-==> logs/chroma.out <==
-INFO:     [29-01-2026 04:01:17] 127.0.0.1:41580 - "GET /api/v1/tenants/default_tenant HTTP/1.1" 200
-INFO:     [29-01-2026 04:01:17] 127.0.0.1:41580 - "GET /api/v1/databases/default_database?tenant=default_tenant HTTP/1.1" 200
-DEBUG:    [29-01-2026 04:01:17] Collection activate_rag already exists, returning existing collection.
-ERROR:    [29-01-2026 04:01:17] Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 04:01:17] 127.0.0.1:41582 - "POST /api/v1/collections?tenant=default_tenant&database=default_database HTTP/1.1" 200
-ERROR:    [29-01-2026 04:01:17] Failed to send telemetry event CollectionQueryEvent: capture() takes 1 positional argument but 3 were given
-
-==> logs/rag_server.out <==
-Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
-
-==> logs/chroma.out <==
-INFO:     [29-01-2026 04:01:17] 127.0.0.1:41582 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/query HTTP/1.1" 200
-DEBUG:    [29-01-2026 04:01:17] Collection activate_rag already exists, returning existing collection.
-ERROR:    [29-01-2026 04:01:17] Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 04:01:17] 127.0.0.1:41582 - "POST /api/v1/collections?tenant=default_tenant&database=default_database HTTP/1.1" 200
-INFO:     [29-01-2026 04:01:17] 127.0.0.1:41582 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/query HTTP/1.1" 200
-
-==> logs/rag_proxy.out <==
-2026-01-29 04:01:17,334 [INFO] HTTP Request: GET http://127.0.0.1:34291/search?query=Hello&top_k=4 "HTTP/1.1 200 OK"
-INFO:     10.56.10.205:56068 - "POST /v1/chat/completions HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/opt/conda/lib/python3.10/site-packages/transformers/utils/hub.py", line 402, in cached_file
-    resolved_file = hf_hub_download(
-  File "/opt/conda/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 106, in _inner_fn
-    validate_repo_id(arg_value)
-  File "/opt/conda/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 154, in validate_repo_id
-    raise HFValidationError(
-huggingface_hub.errors.HFValidationError: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'. Use `repo_type` argument if needed.
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/opt/conda/lib/python3.10/site-packages/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/opt/conda/lib/python3.10/site-packages/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/applications.py", line 123, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/errors.py", line 186, in __call__
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    await app(scope, receive, sender)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 756, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 776, in app
-    await route.handle(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 297, in handle
-    await self.app(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 77, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    await app(scope, receive, sender)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 72, in app
-    response = await func(request)
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/routing.py", line 278, in app
-    raw_response = await run_endpoint_function(
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
-    return await dependant.call(**values)
-  File "/app/rag_proxy.py", line 472, in chat_completions
-    final_messages = _pack_numbered_chat(
-  File "/app/rag_proxy.py", line 157, in _pack_numbered_chat
-    while token_len(msgs) > (max_context - max_completion_tokens - 64) and len(context_block) > 200:
-  File "/app/rag_proxy.py", line 46, in token_len
-    tok = get_tokenizer()
-  File "/app/rag_proxy.py", line 42, in get_tokenizer
-    _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
-  File "/opt/conda/lib/python3.10/site-packages/transformers/models/auto/tokenization_auto.py", line 834, in from_pretrained
-    tokenizer_config = get_tokenizer_config(pretrained_model_name_or_path, **kwargs)
-  File "/opt/conda/lib/python3.10/site-packages/transformers/models/auto/tokenization_auto.py", line 666, in get_tokenizer_config
-    resolved_config_file = cached_file(
-  File "/opt/conda/lib/python3.10/site-packages/transformers/utils/hub.py", line 466, in cached_file
-    raise EnvironmentError(
-OSError: Incorrect path_or_model_id: '/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'. Please provide either the path to a local folder or the repo_id of a model on the Hub.
-2026-01-29 04:01:17,870 [INFO] HTTP Request: GET http://127.0.0.1:34291/search?query=Hello&top_k=4 "HTTP/1.1 200 OK"
-INFO:     10.56.10.205:57028 - "POST /v1/chat/completions HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/opt/conda/lib/python3.10/site-packages/transformers/utils/hub.py", line 402, in cached_file
-    resolved_file = hf_hub_download(
-  File "/opt/conda/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 106, in _inner_fn
-    validate_repo_id(arg_value)
-  File "/opt/conda/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 154, in validate_repo_id
-    raise HFValidationError(
-huggingface_hub.errors.HFValidationError: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'. Use `repo_type` argument if needed.
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/opt/conda/lib/python3.10/site-packages/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/opt/conda/lib/python3.10/site-packages/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/applications.py", line 123, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/errors.py", line 186, in __call__
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    await app(scope, receive, sender)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 756, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 776, in app
-    await route.handle(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 297, in handle
-    await self.app(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 77, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    await app(scope, receive, sender)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 72, in app
-    response = await func(request)
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/routing.py", line 278, in app
-    raw_response = await run_endpoint_function(
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
-    return await dependant.call(**values)
-  File "/app/rag_proxy.py", line 472, in chat_completions
-    final_messages = _pack_numbered_chat(
-  File "/app/rag_proxy.py", line 157, in _pack_numbered_chat
-    while token_len(msgs) > (max_context - max_completion_tokens - 64) and len(context_block) > 200:
-  File "/app/rag_proxy.py", line 46, in token_len
-    tok = get_tokenizer()
-  File "/app/rag_proxy.py", line 42, in get_tokenizer
-    _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
-  File "/opt/conda/lib/python3.10/site-packages/transformers/models/auto/tokenization_auto.py", line 834, in from_pretrained
-    tokenizer_config = get_tokenizer_config(pretrained_model_name_or_path, **kwargs)
-  File "/opt/conda/lib/python3.10/site-packages/transformers/models/auto/tokenization_auto.py", line 666, in get_tokenizer_config
-    resolved_config_file = cached_file(
-  File "/opt/conda/lib/python3.10/site-packages/transformers/utils/hub.py", line 466, in cached_file
-    raise EnvironmentError(
-OSError: Incorrect path_or_model_id: '/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'. Please provide either the path to a local folder or the repo_id of a model on the Hub.
-
-==> logs/rag_server.out <==
-INFO:     127.0.0.1:37514 - "GET /search?query=Hello&top_k=4 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37514 - "GET /search?query=Hello&top_k=4 HTTP/1.1" 200 OK
-
-==> logs/chroma.out <==
-DEBUG:    [29-01-2026 04:01:18] Collection activate_rag already exists, returning existing collection.
-ERROR:    [29-01-2026 04:01:18] Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
-INFO:     [29-01-2026 04:01:18] 127.0.0.1:41582 - "POST /api/v1/collections?tenant=default_tenant&database=default_database HTTP/1.1" 200
-INFO:     [29-01-2026 04:01:18] 127.0.0.1:41582 - "POST /api/v1/collections/7d288edb-9e4c-41d6-8071-116df7ebae34/query HTTP/1.1" 200
-
-==> logs/rag_proxy.out <==
-2026-01-29 04:01:18,678 [INFO] HTTP Request: GET http://127.0.0.1:34291/search?query=Hello&top_k=4 "HTTP/1.1 200 OK"
-INFO:     10.56.10.205:57030 - "POST /v1/chat/completions HTTP/1.1" 500 Internal Server Error
-ERROR:    Exception in ASGI application
-Traceback (most recent call last):
-  File "/opt/conda/lib/python3.10/site-packages/transformers/utils/hub.py", line 402, in cached_file
-    resolved_file = hf_hub_download(
-  File "/opt/conda/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 106, in _inner_fn
-    validate_repo_id(arg_value)
-  File "/opt/conda/lib/python3.10/site-packages/huggingface_hub/utils/_validators.py", line 154, in validate_repo_id
-    raise HFValidationError(
-huggingface_hub.errors.HFValidationError: Repo id must be in the form 'repo_name' or 'namespace/repo_name': '/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'. Use `repo_type` argument if needed.
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/opt/conda/lib/python3.10/site-packages/uvicorn/protocols/http/httptools_impl.py", line 401, in run_asgi
-    result = await app(  # type: ignore[func-returns-value]
-  File "/opt/conda/lib/python3.10/site-packages/uvicorn/middleware/proxy_headers.py", line 70, in __call__
-    return await self.app(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/applications.py", line 1054, in __call__
-    await super().__call__(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/applications.py", line 123, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/errors.py", line 186, in __call__
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/middleware/exceptions.py", line 65, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    await app(scope, receive, sender)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 756, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 776, in app
-    await route.handle(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 297, in handle
-    await self.app(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 77, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 64, in wrapped_app
-    raise exc
-  File "/opt/conda/lib/python3.10/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    await app(scope, receive, sender)
-  File "/opt/conda/lib/python3.10/site-packages/starlette/routing.py", line 72, in app
-    response = await func(request)
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/routing.py", line 278, in app
-    raw_response = await run_endpoint_function(
-  File "/opt/conda/lib/python3.10/site-packages/fastapi/routing.py", line 191, in run_endpoint_function
-    return await dependant.call(**values)
-  File "/app/rag_proxy.py", line 472, in chat_completions
-    final_messages = _pack_numbered_chat(
-  File "/app/rag_proxy.py", line 157, in _pack_numbered_chat
-    while token_len(msgs) > (max_context - max_completion_tokens - 64) and len(context_block) > 200:
-  File "/app/rag_proxy.py", line 46, in token_len
-    tok = get_tokenizer()
-  File "/app/rag_proxy.py", line 42, in get_tokenizer
-    _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
-  File "/opt/conda/lib/python3.10/site-packages/transformers/models/auto/tokenization_auto.py", line 834, in from_pretrained
-    tokenizer_config = get_tokenizer_config(pretrained_model_name_or_path, **kwargs)
-  File "/opt/conda/lib/python3.10/site-packages/transformers/models/auto/tokenization_auto.py", line 666, in get_tokenizer_config
-    resolved_config_file = cached_file(
-  File "/opt/conda/lib/python3.10/site-packages/transformers/utils/hub.py", line 466, in cached_file
-    raise EnvironmentError(
-OSError: Incorrect path_or_model_id: '/public/codelab/models/Llama-3_3-Nemotron-Super-49B-v1_5/'. Please provide either the path to a local folder or the repo_id of a model on the Hub.
-
-==> logs/rag_server.out <==
-INFO:     127.0.0.1:37514 - "GET /search?query=Hello&top_k=4 HTTP/1.1" 200 OK
-[2026-01-29T04:03:03.675] error: *** JOB 23859577 ON gpu-110 CANCELLED AT 2026-01-29T04:03:03 DUE to SIGNAL Terminated ***
-++ cleanup
-+++ date
-++ echo 'Thu Jan 29 04:03:03 EST 2026 Cleaning up singularity instances...'
-Thu Jan 29 04:03:03 EST 2026 Cleaning up singularity instances...
-++ singularity instance stop vllm
-++ singularity instance stop rag
-+ cleanup
-++ date
-+ echo 'Thu Jan 29 04:03:24 EST 2026 Cleaning up singularity instances...'
-Thu Jan 29 04:03:24 EST 2026 Cleaning up singularity instances...
-+ singularity instance stop vllm
