@@ -23,6 +23,7 @@ echo "  RUNMODE=$RUNMODE"
 echo "  BUILD=$BUILD"
 echo "  RUNTYPE=$RUNTYPE"
 echo "  MODEL_NAME=$MODEL_NAME"
+echo "  MODEL_PATH=${MODEL_PATH:-<not set>}"
 echo "  DOCS_DIR=$DOCS_DIR"
 echo "  API_KEY=$API_KEY"
 echo "  MAX_MODEL_LEN=$MAX_MODEL_LEN"
@@ -233,8 +234,19 @@ elif [ "$RUNMODE" == "singularity" ]; then
     fi
 
     # Get model path and basename for bind mounts
-    MODEL_PATH="${MODEL_NAME}"
-    MODEL_BASE=$(basename "$MODEL_NAME")
+    # MODEL_PATH may be set by workflow's prepare_model step to the actual downloaded location
+    # Fall back to MODEL_NAME if MODEL_PATH is not set or is undefined
+    if [[ -z "$MODEL_PATH" || "$MODEL_PATH" == "undefined" ]]; then
+        MODEL_PATH="${MODEL_NAME}"
+    fi
+    MODEL_BASE=$(basename "$MODEL_PATH")
+
+    # Verify model path exists before attempting bind mount
+    if [[ ! -d "$MODEL_PATH" ]]; then
+        echo "$(date) ERROR: Model directory not found at $MODEL_PATH"
+        echo "$(date) Please ensure model weights have been downloaded or MODEL_PATH is set correctly."
+        exit 1
+    fi
 
     # Disable weight download if cache exists
     if [ -d "cache/huggingface" ]; then
