@@ -419,10 +419,39 @@ jobs:
             mv "$LEGACY_DIR" "$TARGET_DIR"
           fi
           
-          # Check if already cached
-          if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
-            echo "Model already cached at $TARGET_DIR"
+          # Function to validate model weights are complete (not LFS pointers)
+          validate_weights() {
+            local dir=$1
+            [[ ! -f "$dir/config.json" ]] && return 1
+            # Check for safetensors or bin weight files
+            local weight_file=""
+            if [[ -f "$dir/model.safetensors" ]]; then
+              weight_file="$dir/model.safetensors"
+            elif ls "$dir"/model*.safetensors 1>/dev/null 2>&1; then
+              weight_file=$(ls "$dir"/model*.safetensors | head -1)
+            elif ls "$dir"/*.bin 1>/dev/null 2>&1; then
+              weight_file=$(ls "$dir"/*.bin | head -1)
+            else
+              echo "No weight files found"
+              return 1
+            fi
+            local size=$(stat -c%s "$weight_file" 2>/dev/null || stat -f%z "$weight_file" 2>/dev/null)
+            if [[ $size -lt 1000000 ]]; then
+              echo "Weight file $weight_file appears to be LFS pointer (size: $size bytes)"
+              return 1
+            fi
+            return 0
+          }
+
+          # Check if already cached AND weights are valid
+          if [[ -d "$TARGET_DIR" ]] && validate_weights "$TARGET_DIR"; then
+            echo "Model already cached and validated at $TARGET_DIR"
           else
+            # Remove incomplete cache if exists
+            if [[ -d "$TARGET_DIR" ]]; then
+              echo "Cached model at $TARGET_DIR appears incomplete, removing..."
+              rm -rf "$TARGET_DIR"
+            fi
             echo "Cloning model $MODEL_ID to $TARGET_DIR"
             
             # Ensure git-lfs is available
@@ -521,10 +550,29 @@ jobs:
             mv "$LEGACY_DIR" "$TARGET_DIR"
           fi
 
-          # Check if already cached
-          if [[ -d "$TARGET_DIR" && -f "$TARGET_DIR/config.json" ]]; then
-            echo "Embedding model already cached at $TARGET_DIR"
+          # Function to validate embedding model (check for config and model files)
+          validate_embedding() {
+            local dir=$1
+            [[ ! -f "$dir/config.json" ]] && return 1
+            # Check for pytorch_model.bin, model.safetensors, or any .bin/.safetensors files
+            if [[ -f "$dir/pytorch_model.bin" || -f "$dir/model.safetensors" ]]; then
+              local weight_file="$dir/pytorch_model.bin"
+              [[ -f "$dir/model.safetensors" ]] && weight_file="$dir/model.safetensors"
+              local size=$(stat -c%s "$weight_file" 2>/dev/null || stat -f%z "$weight_file" 2>/dev/null)
+              [[ $size -lt 100000 ]] && return 1  # Embedding models are smaller, use 100KB threshold
+            fi
+            return 0
+          }
+
+          # Check if already cached AND valid
+          if [[ -d "$TARGET_DIR" ]] && validate_embedding "$TARGET_DIR"; then
+            echo "Embedding model already cached and validated at $TARGET_DIR"
           else
+            # Remove incomplete cache if exists
+            if [[ -d "$TARGET_DIR" ]]; then
+              echo "Cached embedding model at $TARGET_DIR appears incomplete, removing..."
+              rm -rf "$TARGET_DIR"
+            fi
             if [[ "$SOURCE" == "bucket" ]]; then
               BUCKET="${{ inputs.rag.embedding_model_bucket }}"
               if [[ -z "$BUCKET" || "$BUCKET" == "undefined" ]]; then
