@@ -450,8 +450,7 @@ jobs:
             # Clone with LFS and pull large files
             GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
-            echo "Downloading model weights (this may take a while for large models)..."
-            git lfs pull --progress
+            git lfs pull
             cd ..
 
             # Verify model weights exist (not just LFS pointers)
@@ -581,8 +580,7 @@ jobs:
               # Clone with LFS and pull large files
               GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
               cd "$TARGET_DIR"
-              echo "Downloading embedding model weights..."
-              git lfs pull --progress
+              git lfs pull
               cd ..
             fi
 
