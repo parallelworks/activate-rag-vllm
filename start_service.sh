@@ -346,7 +346,7 @@ EOF
     echo "$(date) Starting vLLM instance..."
     
     # Start vLLM instance with GPU support
-    singularity instance start --nv \
+    singularity instance start --nv --writable-tmpfs \
         $COMMON_BINDS \
         --bind ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions \
         --bind ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings \
@@ -372,7 +372,7 @@ EOF
         echo "$(date) Starting RAG instance..."
         
         # Start RAG instance
-        singularity instance start \
+        singularity instance start --writable-tmpfs \
             $COMMON_BINDS \
             --bind ./cache/chroma:/chroma_data \
             --bind ${DOCS_DIR}:/docs \
