@@ -363,7 +363,6 @@ EOF
         singularity instance start \
             $COMMON_BINDS \
             --bind ./cache/chroma:/chroma_data \
-            --bind ./docs:/docs \
             --bind ${DOCS_DIR}:/docs \
             $RAG_EMBED_BIND \
             $RAG_INDEXER_BIND \
