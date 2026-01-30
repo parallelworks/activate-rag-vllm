@@ -273,14 +273,15 @@ elif [ "$RUNMODE" == "singularity" ]; then
     fi
 
     # Resolve container paths (from workflow input or default)
+    # Supports both .sif files and sandbox directories
     VLLM_SIF="${VLLM_CONTAINER_PATH:-./vllm.sif}"
     VLLM_SIF="${VLLM_SIF/#\~/$HOME}"
     RAG_SIF="${RAG_CONTAINER_PATH:-./rag.sif}"
     RAG_SIF="${RAG_SIF/#\~/$HOME}"
 
-    # Verify containers exist
-    [[ ! -f "$VLLM_SIF" ]] && { echo "$(date) ERROR: vLLM container not found at $VLLM_SIF"; exit 1; }
-    [[ "$RUNTYPE" == "all" && ! -f "$RAG_SIF" ]] && { echo "$(date) ERROR: RAG container not found at $RAG_SIF"; exit 1; }
+    # Verify containers exist (supports both .sif files and sandbox directories)
+    [[ ! -e "$VLLM_SIF" ]] && { echo "$(date) ERROR: vLLM container not found at $VLLM_SIF (expected .sif file or sandbox directory)"; exit 1; }
+    [[ "$RUNTYPE" == "all" && ! -e "$RAG_SIF" ]] && { echo "$(date) ERROR: RAG container not found at $RAG_SIF (expected .sif file or sandbox directory)"; exit 1; }
 
     # Define common bind mounts
     COMMON_BINDS="--bind ./logs:/logs --bind ./cache:/root/.cache --bind ./env.sh:/.singularity.d/env/env.sh"
