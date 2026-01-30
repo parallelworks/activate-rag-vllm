@@ -1132,8 +1132,8 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: /public/codelab/singularity/vllm.sif
-            placeholder: /public/codelab/singularity/vllm.sif
+            default: /public/codelab/singularity/vllm_sandbox
+            placeholder: /public/codelab/singularity/vllm_sandbox
             tooltip: Path to vLLM container (.sif file or sandbox directory created with --sandbox)
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
@@ -1141,8 +1141,8 @@ jobs:
           rag_path:
             label: RAG Container Path
             type: string
-            default: /public/codelab/singularity/rag.sif
-            placeholder: /public/codelab/singularity/rag.sif
+            default: /public/codelab/singularity/rag_sandbox
+            placeholder: /public/codelab/singularity/rag_sandbox
             tooltip: Path to RAG container (.sif file or sandbox directory; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
@@ -1187,7 +1187,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: main
+            default: dev-aecm
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
