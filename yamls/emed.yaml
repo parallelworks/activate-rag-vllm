@@ -883,7 +883,7 @@ jobs:
           mem:
             type: string
             label: Minimum total memory required
-            default: 400GB
+            default: 200GB
             tooltip: '--mem=value slurm directive'
             hidden: ${{ 'existing' != inputs.resource.provider }}
             ignore: ${{ .hidden }}
@@ -938,7 +938,7 @@ jobs:
           num_gpus:
             type: dropdown
             label: Number of GPUs
-            default: "4"
+            default: "2"
             tooltip: Number of GPUs for tensor parallelism (must match available GPUs)
             options:
               - value: "1"
@@ -1187,7 +1187,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: dev-aecm
+            default: main
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
