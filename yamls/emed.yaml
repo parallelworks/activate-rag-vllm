@@ -196,8 +196,9 @@ jobs:
 
           need_vllm=true
           need_rag=false
-          [[ -f "$VLLM_PATH" ]] && need_vllm=false
-          [[ "${{ inputs.runtype }}" == "all" ]] && { [[ ! -f "$RAG_PATH" ]] && need_rag=true; }
+          # Support both .sif files and sandbox directories
+          [[ -e "$VLLM_PATH" ]] && need_vllm=false
+          [[ "${{ inputs.runtype }}" == "all" ]] && { [[ ! -e "$RAG_PATH" ]] && need_rag=true; }
 
           remote_rev=$(git ls-remote "$LFS_REPO" "$LFS_BRANCH" | awk '{print $1}')
           if [[ -z "$remote_rev" ]]; then
@@ -319,8 +320,9 @@ jobs:
             assemble_sif rag "$RAG_PATH"
           fi
 
-          ln -sf "$VLLM_PATH" ./vllm.sif
-          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
+          # Create symlinks (use -n to handle directories properly)
+          ln -sfn "$VLLM_PATH" ./vllm.sif
+          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sfn "$RAG_PATH" ./rag.sif
 
           [[ -n "$remote_rev" ]] && echo "$remote_rev" > "$REV_FILE"
           echo "LFS container pull complete"
@@ -336,13 +338,14 @@ jobs:
           VLLM_PATH="${{ inputs.container.vllm_path }}"
           VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
           
-          [[ -f "$VLLM_PATH" ]] && ln -sf "$VLLM_PATH" ./vllm.sif || { echo "ERROR: vLLM container not found at $VLLM_PATH"; exit 1; }
+          # Support both .sif files and sandbox directories
+          [[ -e "$VLLM_PATH" ]] && ln -sfn "$VLLM_PATH" ./vllm.sif || { echo "ERROR: vLLM container not found at $VLLM_PATH (expected .sif file or sandbox directory)"; exit 1; }
           echo "Linked vllm.sif from $VLLM_PATH"
           
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
             RAG_PATH="${{ inputs.container.rag_path }}"
             RAG_PATH="${RAG_PATH/#\~/$HOME}"
-            [[ -f "$RAG_PATH" ]] && ln -sf "$RAG_PATH" ./rag.sif || { echo "ERROR: RAG container not found at $RAG_PATH"; exit 1; }
+            [[ -e "$RAG_PATH" ]] && ln -sfn "$RAG_PATH" ./rag.sif || { echo "ERROR: RAG container not found at $RAG_PATH (expected .sif file or sandbox directory)"; exit 1; }
             echo "Linked rag.sif from $RAG_PATH"
           fi
       
@@ -366,7 +369,8 @@ jobs:
           
           build_container() {
             local target=$1 def=$2
-            [[ -f "$target" ]] && { echo "$target exists, skipping"; return 0; }
+            # Support both .sif files and sandbox directories
+            [[ -e "$target" ]] && { echo "$target exists, skipping"; return 0; }
             echo "Building $target from $def..."
             mkdir -p "$(dirname "$target")"
             if sudo -n true 2>/dev/null; then
@@ -379,9 +383,9 @@ jobs:
           build_container "$VLLM_PATH" singularity/Singularity.vllm
           [[ "${{ inputs.runtype }}" == "all" ]] && build_container "$RAG_PATH" singularity/Singularity.rag
           
-          # Create symlinks in rundir for consistency with other modes
-          ln -sf "$VLLM_PATH" ./vllm.sif
-          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
+          # Create symlinks in rundir for consistency with other modes (use -n for directories)
+          ln -sfn "$VLLM_PATH" ./vllm.sif
+          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sfn "$RAG_PATH" ./rag.sif
           
           echo "Container build complete"
 
@@ -1128,18 +1132,18 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: /public/codelab/singularity/vllm.sif
-            placeholder: /public/codelab/singularity/vllm.sif
-            tooltip: Path to vllm.sif container (use existing or build destination)
+            default: /public/codelab/singularity/vllm_sandbox
+            placeholder: /public/codelab/singularity/vllm_sandbox
+            tooltip: Path to vLLM container (.sif file or sandbox directory created with --sandbox)
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
           
           rag_path:
             label: RAG Container Path
             type: string
-            default: /public/codelab/singularity/rag.sif
-            placeholder: /public/codelab/singularity/rag.sif
-            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
+            default: /public/codelab/singularity/rag_sandbox
+            placeholder: /public/codelab/singularity/rag_sandbox
+            tooltip: Path to RAG container (.sif file or sandbox directory; only needed for vLLM+RAG mode)
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
 
@@ -1183,7 +1187,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: main
+            default: dev-aecm
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
