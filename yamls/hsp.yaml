@@ -701,7 +701,7 @@ jobs:
           shebang: "#!/bin/bash"
           rundir: ${{ needs.setup.outputs.rundir }}
           use_existing_script: true
-          script_path: ${{ needs.setup.outputs.rundir }}/start_service.sh
+          script_path: ${{ needs.setup.outputs.rundir + '/start_service.sh' }}
           scheduler: ${{ inputs.submit_to_scheduler }}
           inject_markers: true
           slurm:
