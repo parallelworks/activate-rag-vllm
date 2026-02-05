@@ -1187,7 +1187,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: dev-aecm
+            default: dev-aecm-2026-02-05
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings

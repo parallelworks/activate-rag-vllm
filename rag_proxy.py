@@ -39,7 +39,11 @@ _tokenizer = None
 def get_tokenizer():
     global _tokenizer
     if _tokenizer is None:
-        _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
+        try:
+            _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
+        except Exception as e:
+            LOG.warning("Fast tokenizer failed for %s, falling back to slow tokenizer: %s", MODEL_NAME, e)
+            _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False)
     return _tokenizer
 
 def token_len(messages: List[Dict[str, Any]]) -> int:
