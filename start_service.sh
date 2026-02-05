@@ -221,7 +221,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s/^export CHROMA_PORT=.*/export CHROMA_PORT=${CHROMA_PORT}/" env.sh
 
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
-    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=$MODEL_NAME|" env.sh
+    # Note: MODEL_NAME is set to container path later, after MODEL_BASE is computed
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
     sed -i "s|__VLLM_EXTRA_ARGS__|${VLLM_EXTRA_ARGS}|" env.sh
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?EMBEDDING_MODEL=.*|export EMBEDDING_MODEL=$EMBEDDING_MODEL|" env.sh
@@ -322,6 +322,12 @@ elif [ "$RUNMODE" == "singularity" ]; then
         fi
     done
 
+    # Bind mount the LLM model into RAG container for tokenizer access
+    RAG_LLM_BIND="--bind ${MODEL_PATH}:/${MODEL_BASE}"
+
+    # Update MODEL_NAME in env.sh to use container path (for RAG proxy tokenizer)
+    sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?MODEL_NAME=.*|export MODEL_NAME=/${MODEL_BASE}|" env.sh
+
     # Cleanup function
     cleanup() {
         echo "$(date) Cleaning up singularity instances..."
@@ -378,6 +384,7 @@ EOF
             --bind ./cache/chroma:/chroma_data \
             --bind ${DOCS_DIR}:/docs \
             $RAG_EMBED_BIND \
+            $RAG_LLM_BIND \
             $RAG_INDEXER_BIND \
             $RAG_APP_BINDS \
             "$RAG_SIF" rag
