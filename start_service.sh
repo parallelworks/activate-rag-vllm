@@ -219,7 +219,8 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s/^export RAG_PORT=.*/export RAG_PORT=${RAG_PORT}/" env.sh
     sed -i "s/^export PROXY_PORT=.*/export PROXY_PORT=${PROXY_PORT}/" env.sh
     sed -i "s/^export CHROMA_PORT=.*/export CHROMA_PORT=${CHROMA_PORT}/" env.sh
-
+    sed -i "s/^export MAX_TOKENS=.*/export MAX_TOKENS=${MAX_TOKENS}/" env.sh
+    
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
     # Note: MODEL_NAME is set to container path later, after MODEL_BASE is computed
     sed -i "s|^[#[:space:]]*\(export[[:space:]]\+\)\?DOCS_DIR=.*|export DOCS_DIR=$DOCS_DIR|" env.sh
