@@ -16,7 +16,7 @@ RAG_URL = os.getenv("RAG_URL", "http://127.0.0.1:8080")
 VLLM_URL = os.getenv("VLLM_URL", "http://127.0.0.1:8000/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.2")
 MAX_CONTEXT = int(os.getenv("MAX_CONTEXT", "8192"))
-DEFAULT_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "256"))
+DEFAULT_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8192"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
 TOP_K_DEFAULT = int(os.getenv("TOP_K", "4"))
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "")
@@ -36,22 +36,67 @@ SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT","You are a careful assistant. Use ONLY
 # Tokenizer helpers
 # =========================
 _tokenizer = None
+_tokenizer_loaded = False
+
 def get_tokenizer():
-    global _tokenizer
-    if _tokenizer is None:
+    """
+    Try to load tokenizer with multiple fallbacks:
+    1. Fast tokenizer (use_fast=True)
+    2. Slow tokenizer (use_fast=False)
+    3. None (will use char-based estimation in token_len)
+    """
+    global _tokenizer, _tokenizer_loaded
+    if _tokenizer_loaded:
+        return _tokenizer
+
+    _tokenizer_loaded = True
+
+    # Try fast tokenizer first
+    try:
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=True)
-    return _tokenizer
+        LOG.info("Loaded fast tokenizer for %s", MODEL_NAME)
+        return _tokenizer
+    except Exception as e:
+        LOG.warning("Fast tokenizer failed for %s: %s", MODEL_NAME, e)
+
+    # Try slow tokenizer
+    try:
+        _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_fast=False)
+        LOG.info("Loaded slow tokenizer for %s", MODEL_NAME)
+        return _tokenizer
+    except Exception as e:
+        LOG.warning("Slow tokenizer also failed for %s: %s", MODEL_NAME, e)
+
+    # All tokenizer loading failed - will use char-based estimation
+    LOG.warning("All tokenizer loading attempts failed for %s. Using character-based estimation.", MODEL_NAME)
+    _tokenizer = None
+    return None
 
 def token_len(messages: List[Dict[str, Any]]) -> int:
+    """
+    Estimate token count for messages.
+    Uses tokenizer if available, otherwise falls back to character-based estimation.
+    """
     tok = get_tokenizer()
+
+    # Build text representation
+    text = ""
+    for m in messages:
+        text += f"[{m.get('role','').upper()}]\n{m.get('content','')}\n"
+
+    if tok is None:
+        # Fallback: estimate ~4 chars per token (common approximation for English)
+        return len(text) // 4
+
     try:
         ids = tok.apply_chat_template(messages, tokenize=True, add_generation_prompt=False)
         return len(ids)
     except Exception:
-        text = ""
-        for m in messages:
-            text += f"[{m.get('role','').upper()}]\n{m.get('content','')}\n"
-        return len(tok.encode(text))
+        try:
+            return len(tok.encode(text))
+        except Exception:
+            # Final fallback to char-based estimation
+            return len(text) // 4
 
 # =========================
 # Legacy packer (kept)
@@ -336,6 +381,7 @@ async def completions(request: Request):
     payload = _passthrough(req_json, ALLOWED_COMPLETION_FIELDS)
     payload["prompt"] = prompt
     payload.setdefault("model", MODEL_NAME)
+    payload.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
     url = f"{VLLM_URL}/completions"
 
     if stream:
@@ -485,6 +531,7 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
     payload = _passthrough(req_json, ALLOWED_CHAT_FIELDS)
     payload["messages"] = final_messages
     payload.setdefault("model", req.model or MODEL_NAME)
+    payload.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
     url = f"{VLLM_URL}/chat/completions"
 
     if stream:
