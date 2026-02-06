@@ -16,7 +16,7 @@ RAG_URL = os.getenv("RAG_URL", "http://127.0.0.1:8080")
 VLLM_URL = os.getenv("VLLM_URL", "http://127.0.0.1:8000/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.2")
 MAX_CONTEXT = int(os.getenv("MAX_CONTEXT", "8192"))
-DEFAULT_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "256"))
+DEFAULT_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8192"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
 TOP_K_DEFAULT = int(os.getenv("TOP_K", "4"))
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "")
@@ -381,6 +381,7 @@ async def completions(request: Request):
     payload = _passthrough(req_json, ALLOWED_COMPLETION_FIELDS)
     payload["prompt"] = prompt
     payload.setdefault("model", MODEL_NAME)
+    payload.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
     url = f"{VLLM_URL}/completions"
 
     if stream:
@@ -530,6 +531,7 @@ async def chat_completions(req: ChatReq = Body(...), request: Request = None):
     payload = _passthrough(req_json, ALLOWED_CHAT_FIELDS)
     payload["messages"] = final_messages
     payload.setdefault("model", req.model or MODEL_NAME)
+    payload.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
     url = f"{VLLM_URL}/chat/completions"
 
     if stream:

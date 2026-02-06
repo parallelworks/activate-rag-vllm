@@ -111,10 +111,7 @@ jobs:
           [[ "${{ inputs.vllm.max_model_len }}" != "auto" ]] && VLLM_ARGS="$VLLM_ARGS --max-model-len ${{ inputs.vllm.max_model_len }}"
           [[ -n "${{ inputs.vllm.extra_args }}" ]] && VLLM_ARGS="$VLLM_ARGS ${{ inputs.vllm.extra_args }}"
           echo "export VLLM_EXTRA_ARGS=\"$VLLM_ARGS\"" >> .run.env
-
-          # Max tokens for response generation (used by RAG proxy)
-          echo "export MAX_TOKENS=${{ inputs.vllm.max_tokens }}" >> .run.env
-
+          
           # Model configuration
           echo "export MODEL_SOURCE=${{ inputs.model.source }}" >> .run.env
           if [[ "${{ inputs.model.source }}" == "local" ]]; then
@@ -674,10 +671,12 @@ jobs:
           wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken" 2>/dev/null || true
           wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken" 2>/dev/null || true
 
-          # Method 2: If wget failed or files are empty, copy from shared directory
+          # Method 2: If wget failed or files are empty, fallback to PW bucket
           if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]] || [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
-            cp /public/codelab/models/tiktoken_encodings/cl100k_base.tiktoken cache/tiktoken_encodings
-            cp /public/codelab/models/tiktoken_encodings/o200k_base.tiktoken cache/tiktoken_encodings
+            echo "Direct download failed or files empty, falling back to PW bucket..."
+            rm -f cache/tiktoken_encodings/*.tiktoken 2>/dev/null || true
+            pw bucket cp "pw://mshaxted/codeassist/o200k_base.tiktoken" cache/tiktoken_encodings/
+            pw bucket cp "pw://mshaxted/codeassist/cl100k_base.tiktoken" cache/tiktoken_encodings/
           fi
 
           # Final verification
@@ -988,24 +987,7 @@ jobs:
                 label: "64K tokens"
               - value: "131072"
                 label: "128K tokens"
-
-          max_tokens:
-            type: dropdown
-            label: Max Response Tokens
-            default: "8192"
-            tooltip: Maximum tokens to generate per response. Higher values allow longer responses but use more memory.
-            options:
-              - value: "2048"
-                label: "2K tokens"
-              - value: "4096"
-                label: "4K tokens"
-              - value: "8192"
-                label: "8K tokens (Recommended)"
-              - value: "16384"
-                label: "16K tokens"
-              - value: "32768"
-                label: "32K tokens"
-
+          
           dtype:
             type: dropdown
             label: Data Type
@@ -1211,7 +1193,7 @@ jobs:
             label: Download Tiktoken Encodings
             tooltip: Download tiktoken encodings for offline use (required for some models)
             type: boolean
-            default: true
+            default: false
           
           vllm_attention_backend:
             type: dropdown
