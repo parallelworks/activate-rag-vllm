@@ -936,10 +936,10 @@ jobs:
           hf_model_id:
             type: string
             label: HuggingFace Model ID
-            placeholder: Qwen/Qwen2.5-Coder-7B-Instruct
-            default: Qwen/Qwen2.5-Coder-7B-Instruct
+            placeholder: Qwen/Qwen2.5-3B-Instruct
+            default: Qwen/Qwen2.5-3B-Instruct
             prefillDefault: true
-            tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-Coder-7B optimized for code assist on single GPU.
+            tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-3B-Instruct, a small model compatible with the hermes tool call parser on single GPU.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
           
@@ -1182,8 +1182,9 @@ jobs:
           extra_args:
             type: string
             label: Additional Arguments
-            default: "--trust_remote_code --async-scheduling"
-            placeholder: "--trust_remote_code"
+            default: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser hermes"
+            prefillDefault: true
+            placeholder: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser hermes"
             tooltip: Additional vLLM arguments. If dtype is 'Custom', include --dtype here.
             optional: true
 
