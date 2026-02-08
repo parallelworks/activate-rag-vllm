@@ -7,7 +7,7 @@ rag_server.py /app/
 indexer.py /app/
 indexer_config.yaml /app/
 rag_proxy.py /app/
-singularity-entrypoint.sh /app/
+singularity/singularity-entrypoint.sh /app/singularity-entrypoint.sh
 
 %post
 # RAG + Indexer + Proxy image
