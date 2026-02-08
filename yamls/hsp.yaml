@@ -943,10 +943,10 @@ jobs:
           hf_model_id:
             type: string
             label: HuggingFace Model ID
-            placeholder: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
-            default: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5
+            placeholder: openai/gpt-oss-20b
+            default: openai/gpt-oss-20b
             prefillDefault: true
-            tooltip: Model ID to clone from HuggingFace.
+            tooltip: Model ID to clone from HuggingFace. Default is gpt-oss-20b, a 20B MoE model compatible with the openai tool call parser.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
 
@@ -1192,8 +1192,9 @@ jobs:
           extra_args:
             type: string
             label: Additional Arguments
-            default: "--trust_remote_code --async-scheduling"
-            placeholder: "--trust_remote_code"
+            default: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+            prefillDefault: true
+            placeholder: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
             tooltip: Additional vLLM arguments. If dtype is 'Custom', include --dtype here.
             optional: true
 
@@ -1378,12 +1379,12 @@ jobs:
             label: Download Tiktoken Encodings
             tooltip: Download tiktoken encodings for offline use (required for some models)
             type: boolean
-            default: false
+            default: true
 
           vllm_attention_backend:
             type: dropdown
             label: vLLM Attention Backend
-            default: FLASH_ATTN
+            default: TRITON_ATTN
             tooltip: Attention implementation used by vLLM
             options:
               [
