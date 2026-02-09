@@ -488,7 +488,7 @@ jobs:
             max_attempts=3
             while true; do
               echo "LFS fetch attempt ${attempt}/${max_attempts}..."
-              if git lfs fetch --progress --include="*.safetensors"; then
+              if git lfs fetch --include="*.safetensors"; then
                 break
               fi
               if [[ $attempt -ge $max_attempts ]]; then
@@ -506,7 +506,7 @@ jobs:
               echo "No safetensors files found, falling back to bin weights..."
               git sparse-checkout set '/*'
               git checkout
-              git lfs fetch --progress --include="*.bin"
+              git lfs fetch --include="*.bin"
               git lfs checkout --include="*.bin"
             fi
 
