@@ -687,7 +687,6 @@ jobs:
 
           ls -la cache/tiktoken_encodings/
           echo "Tiktoken encodings downloaded and verified"
-          sleep 120
 
   # ============================================================================
   # Run Session (using marketplace session_runner)

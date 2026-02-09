@@ -1,8 +1,6 @@
 #!/bin/bash
 set -x
 ls -lat cache/tiktoken_encodings/
-echo sleeping 120
-sleep 120
 # Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
 # when inject_markers=true (default)
 touch job.started
