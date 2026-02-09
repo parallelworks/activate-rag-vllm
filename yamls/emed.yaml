@@ -408,9 +408,10 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          RUNDIR="${{ inputs.advanced_settings.rundir }}"
+          cd "$RUNDIR"
           export PATH=/public/codelab/git-lfs-3.7.1:$PATH
-          
+
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
@@ -487,7 +488,7 @@ jobs:
             GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
             git lfs pull
-            cd ..
+            cd "$RUNDIR"
 
             # Verify model weights exist (not just LFS pointers)
             if [[ -f "$TARGET_DIR/model.safetensors" ]]; then
@@ -531,9 +532,10 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ inputs.advanced_settings.rundir }}
+          RUNDIR="${{ inputs.advanced_settings.rundir }}"
+          cd "$RUNDIR"
           export PATH=/public/codelab/git-lfs-3.7.1:$PATH
-          
+
           SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
           CACHE_DIR="${{ inputs.rag.embedding_model_cache_dir }}"
@@ -636,7 +638,7 @@ jobs:
               GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
               cd "$TARGET_DIR"
               git lfs pull
-              cd ..
+              cd "$RUNDIR"
             fi
 
             [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model download incomplete - missing config.json"; exit 1; }
