@@ -394,7 +394,8 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          cd "$RUNDIR"
 
           MODEL_ID="${{ inputs.model.hf_model_id }}"
           CACHE_DIR="${{ inputs.model.cache_dir }}"
@@ -510,8 +511,8 @@ jobs:
               git lfs checkout --include="*.bin"
             fi
 
-            cd ..
-            
+            cd "$RUNDIR"
+
             # Verify model weights exist (not just LFS pointers)
             if [[ -f "$TARGET_DIR/model.safetensors" ]]; then
               actual_size=$(stat -c%s "$TARGET_DIR/model.safetensors" 2>/dev/null || stat -f%z "$TARGET_DIR/model.safetensors" 2>/dev/null)
@@ -552,7 +553,8 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          cd "$RUNDIR"
 
           SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
@@ -656,7 +658,7 @@ jobs:
               GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
               cd "$TARGET_DIR"
               git lfs pull
-              cd ..
+              cd "$RUNDIR"
             fi
 
             [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model download incomplete - missing config.json"; exit 1; }
