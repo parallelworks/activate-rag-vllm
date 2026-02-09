@@ -252,7 +252,7 @@ jobs:
           while true; do
             echo "LFS pull attempt ${attempt}/${max_attempts}..."
             echo "Downloading container files (this may take a while for large files)..."
-            if git -C "$LFS_DIR" lfs fetch --progress; then
+            if git -C "$LFS_DIR" lfs fetch; then
               break
             fi
             if [[ $attempt -ge $max_attempts ]]; then
