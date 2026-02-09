@@ -468,10 +468,48 @@ jobs:
             REPO_URL="https://huggingface.co/$MODEL_ID"
             [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
 
-            # Clone with LFS and pull large files
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+            # Clone without LFS or checkout, then sparse-checkout only safetensors
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --no-checkout "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
-            git lfs pull
+
+            # Sparse checkout: exclude bin/gguf/onnx/pth to only get safetensors weights
+            git sparse-checkout init --no-cone
+            git sparse-checkout set '/*' '!*.bin' '!*.gguf' '!*.onnx' '!consolidated*.pth'
+            git checkout
+
+            # Configure LFS for reliability with large models
+            git lfs install --local
+            git config lfs.concurrenttransfers 4
+            git config lfs.transfer.maxretries 10
+            git config lfs.transfer.maxretrydelay 30
+
+            # Fetch only safetensors LFS objects with progress and retry logic
+            attempt=1
+            max_attempts=3
+            while true; do
+              echo "LFS fetch attempt ${attempt}/${max_attempts}..."
+              if git lfs fetch --progress --include="*.safetensors"; then
+                break
+              fi
+              if [[ $attempt -ge $max_attempts ]]; then
+                echo "ERROR: LFS fetch failed after ${max_attempts} attempts"
+                exit 1
+              fi
+              sleep $((attempt * 5))
+              ((attempt++))
+            done
+            echo "Checking out LFS files..."
+            git lfs checkout --include="*.safetensors"
+
+            # Fallback: if model only ships bin weights, re-include and fetch those
+            if ! ls *.safetensors 1>/dev/null 2>&1; then
+              echo "No safetensors files found, falling back to bin weights..."
+              git sparse-checkout set '/*'
+              git checkout
+              git lfs fetch --progress --include="*.bin"
+              git lfs checkout --include="*.bin"
+            fi
+
             cd ..
             
             # Verify model weights exist (not just LFS pointers)

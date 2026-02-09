@@ -12,6 +12,12 @@ From: vllm/vllm-openai:latest
         pkg-config cmake ninja-build
     rm -rf /var/lib/apt/lists/*
 
+    # FIPS workaround: opencv-python-headless >=4.13 bundles a FIPS-enabled
+    # OpenSSL 1.1.1k from CentOS/RHEL that crashes on FIPS-enabled hosts.
+    # Pin to 4.12.0.88 which does not bundle OpenSSL.
+    # See: https://github.com/opencv/opencv-python/issues/1184
+    pip install opencv-python-headless==4.12.0.88
+
     # Pick a Python interpreter that actually exists in the base image
     if command -v python >/dev/null 2>&1; then
         PY=python
@@ -36,6 +42,9 @@ import vllm
 print("Transformers:", transformers.__version__)
 print("vLLM:", vllm.__version__)
 PY
+
+%environment
+    export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/x86_64-linux-gnu:/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 %runscript
     mkdir -p /app
