@@ -357,7 +357,6 @@ EOF
     singularity instance start --nv --writable-tmpfs \
         $COMMON_BINDS \
         --bind ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions \
-        --bind ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings \
         --bind "${MODEL_PATH}:/${MODEL_BASE}" \
         "$VLLM_SIF" vllm
 

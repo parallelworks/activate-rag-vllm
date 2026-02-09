@@ -669,11 +669,6 @@ jobs:
           cd ${{ inputs.advanced_settings.rundir }}
           mkdir -p cache/tiktoken_encodings
 
-          # Method 1: Try direct download from OpenAI public URL
-          echo "Attempting download from openaipublic.blob.core.windows.net..."
-          wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/o200k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken" 2>/dev/null || true
-          wget --tries=2 --timeout=30 -O cache/tiktoken_encodings/cl100k_base.tiktoken "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken" 2>/dev/null || true
-
           # Method 2: If wget failed or files are empty, copy from shared directory
           if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]] || [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
             cp /public/codelab/models/tiktoken_encodings/cl100k_base.tiktoken cache/tiktoken_encodings
@@ -1205,7 +1200,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: dev-aecm-2026-02-06
+            default: main
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings

@@ -1,0 +1,63 @@
+{
+  "__config__": "gpt-oss-120-vllm",
+  "advanced_settings": {
+    "localport": "5555",
+    "repository": "https://github.com/parallelworks/activate-rag-vllm.git",
+    "repository_branch": "dev-aecm-2026-02-06",
+    "rundir": "${HOME}/pw/activate-rag-vllm",
+    "session_timeout": 0,
+    "tiktoken_encodings": true,
+    "v3": true,
+    "vllm_attention_backend": "TRITON_ATTN"
+  },
+  "container": {
+    "source": "path",
+    "v3": true,
+    "vllm_path": "/public/codelab/singularity/vllm_sandbox"
+  },
+  "model": {
+    "local_path": "/public/codelab/models/gpt-oss-120b",
+    "source": "local",
+    "v3": true
+  },
+  "rag": {
+    "docsdir": "/public/codelab/docs",
+    "embedding_model_path": "/public/codelab/models/all-MiniLM-L6-v2",
+    "embedding_model_source": "local",
+    "systemprompt": "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.",
+    "v3": true
+  },
+  "resource": {
+    "id": "685a9748d1901e04fa15344f",
+    "ip": "avidaltorr.hpc.einsteinmed.edu",
+    "name": "einsteindefault",
+    "namespace": "avidaltorr",
+    "provider": "existing",
+    "schedulerType": "slurm",
+    "tags": null,
+    "type": "existing",
+    "user": "avidaltorr"
+  },
+  "runmode": "singularity",
+  "runtype": "vllm",
+  "slurm": {
+    "cpus_per_task": 1,
+    "is_disabled": false,
+    "mem": "200GB",
+    "partition_hpc4": "gpu-h200",
+    "slurm_options": "-M hpc4",
+    "time": "01:00:00",
+    "v3": true
+  },
+  "submit_to_scheduler": true,
+  "v3": true,
+  "vllm": {
+    "dtype": "bfloat16",
+    "extra_args": "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai",
+    "gpu_memory": "0.85",
+    "max_model_len": "auto",
+    "max_tokens": "32768",
+    "num_gpus": "2",
+    "v3": true
+  }
+}
