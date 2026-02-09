@@ -687,6 +687,7 @@ jobs:
 
           ls -la cache/tiktoken_encodings/
           echo "Tiktoken encodings downloaded and verified"
+          sleep 120
 
   # ============================================================================
   # Run Session (using marketplace session_runner)
@@ -1200,7 +1201,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: main
+            default: dev-aecm-2026-02-09
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
