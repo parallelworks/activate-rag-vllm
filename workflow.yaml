@@ -976,10 +976,10 @@ jobs:
           hf_model_id:
             type: string
             label: HuggingFace Model ID
-            placeholder: Qwen/Qwen2.5-3B-Instruct
-            default: Qwen/Qwen2.5-3B-Instruct
+            placeholder: openai/gpt-oss-20b
+            default: openai/gpt-oss-20b
             prefillDefault: true
-            tooltip: Model ID to clone from HuggingFace. Default is Qwen2.5-3B-Instruct, a small model compatible with the hermes tool call parser on single GPU.
+            tooltip: Model ID to clone from HuggingFace. Default is gpt-oss-20b, a 20B MoE model compatible with the openai tool call parser.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
           
@@ -1222,9 +1222,9 @@ jobs:
           extra_args:
             type: string
             label: Additional Arguments
-            default: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser hermes"
+            default: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
             prefillDefault: true
-            placeholder: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser hermes"
+            placeholder: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
             tooltip: Additional vLLM arguments. If dtype is 'Custom', include --dtype here.
             optional: true
 
@@ -1409,11 +1409,11 @@ jobs:
             label: Download Tiktoken Encodings
             tooltip: Download tiktoken encodings for offline use (required for some models)
             type: boolean
-            default: false
+            default: true
           
           vllm_attention_backend:
             type: dropdown
             label: vLLM Attention Backend
-            default: FLASH_ATTN
+            default: TRITON_ATTN
             tooltip: Attention implementation used by vLLM
             options: [FLASH_ATTN, TRITON_ATTN, FLASHINFER, FLASHINFER_MLA, TRITON_MLA, CUTLASS_MLA, FLASHMLA, FLASHMLA_SPARSE, FLASH_ATTN_MLA, TORCH_SDPA, ROCM_ATTN, ROCM_AITER_MLA, ROCM_AITER_TRITON_MLA, ROCM_AITER_FA, PALLAS, IPEX, CPU_ATTN, NO_ATTENTION, CUSTOM]
