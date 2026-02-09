@@ -1,5 +1,6 @@
 #!/bin/bash
 set -x
+ls -lat cache/tiktoken_encodings/
 echo sleeping 120
 sleep 120
 # Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
@@ -37,6 +38,9 @@ install_docker_compose(){
     chmod +x docker-compose
 }
 
+echo 2
+ls -lat cache/tiktoken_encodings/
+
 start_rootless_docker() {
     local MAX_RETRIES=20
     local RETRY_INTERVAL=2
@@ -69,6 +73,9 @@ start_rootless_docker() {
     echo "$(date): Docker daemon is ready!"
     return 0
 }
+
+echo 3
+ls -lat cache/tiktoken_encodings/
 
 # Create cleanup script
 echo '#!/bin/bash' > cancel.sh
@@ -282,6 +289,9 @@ elif [ "$RUNMODE" == "singularity" ]; then
     RAG_SIF="${RAG_CONTAINER_PATH:-./rag.sif}"
     RAG_SIF="${RAG_SIF/#\~/$HOME}"
 
+    echo 5
+    ls -lat cache/tiktoken_encodings/
+
     # Verify containers exist (supports both .sif files and sandbox directories)
     [[ ! -e "$VLLM_SIF" ]] && { echo "$(date) ERROR: vLLM container not found at $VLLM_SIF (expected .sif file or sandbox directory)"; exit 1; }
     [[ "$RUNTYPE" == "all" && ! -e "$RAG_SIF" ]] && { echo "$(date) ERROR: RAG container not found at $RAG_SIF (expected .sif file or sandbox directory)"; exit 1; }
@@ -355,6 +365,9 @@ EOF
 
     echo "$(date) Starting vLLM instance..."
     
+
+    echo 6
+    ls -lat cache/tiktoken_encodings/
     # Start vLLM instance with GPU support
     singularity instance start --nv --writable-tmpfs \
         $COMMON_BINDS \
