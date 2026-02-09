@@ -68,7 +68,7 @@ jobs:
           fi 
           
           cd "$RUNDIR"
-          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME CANCEL_STREAMING
           rm -rf logs
           
           # Create cache directories (needed for bind mounts even if not used)
