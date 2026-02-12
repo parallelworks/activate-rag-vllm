@@ -354,10 +354,13 @@ EOF
     echo "$(date) Starting vLLM instance..."
     
     # Start vLLM instance with GPU support
+    # NOTE: Do NOT add --bind for subdirectories of ./cache (e.g. tiktoken_encodings).
+    # COMMON_BINDS already mounts ./cache:/root/.cache, so subdirectories are
+    # automatically accessible. Overlapping bind mounts in Singularity/Apptainer
+    # cause files to appear empty (0 bytes) inside the container.
     singularity instance start --nv --writable-tmpfs \
         $COMMON_BINDS \
         --bind ./cache/sagemaker_sessions:/dev/shm/sagemaker_sessions \
-        --bind ./cache/tiktoken_encodings:/root/.cache/tiktoken_encodings \
         --bind "${MODEL_PATH}:/${MODEL_BASE}" \
         "$VLLM_SIF" vllm
 

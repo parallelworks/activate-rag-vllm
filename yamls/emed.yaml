@@ -68,7 +68,7 @@ jobs:
           fi 
           
           cd "$RUNDIR"
-          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME CANCEL_STREAMING
           rm -rf logs
           
           # Create cache directories (needed for bind mounts even if not used)
@@ -889,7 +889,7 @@ jobs:
           time:
             label: Walltime
             type: string
-            default: '01:00:00'
+            default: '02:00:00'
             prefillDefault: true
             tooltip: '--time= SLURM directive to set the maximum wall-clock time limit for the job'
           scheduler_directives:
@@ -1202,7 +1202,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: dev-aecm-2026-02-06
+            default: main
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
