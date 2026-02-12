@@ -68,7 +68,7 @@ jobs:
           fi 
           
           cd "$RUNDIR"
-          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME
+          rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME CANCEL_STREAMING
           rm -rf logs
           
           # Create cache directories (needed for bind mounts even if not used)
@@ -751,7 +751,7 @@ jobs:
       runtype:
         label: Deployment Type
         type: dropdown
-        default: vllm
+        default: all
         tooltip: Deploy vLLM only or full vLLM+RAG stack
         options:
           - value: vllm
@@ -838,7 +838,7 @@ jobs:
             type: dropdown
             label: Select Cluster
             optional: true
-            default: ''
+            default: '-M hpc4'
             options:
               - value: ''
                 label: Default
@@ -864,7 +864,7 @@ jobs:
             tooltip: Select a partition from the drop down menu. Leave empty to let SLURM pick a partition.
             ignore: ${{ '-M hpc4' != inputs.slurm.slurm_options }}
             hidden: ${{ .ignore }}
-            default: normal
+            default: gpu-h200
             options:
               - gpu
               - gpu-h200
@@ -889,7 +889,7 @@ jobs:
           time:
             label: Walltime
             type: string
-            default: '01:00:00'
+            default: '02:00:00'
             prefillDefault: true
             tooltip: '--time= SLURM directive to set the maximum wall-clock time limit for the job'
           scheduler_directives:
@@ -1022,7 +1022,7 @@ jobs:
             type: string
             label: Additional Arguments
             default: "--trust_remote_code --async-scheduling"
-            placeholder: "--trust_remote_code"
+            placeholder: "--trust_remote_code --async-scheduling"
             tooltip: Additional vLLM arguments. If dtype is 'Custom', include --dtype here.
             optional: true
 
@@ -1202,7 +1202,7 @@ jobs:
           repository_branch:
             type: string
             label: Repository Branch
-            default: dev-aecm-2026-02-06
+            default: main
           
           tiktoken_encodings:
             label: Download Tiktoken Encodings
@@ -1216,3 +1216,4 @@ jobs:
             default: FLASH_ATTN
             tooltip: Attention implementation used by vLLM
             options: [FLASH_ATTN, TRITON_ATTN, FLASHINFER, FLASHINFER_MLA, TRITON_MLA, CUTLASS_MLA, FLASHMLA, FLASHMLA_SPARSE, FLASH_ATTN_MLA, TORCH_SDPA, ROCM_ATTN, ROCM_AITER_MLA, ROCM_AITER_TRITON_MLA, ROCM_AITER_FA, PALLAS, IPEX, CPU_ATTN, NO_ATTENTION, CUSTOM]
+
