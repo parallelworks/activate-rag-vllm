@@ -93,6 +93,7 @@ jobs:
           export HF_TOKEN=${{ inputs.model.hf_token }}
           export API_KEY=${{ inputs.advanced_settings.apikey }}
           export DOCS_DIR=${{ inputs.rag.docsdir }}
+          module load singularity || module load apptainer
           ENVEOF
 
           if [[ "${{ inputs.rag.embedding_model_source }}" == "local" ]]; then
@@ -716,9 +717,7 @@ jobs:
               gres_gpu_default: ${{ inputs.vllm.num_gpus }}
               gres_gpu_hpc4: ${{ inputs.vllm.num_gpus }}
               time: ${{ inputs.slurm.time }}
-              scheduler_directives: |
-                  ${{ inputs.slurm.scheduler_directives }}
-                  module load singularity || module load apptainer
+              scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
             pbs:
               is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
               scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
