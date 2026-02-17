@@ -75,7 +75,7 @@ jobs:
           mkdir -p cache/tiktoken_encodings
 
           # Needed for session_runner
-          touch inputs.sh
+          echo 'module load singularity || module load apptainer' > inputs.sh
           touch controller.sh
 
       - name: Create Environment File
@@ -716,9 +716,7 @@ jobs:
               gres_gpu_default: ${{ inputs.vllm.num_gpus }}
               gres_gpu_hpc4: ${{ inputs.vllm.num_gpus }}
               time: ${{ inputs.slurm.time }}
-              scheduler_directives: |
-                  ${{ inputs.slurm.scheduler_directives }}
-                  module load singularity || module load apptainer
+              scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
             pbs:
               is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
               scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
