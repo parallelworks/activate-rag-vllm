@@ -690,6 +690,7 @@ jobs:
       downloads_dir:
         type: string
         label: Downloads Directory
+        default: /scratch5/purged/vllm
         prefillDefault: true
         tooltip: "Root directory for downloaded assets: Singularity containers go to <parent_dir>/singularity/ and models to <parent_dir>/models/<model_id>/. Set this to your own scratch or project directory."
 
