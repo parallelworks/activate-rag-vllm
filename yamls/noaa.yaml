@@ -324,15 +324,10 @@ jobs:
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
 
-          mkdir -p "$CACHE_DIR"
-          MODEL_BASENAME="${MODEL_ID##*/}"
-          LEGACY_DIR="$CACHE_DIR/${MODEL_ID//\//__}"
-          TARGET_DIR="$CACHE_DIR/$MODEL_BASENAME"
-
-          if [[ -d "$LEGACY_DIR" && ! -d "$TARGET_DIR" ]]; then
-            echo "Renaming legacy cache dir $LEGACY_DIR to $TARGET_DIR"
-            mv "$LEGACY_DIR" "$TARGET_DIR"
-          fi
+          # Save under $CACHE_DIR/models/$MODEL_ID (e.g. <downloads_dir>/models/openai/gpt-oss-20b)
+          # Matches the local_path default so switching source requires no path changes
+          TARGET_DIR="$CACHE_DIR/models/$MODEL_ID"
+          mkdir -p "$TARGET_DIR"
 
           # Function to validate model weights are complete (not LFS pointers)
           validate_weights() {
@@ -484,10 +479,6 @@ jobs:
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
             CACHE_DIR="${{ inputs.model.cache_dir }}"
           fi
-          if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
-            CACHE_DIR="/scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/models"
-          fi
-          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
 
           mkdir -p "$CACHE_DIR"
@@ -694,6 +685,15 @@ jobs:
         tooltip: Resource to run the service
 
       # ========================================================================
+      # User Parent Directory
+      # ========================================================================
+      downloads_dir:
+        type: string
+        label: Downloads Directory
+        prefillDefault: true
+        tooltip: "Root directory for downloaded assets: Singularity containers go to <parent_dir>/singularity/ and models to <parent_dir>/models/<model_id>/. Set this to your own scratch or project directory."
+
+      # ========================================================================
       # Deployment Type
       # ========================================================================
       runtype:
@@ -738,11 +738,10 @@ jobs:
           local_path:
             type: string
             label: Model Path
-            placeholder: /path/to/model/weights
-            default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
-            prefillDefault: true
-            tooltip: Full path to directory containing model weights
-            hidden: ${{ inputs.model.source != 'local' }}
+            placeholder: ${{ inputs.model.cache_dir }}/models/${{ inputs.model.hf_model_id }}
+            default: ${{ inputs.model.cache_dir }}/models/${{ inputs.model.hf_model_id }}
+            tooltip: Full path to directory containing model weights. When switching from HuggingFace source, the model is already here.
+            hidden: true
             ignore: ${{ inputs.model.source != 'local' }}
           
           hf_model_id:
@@ -757,8 +756,7 @@ jobs:
           
           hf_token:
             label: HuggingFace Token
-            optional: true
-            default: ${{ org.HF_TOKEN }}
+            optional: ${{ inputs.model.source != 'huggingface' }}
             type: password
             tooltip: Required for gated models (Llama, etc.)
             hidden: ${{ inputs.model.source != 'huggingface' }}
@@ -767,10 +765,10 @@ jobs:
           cache_dir:
             type: string
             label: Model Cache Directory
-            default: /scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/models
-            prefillDefault: true
-            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
-            hidden: ${{ inputs.model.source != 'huggingface' }}
+            default: ${{ inputs.downloads_dir }}
+            placeholder: ${{ inputs.downloads_dir }}
+            tooltip: Root download directory. Model is cloned to <cache_dir>/models/<model_id> and reused on subsequent runs. Ensure sufficient disk space.
+            hidden: true
             ignore: ${{ inputs.model.source != 'huggingface' }}
 
       # ========================================================================
@@ -990,9 +988,10 @@ jobs:
           embedding_model_cache_dir:
             label: Embedding Model Cache Directory
             type: string
-            default: /scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/models
+            default: ${{ inputs.downloads_dir }}/models
+            placeholder: ${{ inputs.downloads_dir }}/models
             tooltip: Directory to store the embedding model (HuggingFace or bucket)
-            hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
+            hidden: true
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
 
           embedding_model_bucket:
@@ -1034,17 +1033,17 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: /scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/singularity/vllm.sif
-            placeholder: /scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/singularity/vllm.sif
+            default: ${{ inputs.downloads_dir }}/singularity/vllm.sif
+            placeholder: ${{ inputs.downloads_dir }}/singularity/vllm.sif
             tooltip: Path to vllm.sif container. If not found, it will be downloaded via git-lfs.
-
+            hidden: true
           rag_path:
             label: RAG Container Path
             type: string
-            default: /scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/singularity/rag.sif
-            placeholder: /scratch3/SYSADMIN/nesccmgmt/Alvaro.Vidal/singularity/rag.sif
+            default: ${{ inputs.downloads_dir }}/singularity/rag.sif
+            placeholder: ${{ inputs.downloads_dir }}/singularity/rag.sif
             tooltip: Path to rag.sif container. If not found, it will be downloaded via git-lfs. Only needed for vLLM+RAG mode.
-            hidden: ${{ inputs.runtype != 'all' }}
+            hidden: true
             ignore: ${{ inputs.runtype != 'all' }}
 
       # ========================================================================
