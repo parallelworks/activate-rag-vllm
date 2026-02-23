@@ -192,7 +192,8 @@ jobs:
 
             LFS_REPO="${{ inputs.container.lfs_repo }}"
             LFS_BRANCH="${{ inputs.container.lfs_branch }}"
-            LFS_DIR=".lfs_containers"
+            LFS_DIR="$(dirname "$VLLM_PATH")/.lfs_containers"
+            mkdir -p "$LFS_DIR"
 
             if [[ -d "$LFS_DIR/.git" ]]; then
               git -C "$LFS_DIR" fetch origin "$LFS_BRANCH"
@@ -660,7 +661,9 @@ jobs:
               qos: ${{ inputs.slurm.qos }}
               ntasks: ${{ inputs.slurm.ntasks }}
               nodes: ${{ inputs.slurm.nodes }}
-              scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
+              scheduler_directives: |
+                #SBATCH --gres=gpu:${{ inputs.vllm.num_gpus }}
+                ${{ inputs.slurm.scheduler_directives }}
               time: ${{ inputs.slurm.time }}
             pbs:
               is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
