@@ -663,6 +663,7 @@ jobs:
               nodes: ${{ inputs.slurm.nodes }}
               scheduler_directives: |
                 #SBATCH --gres=gpu:${{ inputs.vllm.num_gpus }}
+                #SBATCH --mem=0
                 ${{ inputs.slurm.scheduler_directives }}
               time: ${{ inputs.slurm.time }}
             pbs:
