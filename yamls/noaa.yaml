@@ -758,6 +758,7 @@ jobs:
           hf_token:
             label: HuggingFace Token
             optional: ${{ inputs.model.source != 'huggingface' }}
+            default: ${{ org.HF_TOKEN }}
             type: password
             tooltip: Required for gated models (Llama, etc.)
             hidden: ${{ inputs.model.source != 'huggingface' }}
