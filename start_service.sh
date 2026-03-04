@@ -219,7 +219,7 @@ elif [ "$RUNMODE" == "singularity" ]; then
     sed -i "s/^export RAG_PORT=.*/export RAG_PORT=${RAG_PORT}/" env.sh
     sed -i "s/^export PROXY_PORT=.*/export PROXY_PORT=${PROXY_PORT}/" env.sh
     sed -i "s/^export CHROMA_PORT=.*/export CHROMA_PORT=${CHROMA_PORT}/" env.sh
-    sed -i "s/^export MAX_TOKENS=.*/export MAX_TOKENS=${MAX_TOKENS}/" env.sh
+    [[ -n "$MAX_TOKENS" ]] && sed -i "s/^export MAX_TOKENS=.*/export MAX_TOKENS=${MAX_TOKENS}/" env.sh
     
     sed -i "s/\(.*HF_TOKEN=\"\)[^\"]*\(\".*\)/\1$HF_TOKEN\2/" env.sh
     # Note: MODEL_NAME is set to container path later, after MODEL_BASE is computed
@@ -351,8 +351,17 @@ fi
 EOF
     chmod +x cancel.sh
 
+    # Clean up stale Singularity instances from previous failed runs
+    echo "$(date) Cleaning up any stale instances..."
+    singularity instance stop vllm 2>/dev/null || true
+    singularity instance stop rag 2>/dev/null || true
+    sleep 1
+
+    # Pin GPU selection to avoid issues on multi-GPU systems with mixed devices
+    export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
     echo "$(date) Starting vLLM instance..."
-    
+
     # Start vLLM instance with GPU support
     singularity instance start --nv --writable-tmpfs \
         $COMMON_BINDS \

@@ -1169,7 +1169,7 @@ jobs:
           gpu_memory:
             type: dropdown
             label: GPU Memory Utilization
-            default: "0.90"
+            default: "0.85"
             tooltip: Fraction of GPU memory to use (lower if OOM errors occur)
             options:
               - value: "0.95"
