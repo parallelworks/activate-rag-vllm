@@ -89,11 +89,9 @@ jobs:
             echo "export MODEL_CACHE_BASE=${{ inputs.model.cache_dir }}" >> .run.env
           fi
 
-          # Container paths (used for both 'path' and 'build' modes)
-          if [[ "${{ inputs.container.source }}" != "pull" ]]; then
-            echo "export VLLM_CONTAINER_PATH=${{ inputs.container.vllm_path }}" >> .run.env
-            echo "export RAG_CONTAINER_PATH=${{ inputs.container.rag_path }}" >> .run.env
-          fi
+          # Container paths
+          echo "export VLLM_CONTAINER_PATH=${{ inputs.container.vllm_path }}" >> .run.env
+          echo "export RAG_CONTAINER_PATH=${{ inputs.container.rag_path }}" >> .run.env
 
           # Additional settings
           [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]] && echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
@@ -119,173 +117,6 @@ jobs:
           command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "ERROR: singularity/apptainer not found"; exit 1; }
           singularity --version || apptainer --version
           echo "Singularity/Apptainer ready"
-      - name: Pull Containers from Bucket
-        id: pull_containers
-        if: ${{ inputs.container.source == 'pull' }}
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ inputs.advanced_settings.rundir }}
-
-          [[ ! -f "vllm.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" ./ || echo "vllm.sif exists"
-          [[ "${{ inputs.runtype }}" == "all" && ! -f "rag.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./ || echo "rag.sif exists or not needed"
-
-          echo "Container pull complete"
-      - name: Pull Containers from LFS Repo
-        id: pull_containers_lfs
-        if: ${{ inputs.container.source == 'lfs' }}
-        early-cancel: any-job-failed
-        run: |
-          set -euo pipefail
-          cd ${{ inputs.advanced_settings.rundir }}
-          export PATH=/public/codelab/git-lfs-3.7.1:$PATH
-
-          command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
-          git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found"; exit 1; }
-          export GIT_LFS_SKIP_SMUDGE=1
-
-          LFS_REPO="${{ inputs.container.lfs_repo }}"
-          LFS_BRANCH="${{ inputs.container.lfs_branch }}"
-          LFS_DIR=".lfs_containers"
-          REV_FILE=".lfs_containers_rev"
-
-          VLLM_PATH="${{ inputs.container.vllm_path }}"
-          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
-          RAG_PATH="${{ inputs.container.rag_path }}"
-          RAG_PATH="${RAG_PATH/#\~/$HOME}"
-
-          need_vllm=true
-          need_rag=false
-          # Support both .sif files and sandbox directories
-          [[ -e "$VLLM_PATH" ]] && need_vllm=false
-          [[ "${{ inputs.runtype }}" == "all" ]] && { [[ ! -e "$RAG_PATH" ]] && need_rag=true; }
-
-          remote_rev=$(git ls-remote "$LFS_REPO" "$LFS_BRANCH" | awk '{print $1}')
-          if [[ -z "$remote_rev" ]]; then
-            echo "ERROR: Could not resolve $LFS_BRANCH in $LFS_REPO"
-            exit 1
-          fi
-          stored_rev=""
-          [[ -f "$REV_FILE" ]] && stored_rev=$(cat "$REV_FILE" || true)
-
-          if [[ "$need_vllm" == "false" && "$need_rag" == "false" ]]; then
-            if [[ -n "$remote_rev" && "$remote_rev" == "$stored_rev" ]]; then
-              echo "Containers already present and match remote revision $remote_rev; skipping LFS pull."
-            else
-              echo "Containers already present; remote revision is $remote_rev (stored: $stored_rev)."
-              echo "Skipping LFS pull to avoid re-download. Remove containers to force refresh."
-            fi
-            exit 0
-          fi
-
-          if [[ -d "$LFS_DIR/.git" ]]; then
-            git -C "$LFS_DIR" fetch origin "$LFS_BRANCH"
-          else
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch "$LFS_BRANCH" "$LFS_REPO" "$LFS_DIR"
-          fi
-
-          git -C "$LFS_DIR" checkout -f "$LFS_BRANCH"
-          git -C "$LFS_DIR" reset --hard "origin/$LFS_BRANCH"
-          git -C "$LFS_DIR" lfs install --local
-
-          git -C "$LFS_DIR" sparse-checkout init --no-cone
-          patterns=("vllm/vllm.*.sif" "vllm/vllm.sif.part_*" "vllm/vllm.sif" "vllm.*.sif" "vllm.sif.part_*" "vllm.sif" "scripts/sif_parts.sh")
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            patterns+=("rag/rag.*.sif" "rag/rag.sif.part_*" "rag/rag.sif" "rag.*.sif" "rag.sif.part_*" "rag.sif")
-          fi
-          git -C "$LFS_DIR" sparse-checkout set --no-cone "${patterns[@]}"
-
-          lfs_include="vllm/vllm.*.sif,vllm/vllm.sif.part_*,vllm/vllm.sif,vllm.*.sif,vllm.sif.part_*,vllm.sif"
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            lfs_include="${lfs_include},rag/rag.*.sif,rag/rag.sif.part_*,rag/rag.sif,rag.*.sif,rag.sif.part_*,rag.sif"
-          fi
-          git -C "$LFS_DIR" config lfs.concurrenttransfers 4
-          git -C "$LFS_DIR" config lfs.transfer.maxretries 10
-          git -C "$LFS_DIR" config lfs.transfer.maxretrydelay 30
-          git -C "$LFS_DIR" config lfs.fetchinclude "$lfs_include"
-          git -C "$LFS_DIR" config lfs.fetchexclude ""
-          attempt=1
-          max_attempts=2
-          while true; do
-            echo "LFS pull attempt ${attempt}/${max_attempts}..."
-            echo "Downloading container files (this may take a while for large files)..."
-            if git -C "$LFS_DIR" lfs fetch; then
-              break
-            fi
-            if [[ $attempt -ge $max_attempts ]]; then
-              echo "ERROR: LFS pull failed after ${max_attempts} attempts"
-              exit 1
-            fi
-            sleep $((attempt * 5))
-            ((attempt++))
-          done
-          echo "Checking out LFS files..."
-          git -C "$LFS_DIR" lfs checkout
-
-          assemble_sif() {
-            local prefix=$1
-            local target=$2
-            local dir_prefix="$LFS_DIR/${prefix}"
-            local full_sub="$dir_prefix/${prefix}.sif"
-            local full_root="$LFS_DIR/${prefix}.sif"
-            mkdir -p "$(dirname "$target")"
-
-            if [[ -f "$full_sub" ]]; then
-              cp "$full_sub" "$target"
-              return 0
-            fi
-            if [[ -f "$full_root" ]]; then
-              cp "$full_root" "$target"
-              return 0
-            fi
-
-            local script="$LFS_DIR/scripts/sif_parts.sh"
-            shopt -s nullglob
-            local numeric_parts_sub=("$dir_prefix/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
-            local numeric_parts_root=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
-            shopt -u nullglob
-            if [[ -x "$script" ]]; then
-              if [[ ${#numeric_parts_sub[@]} -gt 0 ]]; then
-                bash "$script" join --prefix "$prefix" --in-dir "$dir_prefix" --output "$target"
-                return 0
-              fi
-              if [[ ${#numeric_parts_root[@]} -gt 0 ]]; then
-                bash "$script" join --prefix "$prefix" --in-dir "$LFS_DIR" --output "$target"
-                return 0
-              fi
-            fi
-
-            shopt -s nullglob
-            local parts=("$dir_prefix/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$dir_prefix/${prefix}.sif.part_"*)
-            if ((${#parts[@]} == 0)); then
-              parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$LFS_DIR/${prefix}.sif.part_"*)
-            fi
-            shopt -u nullglob
-
-            if ((${#parts[@]} == 0)); then
-              echo "ERROR: No parts found for ${prefix} in ${dir_prefix} or ${LFS_DIR}"
-              exit 1
-            fi
-
-            mapfile -t parts_sorted < <(printf "%s\n" "${parts[@]}" | LC_ALL=C sort)
-            cat "${parts_sorted[@]}" > "$target"
-          }
-
-          if [[ "$need_vllm" == "true" ]]; then
-            echo "Assembling vLLM container to $VLLM_PATH"
-            assemble_sif vllm "$VLLM_PATH"
-          fi
-          if [[ "$need_rag" == "true" ]]; then
-            echo "Assembling RAG container to $RAG_PATH"
-            assemble_sif rag "$RAG_PATH"
-          fi
-
-          # Create symlinks (use -n to handle directories properly)
-          ln -sfn "$VLLM_PATH" ./vllm.sif
-          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sfn "$RAG_PATH" ./rag.sif
-
-          [[ -n "$remote_rev" ]] && echo "$remote_rev" > "$REV_FILE"
-          echo "LFS container pull complete"
       - name: Link Existing Containers
         id: link_containers
         if: ${{ inputs.container.source == 'path' }}
@@ -307,45 +138,6 @@ jobs:
             [[ -e "$RAG_PATH" ]] && ln -sfn "$RAG_PATH" ./rag.sif || { echo "ERROR: RAG container not found at $RAG_PATH (expected .sif file or sandbox directory)"; exit 1; }
             echo "Linked rag.sif from $RAG_PATH"
           fi
-      - name: Build Containers from Source
-        id: build_containers
-        if: ${{ inputs.container.source == 'build' }}
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ inputs.advanced_settings.rundir }}
-
-          # Resolve container paths (expand ~ to $HOME)
-          VLLM_PATH="${{ inputs.container.vllm_path }}"
-          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
-          RAG_PATH="${{ inputs.container.rag_path }}"
-          RAG_PATH="${RAG_PATH/#\~/$HOME}"
-
-          echo "Building Apptainer containers (requires sudo or fakeroot)..."
-          echo "vLLM container will be built to: $VLLM_PATH"
-          echo "RAG container will be built to: $RAG_PATH"
-
-          build_container() {
-            local target=$1 def=$2
-            # Support both .sif files and sandbox directories
-            [[ -e "$target" ]] && { echo "$target exists, skipping"; return 0; }
-            echo "Building $target from $def..."
-            mkdir -p "$(dirname "$target")"
-            if sudo -n true 2>/dev/null; then
-              sudo singularity build "$target" "$def"
-            else
-              singularity build --fakeroot "$target" "$def"
-            fi
-          }
-
-          build_container "$VLLM_PATH" singularity/Singularity.vllm
-          [[ "${{ inputs.runtype }}" == "all" ]] && build_container "$RAG_PATH" singularity/Singularity.rag
-
-          # Create symlinks in rundir for consistency with other modes (use -n for directories)
-          ln -sfn "$VLLM_PATH" ./vllm.sif
-          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sfn "$RAG_PATH" ./rag.sif
-
-          echo "Container build complete"
   prepare_model:
     needs:
       - setup
@@ -470,7 +262,7 @@ jobs:
   prepare_embedding_model:
     needs:
       - setup
-    if: ${{ inputs.runtype == 'all' && (inputs.rag.embedding_model_source == 'huggingface' || inputs.rag.embedding_model_source == 'bucket') }}
+    if: ${{ inputs.runtype == 'all' && inputs.rag.embedding_model_source == 'huggingface' }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     outputs:
@@ -485,7 +277,6 @@ jobs:
           cd "$RUNDIR"
           export PATH=/public/codelab/git-lfs-3.7.1:$PATH
 
-          SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
           CACHE_DIR="${{ inputs.rag.embedding_model_cache_dir }}"
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
@@ -531,64 +322,35 @@ jobs:
               echo "Cached embedding model at $TARGET_DIR appears incomplete, removing..."
               rm -rf "$TARGET_DIR"
             fi
-            if [[ "$SOURCE" == "bucket" ]]; then
-              BUCKET="${{ inputs.rag.embedding_model_bucket }}"
-              if [[ -z "$BUCKET" || "$BUCKET" == "undefined" ]]; then
-                BUCKET="pw://mshaxted/codeassist"
-              fi
-              BUCKET="${BUCKET%/}"
-              echo "Pulling embedding model from ${BUCKET} to ${TARGET_DIR}"
-              pulled=false
-              if pw bucket cp -r "${BUCKET}/${MODEL_BASENAME}" "$CACHE_DIR" 2>/dev/null; then
-                pulled=true
-              elif pw bucket cp -r "${BUCKET}/${SAFE_MODEL_ID}" "$CACHE_DIR" 2>/dev/null; then
-                pulled=true
-              elif pw bucket cp "${BUCKET}/${MODEL_BASENAME}" "$TARGET_DIR" 2>/dev/null; then
-                pulled=true
-              elif pw bucket cp "${BUCKET}/${SAFE_MODEL_ID}" "$LEGACY_DIR" 2>/dev/null; then
-                pulled=true
-              fi
-              
-              if [[ "$pulled" != "true" ]]; then
-                echo "ERROR: Failed to pull embedding model from bucket"
-                exit 1
-              fi
-              
-              if [[ -d "$LEGACY_DIR" && ! -d "$TARGET_DIR" ]]; then
-                echo "Renaming legacy cache dir $LEGACY_DIR to $TARGET_DIR"
-                mv "$LEGACY_DIR" "$TARGET_DIR"
-              fi
-            else
-              echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
+            echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
 
-              # Ensure git-lfs is available
-              if ! git lfs version >/dev/null 2>&1; then
-                echo "Installing git-lfs locally..."
-                mkdir -p $HOME/.local
-                cd /tmp
-                LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
-                [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
-                wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
-                tar -xzf git-lfs-linux-amd64.tar.gz
-                ./git-lfs-*/install.sh --local
-                rm -rf git-lfs-*
-                export PATH="$HOME/.local/bin:$PATH"
-                cd ${{ inputs.advanced_settings.rundir }}
-                git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
-              fi
-
-              git lfs install
-
-              # Build clone URL
-              REPO_URL="https://huggingface.co/$MODEL_ID"
-              [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
-
-              # Clone with LFS and pull large files
-              GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
-              cd "$TARGET_DIR"
-              git lfs pull
-              cd "$RUNDIR"
+            # Ensure git-lfs is available
+            if ! git lfs version >/dev/null 2>&1; then
+              echo "Installing git-lfs locally..."
+              mkdir -p $HOME/.local
+              cd /tmp
+              LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
+              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
+              wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+              tar -xzf git-lfs-linux-amd64.tar.gz
+              ./git-lfs-*/install.sh --local
+              rm -rf git-lfs-*
+              export PATH="$HOME/.local/bin:$PATH"
+              cd ${{ inputs.advanced_settings.rundir }}
+              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
             fi
+
+            git lfs install
+
+            # Build clone URL
+            REPO_URL="https://huggingface.co/$MODEL_ID"
+            [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+
+            # Clone with LFS and pull large files
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$REPO_URL" "$TARGET_DIR"
+            cd "$TARGET_DIR"
+            git lfs pull
+            cd "$RUNDIR"
 
             [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model download incomplete - missing config.json"; exit 1; }
           fi
@@ -954,8 +716,6 @@ jobs:
                 label: 📁 Local Path (pre-staged weights)
               - value: huggingface
                 label: 🤗 HuggingFace Clone (git-lfs)
-              - value: bucket
-                label: 📥 Pull from bucket
           embedding_model_id:
             label: Embedding Model ID
             type: string
@@ -978,13 +738,6 @@ jobs:
             tooltip: Directory to store the embedding model (HuggingFace or bucket)
             hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
-          embedding_model_bucket:
-            label: Embedding Model Bucket
-            type: string
-            default: pw://mshaxted/codeassist
-            tooltip: Bucket base path containing embedding models by safe ID (e.g., sentence-transformers__all-MiniLM-L6-v2)
-            hidden: ${{ inputs.rag.embedding_model_source != 'bucket' }}
-            ignore: ${{ inputs.rag.embedding_model_source != 'bucket' }}
           systemprompt:
             type: string
             label: System Prompt
@@ -1002,53 +755,24 @@ jobs:
             label: Container Source
             default: path
             tooltip: How to obtain Apptainer/Singularity containers
+            hidden: true
             options:
-              - value: lfs
-                label: 🧬 Git LFS repo
               - value: path
                 label: 📂 Use existing path
-              - value: pull
-                label: 📥 Pull from bucket (default)
-              - value: build
-                label: 🔨 Build from source (requires sudo/fakeroot)
-          lfs_repo:
-            label: LFS Repo
-            type: string
-            default: https://github.com/parallelworks/singularity-containers.git
-            tooltip: Git repo containing LFS SIF parts (vllm.*.sif or vllm/vllm.*.sif; rag.*.sif or rag/rag.*.sif)
-            hidden: ${{ inputs.container.source != 'lfs' }}
-            ignore: ${{ inputs.container.source != 'lfs' }}
-          lfs_branch:
-            label: LFS Branch
-            type: string
-            default: main
-            tooltip: Branch to pull from the LFS repo
-            hidden: ${{ inputs.container.source != 'lfs' }}
-            ignore: ${{ inputs.container.source != 'lfs' }}
-          bucket:
-            label: Container Bucket
-            type: string
-            default: pw://mshaxted/codeassist
-            prefillDefault: true
-            tooltip: Bucket containing vllm.sif and rag.sif containers
-            hidden: ${{ inputs.container.source != 'pull' }}
-            ignore: ${{ inputs.container.source != 'pull' }}
           vllm_path:
             label: vLLM Container Path
             type: string
             default: /public/codelab/singularity/vllm_sandbox
             placeholder: /public/codelab/singularity/vllm_sandbox
             tooltip: Path to vLLM container (.sif file or sandbox directory created with --sandbox)
-            hidden: ${{ inputs.container.source == 'pull' }}
-            ignore: ${{ inputs.container.source == 'pull' }}
           rag_path:
             label: RAG Container Path
             type: string
             default: /public/codelab/singularity/rag_sandbox
             placeholder: /public/codelab/singularity/rag_sandbox
             tooltip: Path to RAG container (.sif file or sandbox directory; only needed for vLLM+RAG mode)
-            hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
-            ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
+            hidden: ${{ inputs.runtype != 'all' }}
+            ignore: ${{ inputs.runtype != 'all' }}
       advanced_settings:
         type: group
         label: Advanced Settings
