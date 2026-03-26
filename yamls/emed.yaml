@@ -408,15 +408,16 @@ jobs:
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - uses: marketplace/session_runner/v1.4
+      - uses: github/parallelworks/interactive_session@main
         early-cancel: any-job-failed
         with:
+          $yaml: workflow/session_runner/v1.4/emed.yaml
           session: ${{ sessions.session }}
           resource: ${{ inputs.resource }}
           cluster:
             scheduler: ${{ inputs.submit_to_scheduler }}
             slurm:
-              is_disabled: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
+              is_enabled: ${{ inputs.slurm.is_enabled }}
               slurm_options: ${{ inputs.slurm.slurm_options }}
               partition_default: ${{ inputs.slurm.partition_default }}
               partition_hpc4: ${{ inputs.slurm.partition_hpc4 }}
@@ -427,7 +428,7 @@ jobs:
               time: ${{ inputs.slurm.time }}
               scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
             pbs:
-              is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
+              is_enabled: ${{ inputs.pbs.is_enabled }}
               scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
           service:
             start_service_script: ${{ inputs.advanced_settings.rundir }}/start_service.sh
@@ -523,11 +524,11 @@ jobs:
                 label: Default
               - value: hpc4
                 label: HPC4
-          is_disabled:
+          is_enabled:
             type: boolean
             hidden: true
-            default: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.submit_to_scheduler == false }}
-            label: Is SLURM disabled?
+            default: true
+            label: Is SLURM Enabled? Yes, unless the slurm section is hidden and ignored
           partition_default:
             type: slurm-partitions
             label: SLURM partition
@@ -582,11 +583,11 @@ jobs:
         hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
         ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
         items:
-          is_disabled:
+          is_enabled:
             type: boolean
             hidden: true
-            default: ${{ inputs.resource.schedulerType != 'pbs' || inputs.submit_to_scheduler == false }}
-            label: Is PBS disabled?
+            default: true
+            label: Is PBS enabled? Yes, unless the pbs section is hidden and ignored
           scheduler_directives:
             label: Scheduler Directives
             type: editor
