@@ -73,6 +73,10 @@ jobs:
           # Create cache directories (needed for bind mounts even if not used)
           mkdir -p cache/tiktoken_encodings
 
+          # Required by session_runner preprocessing
+          touch inputs.sh
+          touch controller.sh
+
           echo "rundir=$RUNDIR" >> $OUTPUTS
 
       - name: Create Environment File
@@ -718,199 +722,46 @@ jobs:
           echo "Tiktoken encodings downloaded and verified"
 
   # ============================================================================
-  # Run Service (using marketplace job_runner)
+  # Session Runner
   # ============================================================================
-  run_service:
-    needs:
-      [
-        setup,
-        prepare_containers,
-        prepare_model,
-        prepare_embedding_model,
-        prepare_tiktoken,
-      ]
+  session_runner:
     working-directory: ${{ needs.setup.outputs.rundir }}
+    needs:
+      - setup
+      - prepare_containers
+      - prepare_model
+      - prepare_embedding_model
+      - prepare_tiktoken
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - name: Run Service
-        uses: marketplace/job_runner/v4.0
+      - uses: github/parallelworks/interactive_session@main
         early-cancel: any-job-failed
         with:
+          $yaml: workflow/session_runner/v1.4/hsp.yaml
+          session: ${{ sessions.session }}
           resource: ${{ inputs.resource }}
-          shebang: "#!/bin/bash"
-          rundir: ${{ needs.setup.outputs.rundir }}
-          use_existing_script: true
-          script_path: ${{ needs.setup.outputs.rundir + '/start_service.sh' }}
-          scheduler: ${{ inputs.submit_to_scheduler }}
-          inject_markers: true
-          slurm:
-            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-            account: ${{ inputs.slurm.account }}
-            partition: ${{ inputs.slurm.partition }}
-            qos: ${{ inputs.slurm.qos }}
-            time: ${{ inputs.slurm.time }}
-            cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
-            gres: ${{ inputs.slurm.gres }}
-            scheduler_directives: |
-              ${{ inputs.slurm.scheduler_directives }}
-          pbs:
-            is_disabled: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-            account: ${{ inputs.pbs.account }}
-            queue: ${{ inputs.pbs.queue }}
-            walltime: ${{ inputs.pbs.walltime }}
-            select: ${{ inputs.pbs.select }}
-            scheduler_directives: |
-              ${{ inputs.pbs.scheduler_directives }}
-
-  # ============================================================================
-  # Session Management
-  # ============================================================================
-  create_session:
-    needs: [setup]
-    ssh:
-      remoteHost: ${{ inputs.resource.ip }}
-    steps:
-      - name: Wait for Job to Start
-        id: wait_job
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
-          elapsed=0
-          while [ ! -f ${{ needs.setup.outputs.rundir }}/job.started ]; do
-            if [[ $TIMEOUT -eq 0 ]]; then
-              echo "Waiting for job to start... (${elapsed}s, no timeout - waiting until canceled)"
-            else
-              echo "Waiting for job to start... (${elapsed}s/${TIMEOUT}s)"
-            fi
-            sleep 5
-            ((elapsed+=5))
-            [[ $TIMEOUT -gt 0 && $elapsed -ge $TIMEOUT ]] && { echo "ERROR: Timeout waiting for job"; exit 1; }
-          done
-          echo "Job started"
-
-      - name: Get Hostname
-        id: get_hostname
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          cd ${{ needs.setup.outputs.rundir }}
-
-          # Wait for HOSTNAME file (written by start_service.sh via script_submitter)
-          timeout=120; elapsed=0
-          while [ ! -f HOSTNAME ]; do
-            sleep 2; ((elapsed+=2))
-            echo "Waiting for HOSTNAME file... (${elapsed}s/${timeout}s)"
-            [[ $elapsed -ge $timeout ]] && break
-          done
-
-          if [ -f HOSTNAME ]; then
-            target_hostname=$(cat HOSTNAME 2>/dev/null | head -1)
-          else
-            # Fallback: if no HOSTNAME file, try getting from scheduler or localhost
-            if [[ "${{ inputs.submit_to_scheduler }}" == "true" ]]; then
-              source jobid 2>/dev/null || true
-              if [[ -n "$jobid" ]]; then
-                # Try SLURM first
-                target_hostname=$(squeue -j "${jobid}" --noheader --format="%N" 2>/dev/null || true)
-              fi
-            fi
-            # Last resort: use login node
-            [[ -z "${target_hostname}" ]] && target_hostname=$(hostname)
-          fi
-
-          [[ -z "${target_hostname}" ]] && { echo "$(date) Failed to get target hostname"; exit 1; }
-          echo "target_hostname=${target_hostname}" | tee -a $OUTPUTS
-
-      - name: Get Session Port
-        id: get_port
-        early-cancel: any-job-failed
-        run: |
-          set -euo pipefail
-          set -x
-
-          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
-          RETRY_INTERVAL=3
-          cd ${{ needs.setup.outputs.rundir }}
-
-          attempt=1; elapsed=0
-          while true; do
-            echo "$(date) Attempt $attempt: Checking for SESSION_PORT..."
-            
-            if [ -f SESSION_PORT ]; then
-              echo "$(date) Success: SESSION_PORT found!"
-              PORT=$(cat SESSION_PORT)
-              echo "SESSION_PORT=$PORT" | tee -a "$OUTPUTS"
-              exit 0
-            elif [ -f job.ended ]; then
-              echo "$(date) Job ended without SESSION_PORT"
-              exit 1
-            else
-              if [[ $TIMEOUT -eq 0 ]]; then
-                echo "$(date) Waiting... (${elapsed}s, no timeout)"
-              else
-                echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
-              fi
-              sleep "$RETRY_INTERVAL"
-              ((attempt++)); ((elapsed+=RETRY_INTERVAL))
-              [[ $TIMEOUT -gt 0 && $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
-            fi
-          done
-
-      - name: Wait for Server
-        id: wait_server
-        early-cancel: any-job-failed
-        run: |
-          TIMEOUT=${{ inputs.advanced_settings.session_timeout }}
-          RETRY_INTERVAL=3
-          remote_host="${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}"
-          remote_port="${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}"
-          local_host=""
-          if [[ -n "${remote_host}" ]]; then
-            host_short=$(hostname 2>/dev/null || true)
-            host_fqdn=$(hostname -f 2>/dev/null || true)
-            if [[ "${remote_host}" == "${host_short}" || "${remote_host}" == "${host_fqdn}" ]]; then
-              local_host="127.0.0.1"
-            fi
-          fi
-
-          cd ${{ needs.setup.outputs.rundir }}
-
-          attempt=1; elapsed=0
-          while true; do
-            echo "$(date) Attempt $attempt: Checking ${remote_host}:${remote_port}..."
-            
-            if curl --silent --connect-timeout 5 "http://${remote_host}:${remote_port}" >/dev/null 2>&1; then
-              echo "$(date) Success: Server is listening!"
-              exit 0
-            elif [[ -n "${local_host}" ]] && curl --silent --connect-timeout 5 "http://${local_host}:${remote_port}" >/dev/null 2>&1; then
-              echo "$(date) Success: Server is listening on ${local_host}:${remote_port}!"
-              exit 0
-            elif [ -f job.ended ]; then
-              echo "$(date) Job completed"
-              exit 0
-            else
-              if [[ $TIMEOUT -eq 0 ]]; then
-                echo "$(date) Waiting... (${elapsed}s, no timeout)"
-              else
-                echo "$(date) Waiting... (${elapsed}s/${TIMEOUT}s)"
-              fi
-              sleep "$RETRY_INTERVAL"
-              ((attempt++)); ((elapsed+=RETRY_INTERVAL))
-              [[ $TIMEOUT -gt 0 && $elapsed -ge $TIMEOUT ]] && { echo "$(date) Timeout"; exit 1; }
-            fi
-          done
-
-      - name: Update Session
-        id: update_session
-        uses: parallelworks/update-session
-        with:
-          remotePort: "${{ needs.create_session.steps.get_port.outputs.SESSION_PORT }}"
-          target: "${{ inputs.resource.id }}"
-          name: "${{ sessions.session }}"
-          remoteHost: "${{ needs.create_session.steps.get_hostname.outputs.target_hostname }}"
-          localPort: "${{ inputs.advanced_settings.localport }}"
+          cluster:
+            scheduler: ${{ inputs.submit_to_scheduler }}
+            slurm:
+              is_enabled: ${{ inputs.slurm.is_enabled }}
+              account: ${{ inputs.slurm.account }}
+              partition: ${{ inputs.slurm.partition }}
+              qos: ${{ inputs.slurm.qos }}
+              cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
+              nodes: ${{ inputs.slurm.nodes }}
+              gpus: ${{ inputs.vllm.num_gpus }}
+              time: ${{ inputs.slurm.time }}
+              scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
+            pbs:
+              is_enabled: ${{ inputs.pbs.is_enabled }}
+              account: ${{ inputs.pbs.account }}
+              scheduler_directives: ${{ inputs.pbs.scheduler_directives }}
+          service:
+            start_service_script: ${{ needs.setup.outputs.rundir }}/start_service.sh
+            controller_script: ${{ needs.setup.outputs.rundir }}/controller.sh
+            inputs_sh: ${{ needs.setup.outputs.rundir }}/inputs.sh
+            rundir: ${{ needs.setup.outputs.rundir }}
 
 # ==============================================================================
 # INPUT DEFINITIONS
@@ -1017,10 +868,11 @@ jobs:
         hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
         collapsed: true
         items:
-          is_disabled:
+          is_enabled:
             type: boolean
-            default: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
             hidden: true
+            default: true
+            label: Is SLURM Enabled? Yes, unless the slurm section is hidden and ignored
 
           account:
             label: Account
@@ -1055,28 +907,19 @@ jobs:
             tooltip: Number of CPUs for the job (--cpus-per-task)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
+          nodes:
+            label: Number of nodes
+            type: number
+            default: 1
+            tooltip: "--nodes=value slurm directive"
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+
           time:
             label: Walltime
             type: string
             default: 01:00:00
             prefillDefault: true
             tooltip: Maximum job duration, e.g., 01:00:00 (--time)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-
-          gres:
-            label: GPUs (gres)
-            type: dropdown
-            default: "gpu:4"
-            tooltip: GPU resource specification (--gres). Keep in sync with vLLM GPU count.
-            options:
-              - value: "gpu:1"
-                label: "1 GPU (gpu:1)"
-              - value: "gpu:2"
-                label: "2 GPUs (gpu:2)"
-              - value: "gpu:4"
-                label: "4 GPUs (gpu:4)"
-              - value: "gpu:8"
-                label: "8 GPUs (gpu:8)"
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
           scheduler_directives:
@@ -1096,42 +939,17 @@ jobs:
         hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
         collapsed: true
         items:
-          is_disabled:
+          is_enabled:
             type: boolean
-            default: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
             hidden: true
+            default: true
+            label: Is PBS enabled? Yes, unless the pbs section is hidden and ignored
 
           account:
             label: Account
             type: string
             optional: true
             tooltip: PBS account for job submission (-A)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-
-          queue:
-            label: Queue
-            type: string
-            optional: true
-            default: standard
-            tooltip: PBS queue name (-q)
-            prefillDefault: true
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-
-          walltime:
-            label: Walltime
-            type: string
-            default: 01:00:00
-            prefillDefault: true
-            tooltip: Maximum job duration, e.g., 01:00:00 (-l walltime=)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
-
-          select:
-            label: Resource Selection
-            type: string
-            default: "1:ncpus=92:mpiprocs=92:nmlas=4"
-            prefillDefault: true
-            placeholder: "1:ncpus=92:mpiprocs=92:nmlas=4"
-            tooltip: PBS resource selection string, e.g., 1:ncpus=92:mpiprocs=92:nmlas=4 (-l select=)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
 
           scheduler_directives:
