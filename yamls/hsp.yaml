@@ -79,6 +79,35 @@ jobs:
 
           echo "rundir=$RUNDIR" >> $OUTPUTS
 
+      - name: Set Cache Directory 
+        run: |
+          source inputs.sh
+          set -x
+          
+          MODEL_CACHE_DIR=${{ inputs.model.cache_dir }}
+          EMBEDDING_MODEL_CACHE_DIR=${{ inputs.rag.embedding_model_cache_dir }}
+
+          DEFAULT_CACHE_DIR=${WORKDIR}
+
+          if [ -d "${GLOBAL}/hsp" ]; then
+            DEFAULT_CACHE_DIR=${GLOBAL}/hsp/models
+          elif [ -d "${PROJECTS_HOME}/hsp" ]; then
+            DEFAULT_CACHE_DIR=${PROJECTS_HOME}/hsp/models
+          fi
+
+          mkdir -p "${DEFAULT_CACHE_DIR}"
+
+          if [ -z "${MODEL_CACHE_DIR}" ]; then
+            MODEL_CACHE_DIR=${DEFAULT_CACHE_DIR}
+          fi
+
+          if [ -z "${EMBEDDING_MODEL_CACHE_DIR}" ]; then
+            EMBEDDING_MODEL_CACHE_DIR=${DEFAULT_CACHE_DIR}
+          fi
+
+          echo "MODEL_CACHE_DIR=${MODEL_CACHE_DIR}" | tee -a $OUTPUTS
+          echo "EMBEDDING_MODEL_CACHE_DIR=${EMBEDDING_MODEL_CACHE_DIR}" | tee -a $OUTPUTS
+
       - name: Create Environment File
         id: create_env
         early-cancel: any-job-failed
@@ -100,7 +129,7 @@ jobs:
             echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_path }}" >> .run.env
           else
             echo "export EMBEDDING_MODEL=${{ inputs.rag.embedding_model_id }}" >> .run.env
-            echo "export EMBEDDING_CACHE_DIR=${{ inputs.rag.embedding_model_cache_dir }}" >> .run.env
+            echo "export EMBEDDING_CACHE_DIR=${{ needs.setup.outputs.EMBEDDING_MODEL_CACHE_DIR }}" >> .run.env
           fi
 
           # Build vLLM extra args from structured inputs
@@ -122,7 +151,7 @@ jobs:
           else
             echo "export MODEL_NAME=${{ inputs.model.hf_model_id }}" >> .run.env
             echo "export HF_MODEL_ID=${{ inputs.model.hf_model_id }}" >> .run.env
-            echo "export MODEL_CACHE_BASE=${{ inputs.model.cache_dir }}" >> .run.env
+            echo "export MODEL_CACHE_BASE=${{ needs.setup.outputs.MODEL_CACHE_DIR }}" >> .run.env
           fi
 
           # Container paths (used for both 'path' and 'build' modes)
@@ -139,6 +168,9 @@ jobs:
           fi
 
           echo "Environment file created"
+
+
+
 
   # ============================================================================
   # Prepare Containers (Apptainer/Singularity)
@@ -402,7 +434,7 @@ jobs:
           cd "$RUNDIR"
 
           MODEL_ID="${{ inputs.model.hf_model_id }}"
-          CACHE_DIR="${{ inputs.model.cache_dir }}"
+          CACHE_DIR="${{ needs.setup.outputs.MODEL_CACHE_DIR }}"
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
 
@@ -562,9 +594,9 @@ jobs:
 
           SOURCE="${{ inputs.rag.embedding_model_source }}"
           MODEL_ID="${{ inputs.rag.embedding_model_id }}"
-          CACHE_DIR="${{ inputs.rag.embedding_model_cache_dir }}"
+          CACHE_DIR="${{ needs.setup.outputs.EMBEDDING_MODEL_CACHE_DIR }}"
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
-            CACHE_DIR="${{ inputs.model.cache_dir }}"
+            CACHE_DIR="${{ needs.setup.outputs.MODEL_CACHE_DIR }}"
           fi
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
             CACHE_DIR="~/pw/models"
@@ -853,9 +885,8 @@ jobs:
           cache_dir:
             type: string
             label: Model Cache Directory
-            default: ${WORKDIR}
-            prefillDefault: true
-            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space.
+            optional: true
+            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space. If not specified, defaults to $GLOBAL/hsp/models, then $PROJECTS_HOME/hsp/models, then $WORKDIR.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
 
@@ -1104,8 +1135,8 @@ jobs:
           embedding_model_cache_dir:
             label: Embedding Model Cache Directory
             type: string
-            default: ${WORKDIR}
-            tooltip: Directory to store the embedding model (HuggingFace or bucket)
+            optional: true
+            tooltip: Directory to store the embedding model (HuggingFace or bucket). If not specified, defaults to $GLOBAL/hsp/models, then $PROJECTS_HOME/hsp/models, then $WORKDIR.
             hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
 
