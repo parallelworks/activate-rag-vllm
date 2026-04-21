@@ -81,7 +81,6 @@ jobs:
 
       - name: Set Cache Directory 
         run: |
-          source inputs.sh
           set -x
           
           MODEL_CACHE_DIR=${{ inputs.model.cache_dir }}
@@ -96,6 +95,7 @@ jobs:
           fi
 
           mkdir -p "${DEFAULT_CACHE_DIR}"
+          chmod 755 "${DEFAULT_CACHE_DIR}"
 
           if [ -z "${MODEL_CACHE_DIR}" ]; then
             MODEL_CACHE_DIR=${DEFAULT_CACHE_DIR}
@@ -107,6 +107,38 @@ jobs:
 
           echo "MODEL_CACHE_DIR=${MODEL_CACHE_DIR}" | tee -a $OUTPUTS
           echo "EMBEDDING_MODEL_CACHE_DIR=${EMBEDDING_MODEL_CACHE_DIR}" | tee -a $OUTPUTS
+
+      - name: Set Singularity Directory
+        run: |
+          set -x
+          
+          VLLM_PATH="${{ inputs.container.vllm_path }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          RAG_PATH="${{ inputs.container.rag_path }}"
+          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+
+          DEFAULT_SINGULARITY_DIR="${{ needs.setup.outputs.rundir }}"
+
+          if [ -d "${PROJECTS_HOME}/hsp" ]; then
+            DEFAULT_SINGULARITY_DIR=${PROJECTS_HOME}/hsp/containers
+          elif [ -d "${GLOBAL}/hsp" ]; then
+            DEFAULT_SINGULARITY_DIR=${GLOBAL}/hsp/containers
+          fi
+
+          mkdir -p "${DEFAULT_SINGULARITY_DIR}"
+          chmod 755 "${DEFAULT_SINGULARITY_DIR}"
+
+          if [ -z "${VLLM_PATH}" ]; then
+            VLLM_PATH=${DEFAULT_SINGULARITY_DIR}/vllm.sif
+          fi
+
+          if [ -z "${RAG_PATH}" ]; then
+            RAG_PATH=${DEFAULT_SINGULARITY_DIR}/rag.sif
+          fi
+
+          echo "VLLM_PATH=${VLLM_PATH}" | tee -a $OUTPUTS
+          echo "RAG_PATH=${RAG_PATH}" | tee -a $OUTPUTS
+
 
       - name: Create Environment File
         id: create_env
@@ -154,11 +186,9 @@ jobs:
             echo "export MODEL_CACHE_BASE=${{ needs.setup.outputs.MODEL_CACHE_DIR }}" >> .run.env
           fi
 
-          # Container paths (used for both 'path' and 'build' modes)
-          if [[ "${{ inputs.container.source }}" != "pull" ]]; then
-            echo "export VLLM_CONTAINER_PATH=${{ inputs.container.vllm_path }}" >> .run.env
-            echo "export RAG_CONTAINER_PATH=${{ inputs.container.rag_path }}" >> .run.env
-          fi
+          # Container paths
+          echo "export VLLM_CONTAINER_PATH=${{ needs.setup.outputs.VLLM_PATH }}" >> .run.env
+          echo "export RAG_CONTAINER_PATH=${{ needs.setup.outputs.RAG_PATH }}" >> .run.env
 
           # Additional settings
           [[ -n "${{ inputs.advanced_settings.vllm_attention_backend }}" ]] && echo "export VLLM_ATTENTION_BACKEND=${{ inputs.advanced_settings.vllm_attention_backend }}" >> .run.env
@@ -196,10 +226,34 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          cd "$RUNDIR"
 
-          [[ ! -f "vllm.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" ./ || echo "vllm.sif exists"
-          [[ "${{ inputs.runtype }}" == "all" && ! -f "rag.sif" ]] && pw bucket cp "${{ inputs.container.bucket }}/rag.sif" ./ || echo "rag.sif exists or not needed"
+          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
+          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
+
+          mkdir -p "$(dirname "$VLLM_PATH")"
+          chmod 755 "$(dirname "$VLLM_PATH")"
+          if [[ ! -f "$VLLM_PATH" ]]; then
+            pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" "$VLLM_PATH"
+            chmod 644 "$VLLM_PATH"
+          else
+            echo "vllm.sif already exists at $VLLM_PATH"
+          fi
+
+          if [[ "${{ inputs.runtype }}" == "all" ]]; then
+            mkdir -p "$(dirname "$RAG_PATH")"
+            chmod 755 "$(dirname "$RAG_PATH")"
+            if [[ ! -f "$RAG_PATH" ]]; then
+              pw bucket cp "${{ inputs.container.bucket }}/rag.sif" "$RAG_PATH"
+              chmod 644 "$RAG_PATH"
+            else
+              echo "rag.sif already exists at $RAG_PATH"
+            fi
+          fi
+
+          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
+          [[ "${{ inputs.runtype }}" == "all" && "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
 
           echo "Container pull complete"
 
@@ -209,7 +263,8 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -euo pipefail
-          cd ${{ needs.setup.outputs.rundir }}
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          cd "$RUNDIR"
 
           command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
           git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found"; exit 1; }
@@ -220,10 +275,8 @@ jobs:
           LFS_DIR=".lfs_containers"
           REV_FILE=".lfs_containers_rev"
 
-          VLLM_PATH="${{ inputs.container.vllm_path }}"
-          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
-          RAG_PATH="${{ inputs.container.rag_path }}"
-          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
+          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
 
           need_vllm=true
           need_rag=false
@@ -344,14 +397,16 @@ jobs:
           if [[ "$need_vllm" == "true" ]]; then
             echo "Assembling vLLM container to $VLLM_PATH"
             assemble_sif vllm "$VLLM_PATH"
+            chmod 644 "$VLLM_PATH"
           fi
           if [[ "$need_rag" == "true" ]]; then
             echo "Assembling RAG container to $RAG_PATH"
             assemble_sif rag "$RAG_PATH"
+            chmod 644 "$RAG_PATH"
           fi
 
-          ln -sf "$VLLM_PATH" ./vllm.sif
-          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
+          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
+          [[ "${{ inputs.runtype }}" == "all" && "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
 
           [[ -n "$remote_rev" ]] && echo "$remote_rev" > "$REV_FILE"
           echo "LFS container pull complete"
@@ -362,18 +417,19 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          cd "$RUNDIR"
 
-          VLLM_PATH="${{ inputs.container.vllm_path }}"
-          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
 
-          [[ -f "$VLLM_PATH" ]] && ln -sf "$VLLM_PATH" ./vllm.sif || { echo "ERROR: vLLM container not found at $VLLM_PATH"; exit 1; }
+          [[ -f "$VLLM_PATH" ]] || { echo "ERROR: vLLM container not found at $VLLM_PATH"; exit 1; }
+          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
           echo "Linked vllm.sif from $VLLM_PATH"
 
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            RAG_PATH="${{ inputs.container.rag_path }}"
-            RAG_PATH="${RAG_PATH/#\~/$HOME}"
-            [[ -f "$RAG_PATH" ]] && ln -sf "$RAG_PATH" ./rag.sif || { echo "ERROR: RAG container not found at $RAG_PATH"; exit 1; }
+            RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
+            [[ -f "$RAG_PATH" ]] || { echo "ERROR: RAG container not found at $RAG_PATH"; exit 1; }
+            [[ "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
             echo "Linked rag.sif from $RAG_PATH"
           fi
 
@@ -383,13 +439,11 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          cd ${{ needs.setup.outputs.rundir }}
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          cd "$RUNDIR"
 
-          # Resolve container paths (expand ~ to $HOME)
-          VLLM_PATH="${{ inputs.container.vllm_path }}"
-          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
-          RAG_PATH="${{ inputs.container.rag_path }}"
-          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
+          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
 
           echo "Building Apptainer containers (requires sudo or fakeroot)..."
           echo "vLLM container will be built to: $VLLM_PATH"
@@ -400,19 +454,20 @@ jobs:
             [[ -f "$target" ]] && { echo "$target exists, skipping"; return 0; }
             echo "Building $target from $def..."
             mkdir -p "$(dirname "$target")"
+            chmod 755 "$(dirname "$target")"
             if sudo -n true 2>/dev/null; then
               sudo singularity build "$target" "$def"
             else
               singularity build --fakeroot "$target" "$def"
             fi
+            chmod 644 "$target"
           }
 
           build_container "$VLLM_PATH" singularity/Singularity.vllm
           [[ "${{ inputs.runtype }}" == "all" ]] && build_container "$RAG_PATH" singularity/Singularity.rag
 
-          # Create symlinks in rundir for consistency with other modes
-          ln -sf "$VLLM_PATH" ./vllm.sif
-          [[ "${{ inputs.runtype }}" == "all" ]] && ln -sf "$RAG_PATH" ./rag.sif
+          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
+          [[ "${{ inputs.runtype }}" == "all" && "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
 
           echo "Container build complete"
 
@@ -563,6 +618,8 @@ jobs:
             fi
             
             [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Model clone incomplete - missing config.json"; exit 1; }
+
+            chmod -R a+rX "$TARGET_DIR"
           fi
 
           # Update environment file
@@ -698,6 +755,8 @@ jobs:
             fi
 
             [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model download incomplete - missing config.json"; exit 1; }
+
+            chmod -R a+rX "$TARGET_DIR"
           fi
 
           # Update environment file
@@ -1207,18 +1266,16 @@ jobs:
           vllm_path:
             label: vLLM Container Path
             type: string
-            default: ~/pw/singularity/vllm.sif
-            placeholder: ~/pw/singularity/vllm.sif
-            tooltip: Path to vllm.sif container (use existing or build destination)
+            optional: true
+            tooltip: Path to vllm.sif container (use existing or build destination). If not specified, defaults to $PROJECTS_HOME/hsp/containers/vllm.sif, then $GLOBAL/hsp/containers/vllm.sif, then ${RUNDIR}/vllm.sif.
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
 
           rag_path:
             label: RAG Container Path
             type: string
-            default: ~/pw/singularity/rag.sif
-            placeholder: ~/pw/singularity/rag.sif
-            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode)
+            optional: true
+            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode). If not specified, defaults to $PROJECTS_HOME/hsp/containers/rag.sif, then $GLOBAL/hsp/containers/rag.sif, then ${RUNDIR}/rag.sif.
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
 
