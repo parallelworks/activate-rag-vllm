@@ -180,6 +180,8 @@ jobs:
             echo "export MODEL_NAME=${{ inputs.model.local_path }}" >> .run.env
             echo "export MODEL_PATH=${{ inputs.model.local_path }}" >> .run.env
             echo "export TRANSFORMERS_OFFLINE=1" >> .run.env
+          elif [[ "${{ inputs.model.source }}" == "cached_model" ]]; then
+            echo "export MODEL_CACHE_BASE=${{ needs.setup.outputs.MODEL_CACHE_DIR }}" >> .run.env
           else
             echo "export MODEL_NAME=${{ inputs.model.hf_model_id }}" >> .run.env
             echo "export HF_MODEL_ID=${{ inputs.model.hf_model_id }}" >> .run.env
@@ -633,6 +635,42 @@ jobs:
           echo "Model ready at $TARGET_DIR"
 
   # ============================================================================
+  # Prepare Cached Model
+  # ============================================================================
+  prepare_cached_model:
+    needs: [setup]
+    if: ${{ inputs.model.source == 'cached_model' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Verify Cached Model
+        id: verify_cached_model
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          RUNDIR="${{ needs.setup.outputs.rundir }}"
+          CACHE_DIR="${{ needs.setup.outputs.MODEL_CACHE_DIR }}"
+          MODEL_ID="${{ inputs.model.cached_model_id }}"
+          MODEL_BASENAME="${MODEL_ID##*/}"
+          MODEL_PATH="$CACHE_DIR/$MODEL_BASENAME"
+
+          if [[ ! -d "$MODEL_PATH" ]]; then
+            echo "::error title=Missing Model::Cached model '$MODEL_ID' not found at $MODEL_PATH. Please ensure the model has been pre-staged in the cache directory."
+            exit 1
+          fi
+
+          echo "Found cached model at $MODEL_PATH"
+
+          cat >> "$RUNDIR/.run.env" << EOF
+          export MODEL_PATH=$MODEL_PATH
+          export MODEL_NAME=$MODEL_PATH
+          export TRANSFORMERS_OFFLINE=1
+          EOF
+
+          echo "model_path=$MODEL_PATH" >> $OUTPUTS
+          echo "Cached model ready at $MODEL_PATH"
+
+  # ============================================================================
   # Prepare Embedding Model (RAG)
   # ============================================================================
   prepare_embedding_model:
@@ -821,6 +859,7 @@ jobs:
       - setup
       - prepare_containers
       - prepare_model
+      - prepare_cached_model
       - prepare_embedding_model
       - prepare_tiktoken
     ssh:
@@ -905,12 +944,14 @@ jobs:
             type: dropdown
             label: Model Source
             default: huggingface
-            tooltip: Use a pre-downloaded model (local) or clone from HuggingFace using git-lfs
+            tooltip: "Choose a model source: use a cached model, load from a local path, or clone from HuggingFace via git-lfs."
             options:
               - value: local
                 label: "📁 Local Path (pre-staged weights)"
               - value: huggingface
                 label: "🤗 HuggingFace Clone (git-lfs)"
+              - value: cached_model
+                label: "Cached Model"
 
           local_path:
             type: string
@@ -940,6 +981,19 @@ jobs:
             tooltip: Required for gated models (Llama, etc.)
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
+
+          cached_model_id:
+            type: dropdown
+            label: Cached Model
+            default: openai/gpt-oss-20b
+            tooltip: Select a pre-cached model available under the model cache directory.
+            hidden: ${{ inputs.model.source != 'cached_model' }}
+            ignore: ${{ inputs.model.source != 'cached_model' }}
+            options:
+              - value: openai/gpt-oss-20b
+                label: "openai/gpt-oss-20b"
+              - value: openai/gpt-oss-120b
+                label: "openai/gpt-oss-120b"
 
           cache_dir:
             type: string
