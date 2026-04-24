@@ -20,15 +20,15 @@ jobs:
           mkdir -p "$(dirname $RUNDIR)"
 
           if [[ -d "$RUNDIR/.git" ]]; then
-            echo "Repository exists, updating..."
+            echo "::notice::Repository exists at $RUNDIR — updating to branch ${{ inputs.advanced_settings.repository_branch }}..."
             cd "$RUNDIR"
             git fetch origin
             git checkout ${{ inputs.advanced_settings.repository_branch }}
             git reset --hard origin/${{ inputs.advanced_settings.repository_branch }}
           else
-            echo "Cloning fresh repository..."
+            echo "::notice::Cloning repository to $RUNDIR (branch: ${{ inputs.advanced_settings.repository_branch }})..."
             git clone -b ${{ inputs.advanced_settings.repository_branch }} ${{ inputs.advanced_settings.repository }} "$RUNDIR"
-          fi 
+          fi
 
           cd "$RUNDIR"
           rm -f jobid SESSION_PORT job.started job.ended run.out HOSTNAME CANCEL_STREAMING
@@ -100,7 +100,7 @@ jobs:
             echo "export TIKTOKEN_RS_CACHE_DIR=/root/.cache/tiktoken_encodings" >> .run.env
           fi
 
-          echo "Environment file created"
+          echo "::notice::Environment configuration file (.run.env) created successfully"
   prepare_containers:
     needs:
       - setup
@@ -113,10 +113,11 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
+          echo "::notice::Loading Singularity/Apptainer module..."
           module load singularity || module load apptainer
-          command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "ERROR: singularity/apptainer not found"; exit 1; }
+          command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "::error title=Missing Dependency::singularity/apptainer not found after module load. Contact your cluster admin or check available modules with 'module avail singularity'."; exit 1; }
           singularity --version || apptainer --version
-          echo "Singularity/Apptainer ready"
+          echo "::notice::Singularity/Apptainer is available and ready"
       - name: Link Existing Containers
         id: link_containers
         if: ${{ inputs.container.source == 'path' }}
@@ -129,14 +130,14 @@ jobs:
           VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
 
           # Support both .sif files and sandbox directories
-          [[ -e "$VLLM_PATH" ]] && ln -sfn "$VLLM_PATH" ./vllm.sif || { echo "ERROR: vLLM container not found at $VLLM_PATH (expected .sif file or sandbox directory)"; exit 1; }
-          echo "Linked vllm.sif from $VLLM_PATH"
+          [[ -e "$VLLM_PATH" ]] && ln -sfn "$VLLM_PATH" ./vllm.sif || { echo "::error title=Container Not Found::vLLM container not found at $VLLM_PATH (expected .sif file or sandbox directory). Update the 'vLLM Container Path' input."; exit 1; }
+          echo "::notice::vLLM container linked from $VLLM_PATH"
 
           if [[ "${{ inputs.runtype }}" == "all" ]]; then
             RAG_PATH="${{ inputs.container.rag_path }}"
             RAG_PATH="${RAG_PATH/#\~/$HOME}"
-            [[ -e "$RAG_PATH" ]] && ln -sfn "$RAG_PATH" ./rag.sif || { echo "ERROR: RAG container not found at $RAG_PATH (expected .sif file or sandbox directory)"; exit 1; }
-            echo "Linked rag.sif from $RAG_PATH"
+            [[ -e "$RAG_PATH" ]] && ln -sfn "$RAG_PATH" ./rag.sif || { echo "::error title=Container Not Found::RAG container not found at $RAG_PATH (expected .sif file or sandbox directory). Update the 'RAG Container Path' input."; exit 1; }
+            echo "::notice::RAG container linked from $RAG_PATH"
           fi
   prepare_model:
     needs:
@@ -197,14 +198,14 @@ jobs:
 
           # Check if already cached AND weights are valid
           if [[ -d "$TARGET_DIR" ]] && validate_weights "$TARGET_DIR"; then
-            echo "Model already cached and validated at $TARGET_DIR"
+            echo "::notice::Model $MODEL_ID already cached and validated at $TARGET_DIR — skipping download"
           else
             # Remove incomplete cache if exists
             if [[ -d "$TARGET_DIR" ]]; then
-              echo "Cached model at $TARGET_DIR appears incomplete, removing..."
+              echo "::warning::Cached model at $TARGET_DIR appears incomplete (possible LFS pointers) — removing and re-downloading..."
               rm -rf "$TARGET_DIR"
             fi
-            echo "Cloning model $MODEL_ID to $TARGET_DIR"
+            echo "::notice::Cloning model $MODEL_ID to $TARGET_DIR (large model — this may take several minutes)..."
             
             # Ensure git-lfs is available
             if ! git lfs version >/dev/null 2>&1; then
@@ -212,14 +213,14 @@ jobs:
               mkdir -p $HOME/.local
               cd /tmp
               LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
-              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
+              [[ -z "$LFS_URL" ]] && { echo "::error title=Setup Failed::Could not find git-lfs download URL from GitHub API. Check network connectivity."; exit 1; }
               wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
               tar -xzf git-lfs-linux-amd64.tar.gz
               ./git-lfs-*/install.sh --local
               rm -rf git-lfs-*
               export PATH="$HOME/.local/bin:$PATH"
               cd ${{ inputs.advanced_settings.rundir }}
-              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
+              git lfs version >/dev/null 2>&1 || { echo "::error title=Setup Failed::Failed to install git-lfs locally. Check write permissions to $HOME/.local/bin."; exit 1; }
             fi
 
             git lfs install
@@ -237,17 +238,17 @@ jobs:
             # Verify model weights exist (not just LFS pointers)
             if [[ -f "$TARGET_DIR/model.safetensors" ]]; then
               actual_size=$(stat -c%s "$TARGET_DIR/model.safetensors" 2>/dev/null || stat -f%z "$TARGET_DIR/model.safetensors" 2>/dev/null)
-              [[ $actual_size -lt 1000000 ]] && { echo "ERROR: model.safetensors appears to be an LFS pointer, not actual weights"; exit 1; }
+              [[ $actual_size -lt 1000000 ]] && { echo "::error title=Incomplete Download::model.safetensors appears to be an LFS pointer (${actual_size} bytes) rather than actual weights. The LFS fetch may have failed or been interrupted."; exit 1; }
             elif ls "$TARGET_DIR"/model*.safetensors 1>/dev/null 2>&1; then
               # Multiple sharded safetensors files
               for f in "$TARGET_DIR"/model*.safetensors; do
                 actual_size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
-                [[ $actual_size -lt 1000000 ]] && { echo "ERROR: $f appears to be an LFS pointer, not actual weights"; exit 1; }
+                [[ $actual_size -lt 1000000 ]] && { echo "::error title=Incomplete Download::$f appears to be an LFS pointer (${actual_size} bytes) rather than actual weights. The LFS fetch may have failed."; exit 1; }
                 break  # Just check the first one
               done
             fi
             
-            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Model clone incomplete - missing config.json"; exit 1; }
+            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "::error title=Incomplete Clone::Model clone is incomplete — config.json is missing from $TARGET_DIR. Try re-running the workflow."; exit 1; }
           fi
 
           # Update environment file
@@ -258,7 +259,7 @@ jobs:
           EOF
 
           echo "model_path=$TARGET_DIR" >> $OUTPUTS
-          echo "Model ready at $TARGET_DIR"
+          echo "::notice::Model $MODEL_ID is ready at $TARGET_DIR"
   prepare_embedding_model:
     needs:
       - setup
@@ -315,14 +316,14 @@ jobs:
 
           # Check if already cached AND valid
           if [[ -d "$TARGET_DIR" ]] && validate_embedding "$TARGET_DIR"; then
-            echo "Embedding model already cached and validated at $TARGET_DIR"
+            echo "::notice::Embedding model $MODEL_ID already cached and validated at $TARGET_DIR — skipping download"
           else
             # Remove incomplete cache if exists
             if [[ -d "$TARGET_DIR" ]]; then
-              echo "Cached embedding model at $TARGET_DIR appears incomplete, removing..."
+              echo "::warning::Cached embedding model at $TARGET_DIR appears incomplete — removing and re-downloading..."
               rm -rf "$TARGET_DIR"
             fi
-            echo "Cloning embedding model $MODEL_ID to $TARGET_DIR"
+            echo "::notice::Cloning embedding model $MODEL_ID to $TARGET_DIR..."
 
             # Ensure git-lfs is available
             if ! git lfs version >/dev/null 2>&1; then
@@ -330,14 +331,14 @@ jobs:
               mkdir -p $HOME/.local
               cd /tmp
               LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
-              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
+              [[ -z "$LFS_URL" ]] && { echo "::error title=Setup Failed::Could not find git-lfs download URL from GitHub API. Check network connectivity."; exit 1; }
               wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
               tar -xzf git-lfs-linux-amd64.tar.gz
               ./git-lfs-*/install.sh --local
               rm -rf git-lfs-*
               export PATH="$HOME/.local/bin:$PATH"
               cd ${{ inputs.advanced_settings.rundir }}
-              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
+              git lfs version >/dev/null 2>&1 || { echo "::error title=Setup Failed::Failed to install git-lfs locally. Check write permissions to $HOME/.local/bin."; exit 1; }
             fi
 
             git lfs install
@@ -352,7 +353,7 @@ jobs:
             git lfs pull
             cd "$RUNDIR"
 
-            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "ERROR: Embedding model download incomplete - missing config.json"; exit 1; }
+            [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "::error title=Incomplete Download::Embedding model download is incomplete — config.json missing from $TARGET_DIR. Try re-running the workflow."; exit 1; }
           fi
 
           # Update environment file
@@ -363,7 +364,7 @@ jobs:
           EOF
 
           echo "embedding_model_path=$TARGET_DIR" >> $OUTPUTS
-          echo "Embedding model ready at $TARGET_DIR"
+          echo "::notice::Embedding model $MODEL_ID is ready at $TARGET_DIR"
   prepare_tiktoken:
     needs:
       - setup
@@ -379,24 +380,27 @@ jobs:
           cd ${{ inputs.advanced_settings.rundir }}
           mkdir -p cache/tiktoken_encodings
 
-          # Method 2: If wget failed or files are empty, copy from shared directory
+          # Copy tiktoken encodings from shared cluster directory
           if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]] || [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
+            echo "::notice::Copying tiktoken encodings from shared directory /public/codelab/models/tiktoken_encodings/..."
             cp /public/codelab/models/tiktoken_encodings/cl100k_base.tiktoken cache/tiktoken_encodings
             cp /public/codelab/models/tiktoken_encodings/o200k_base.tiktoken cache/tiktoken_encodings
+          else
+            echo "::notice::Tiktoken encodings already present — skipping copy"
           fi
 
           # Final verification
           if [[ ! -s cache/tiktoken_encodings/o200k_base.tiktoken ]]; then
-            echo "ERROR: o200k_base.tiktoken download failed or file is empty"
+            echo "::error title=Copy Failed::o200k_base.tiktoken is missing or empty. Verify the shared directory /public/codelab/models/tiktoken_encodings/ exists and is accessible. You can disable 'Download Tiktoken Encodings' if not needed."
             exit 1
           fi
           if [[ ! -s cache/tiktoken_encodings/cl100k_base.tiktoken ]]; then
-            echo "ERROR: cl100k_base.tiktoken download failed or file is empty"
+            echo "::error title=Copy Failed::cl100k_base.tiktoken is missing or empty. Verify the shared directory /public/codelab/models/tiktoken_encodings/ exists and is accessible. You can disable 'Download Tiktoken Encodings' if not needed."
             exit 1
           fi
 
           ls -la cache/tiktoken_encodings/
-          echo "Tiktoken encodings downloaded and verified"
+          echo "::notice::Tiktoken encodings (o200k_base, cl100k_base) are ready"
   session_runner:
     working-directory: ${{ inputs.advanced_settings.rundir }}
     needs:
