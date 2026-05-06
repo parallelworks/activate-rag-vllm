@@ -1061,6 +1061,13 @@ jobs:
             default: 1
             tooltip: "--nodes=value slurm directive"
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+          gpus:
+            label: Number of GPUs
+            type: number
+            default: 0
+            tooltip: '--gres=gpu:value slurm directive'
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+            hidden: ${{ .ignore }}
 
           time:
             label: Walltime
@@ -1417,6 +1424,39 @@ jobs:
 # CONFIGURATIONS
 # ==============================================================================
 configurations:
+  Carpenter:
+    inputs:
+      resource: pw://avidalto/carpentererdc
+      runtype: vllm
+      submit_to_scheduler: true
+      runmode: singularity
+      model:
+        source: cached_model
+        hf_token: ${{ org.HF_TOKEN }}
+      pbs:
+        scheduler_directives: |
+          #PBS -q HIE
+          #PBS -l select=1:ncpus=128:mpiprocs=1:ngpus=1
+          #PBS -l walltime=01:00:00
+          #PBS -V
+      vllm:
+        dtype: bfloat16
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+        gpu_memory: "0.90"
+        max_model_len: "auto"
+        num_gpus: "1"
+      rag:
+        embedding_model_cache_dir: "${WORKDIR}"
+        embedding_model_id: sentence-transformers/all-MiniLM-L6-v2
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+      container:
+        bucket: pw://mshaxted/codeassist
+        source: pull
+      advanced_settings:
+        tiktoken_encodings: true
+        vllm_attention_backend: TRITON_ATTN
+
   Wheat:
     inputs:
       runtype: vllm
@@ -1426,7 +1466,6 @@ configurations:
         source: cached_model
         hf_token: ${{ org.HF_TOKEN }}
       pbs:
-        account: HPCMO49636PRW
         scheduler_directives: |
           #PBS -q HIE
           #PBS -l select=1:ncpus=92:mpiprocs=1:ngpus=1
@@ -1449,3 +1488,4 @@ configurations:
       advanced_settings:
         tiktoken_encodings: true
         vllm_attention_backend: TRITON_ATTN
+
