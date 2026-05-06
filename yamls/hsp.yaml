@@ -89,14 +89,14 @@ jobs:
 
           DEFAULT_CACHE_DIR=${WORKDIR}
 
-          if [ -d "${GLOBAL}/hsp" ]; then
-            DEFAULT_CACHE_DIR=${GLOBAL}/hsp/models
-          elif [ -d "${PROJECTS_HOME}/hsp" ]; then
+          if [ -d "${PROJECTS_HOME}/hsp" ]; then
             DEFAULT_CACHE_DIR=${PROJECTS_HOME}/hsp/models
           fi
 
-          mkdir -p "${DEFAULT_CACHE_DIR}"
-          chmod 755 "${DEFAULT_CACHE_DIR}"
+          if [ ! -d "${DEFAULT_CACHE_DIR}" ]; then
+            mkdir -p "${DEFAULT_CACHE_DIR}"
+            chmod 1777 "${DEFAULT_CACHE_DIR}"
+          fi
 
           if [ -z "${MODEL_CACHE_DIR}" ]; then
             MODEL_CACHE_DIR=${DEFAULT_CACHE_DIR}
@@ -123,8 +123,6 @@ jobs:
 
           if [ -d "${PROJECTS_HOME}/hsp" ]; then
             DEFAULT_SINGULARITY_DIR=${PROJECTS_HOME}/hsp/containers
-          elif [ -d "${GLOBAL}/hsp" ]; then
-            DEFAULT_SINGULARITY_DIR=${GLOBAL}/hsp/containers
           fi
 
           mkdir -p "${DEFAULT_SINGULARITY_DIR}"
@@ -1003,7 +1001,7 @@ jobs:
             type: string
             label: Model Cache Directory
             optional: true
-            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space. If not specified, defaults to $GLOBAL/hsp/models, then $PROJECTS_HOME/hsp/models, then $WORKDIR.
+            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space. If not specified, defaults to $PROJECTS_HOME/hsp/models (if $PROJECTS_HOME/hsp exists), then $WORKDIR.
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
 
@@ -1255,7 +1253,7 @@ jobs:
             label: Embedding Model Cache Directory
             type: string
             optional: true
-            tooltip: Directory to store the embedding model (HuggingFace or bucket). If not specified, defaults to $GLOBAL/hsp/models, then $PROJECTS_HOME/hsp/models, then $WORKDIR.
+            tooltip: Directory to store the embedding model (HuggingFace or bucket). If not specified, defaults to $PROJECTS_HOME/hsp/models (if $PROJECTS_HOME/hsp exists), then $WORKDIR.
             hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
 
@@ -1327,7 +1325,7 @@ jobs:
             label: vLLM Container Path
             type: string
             optional: true
-            tooltip: Path to vllm.sif container (use existing or build destination). If not specified, defaults to $PROJECTS_HOME/hsp/containers/vllm.sif, then $GLOBAL/hsp/containers/vllm.sif, then ${RUNDIR}/vllm.sif.
+            tooltip: Path to vllm.sif container (use existing or build destination). If not specified, defaults to $PROJECTS_HOME/hsp/containers/vllm.sif (if $PROJECTS_HOME/hsp exists), then ${RUNDIR}/vllm.sif.
             hidden: ${{ inputs.container.source == 'pull' }}
             ignore: ${{ inputs.container.source == 'pull' }}
 
@@ -1335,7 +1333,7 @@ jobs:
             label: RAG Container Path
             type: string
             optional: true
-            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode). If not specified, defaults to $PROJECTS_HOME/hsp/containers/rag.sif, then $GLOBAL/hsp/containers/rag.sif, then ${RUNDIR}/rag.sif.
+            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode). If not specified, defaults to $PROJECTS_HOME/hsp/containers/rag.sif (if $PROJECTS_HOME/hsp exists), then ${RUNDIR}/rag.sif.
             hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
             ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
 
