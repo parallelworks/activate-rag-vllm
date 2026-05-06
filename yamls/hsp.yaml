@@ -1027,13 +1027,11 @@ jobs:
             type: slurm-accounts
             resource: ${{ inputs.resource }}
             tooltip: SLURM account for job submission (--account)
-            optional: true
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
           partition:
             type: slurm-partitions
             label: Partition
-            optional: true
             resource: ${{ inputs.resource }}
             tooltip: Partition for job submission (--partition)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
@@ -1043,7 +1041,6 @@ jobs:
             type: slurm-qos
             resource: ${{ inputs.resource }}
             tooltip: SLURM QoS setting (--qos)
-            optional: true
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
           cpus_per_task:
@@ -1103,7 +1100,6 @@ jobs:
           account:
             label: Account
             type: string
-            optional: true
             tooltip: PBS account for job submission (-A)
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
 
@@ -1111,7 +1107,6 @@ jobs:
             label: Additional Directives
             type: editor
             tooltip: Additional PBS directives (include #PBS prefix)
-            optional: true
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
 
       runmode:
