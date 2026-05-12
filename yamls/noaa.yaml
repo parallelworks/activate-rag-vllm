@@ -640,7 +640,7 @@ jobs:
     ssh:
         remoteHost: ${{ inputs.resource.ip }}
     steps:
-      - uses: marketplace/session_runner/v1.3
+      - uses: marketplace/session_runner/v1.4
         early-cancel: any-job-failed
         with:
           session: ${{ sessions.session }}
@@ -648,7 +648,7 @@ jobs:
           cluster:
             scheduler: ${{ inputs.scheduler }}
             slurm:
-              is_disabled: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false  }}
+              is_enabled: ${{ inputs.slurm.is_enabled }}
               account: ${{ inputs.slurm.account }}
               partition: ${{ inputs.slurm.partition }}
               qos: ${{ inputs.slurm.qos }}
@@ -660,7 +660,7 @@ jobs:
                 ${{ inputs.slurm.scheduler_directives }}
               time: ${{ inputs.slurm.time }}
             pbs:
-              is_disabled: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
+              is_enabled: ${{ inputs.pbs.is_enabled }}
               scheduler_directives: |
                 #SBATCH --gres:gpu:${{ inputs.vllm.num_gpus }}
                 ${{ inputs.pbs.scheduler_directives }}
@@ -784,11 +784,11 @@ jobs:
         hidden: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
         ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
         items:
-          is_disabled:
+          is_enabled:
             type: boolean
             hidden: true
-            default: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
-            label: Is SLURM disabled?
+            default: true
+            label: Is SLURM enabled? Yes, unless the slurm section is hidden and ignored
           account:
             label: SLURM account
             type: slurm-accounts
@@ -839,11 +839,11 @@ jobs:
         hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
         ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
         items:
-          is_disabled:
+          is_enabled:
             type: boolean
             hidden: true
-            default: ${{ inputs.resource.schedulerType != 'pbs' || inputs.scheduler == false }}
-            label: Is PBS disabled?
+            default: true
+            label: Is PBS enabled? Yes, unless the pbs section is hidden and ignored
           scheduler_directives:
             label: Scheduler Directives
             type: editor
