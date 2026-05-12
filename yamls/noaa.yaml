@@ -149,7 +149,12 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
-          command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "::error title=Missing Dependency::singularity/apptainer not found on PATH. Please load the module (e.g. 'module load singularity') or ensure it is installed on the cluster."; exit 1; }
+          if ! command -v singularity >/dev/null 2>&1 && ! command -v apptainer >/dev/null 2>&1; then
+            module load singularity 2>/dev/null || module load apptainer 2>/dev/null || {
+              echo "::error title=Missing Dependency::singularity/apptainer not found on PATH and could not be loaded via 'module load singularity' or 'module load apptainer'. Please ensure it is installed or available as a module on the cluster."
+              exit 1
+            }
+          fi
           singularity --version || apptainer --version
           echo "::notice::Singularity/Apptainer is available and ready"
 
@@ -781,8 +786,8 @@ jobs:
       slurm:
         type: group
         label: SLURM Directives
-        hidden: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
-        ignore: ${{ inputs.resource.provider == 'existing' && inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+        hidden: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
+        ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.scheduler == false }}
         items:
           is_enabled:
             type: boolean
