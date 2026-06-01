@@ -883,6 +883,7 @@ jobs:
               cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
               nodes: ${{ inputs.slurm.nodes }}
               gpus: ${{ inputs.vllm.num_gpus }}
+              node_type: ${{ inputs.slurm.node_type }}
               time: ${{ inputs.slurm.time }}
               scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
             pbs:
@@ -1064,6 +1065,48 @@ jobs:
             ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
             hidden: ${{ .ignore }}
 
+          node_type:
+            label: Node Type
+            type: dropdown
+            optional: true
+            default: ""
+            option-key: ${{ inputs.resource.name }}
+            tooltip: '--constraint=<value> slurm directive'
+            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' || (inputs.resource.name != 'blueback' && inputs.resource.name != 'narwhal' && inputs.resource.name != 'nautilus' && inputs.resource.name != 'raider' && inputs.resource.name != 'crux') }}
+            hidden: ${{ .ignore }}
+            options:
+              blueback:
+                - standard
+                - bigmem
+                - mla
+                - viz
+                - transfer
+              narwhal:
+                - standard
+                - bigmem
+                - mla
+                - smla
+                - dmla
+                - viz
+                - transfer
+              nautilus:
+                - standard
+                - highclock
+                - bigmem
+                - mla
+                - viz
+                - transfer
+              raider:
+                - standard
+                - highclock
+                - bigmem
+                - mla
+                - viz
+                - transfer
+
+              crux:
+                - AMD
+                - Intel
           time:
             label: Walltime
             type: string
@@ -1495,9 +1538,9 @@ configurations:
         gpus: 1
         is_enabled: true
         nodes: 1
+        node_type: mla
         partition: general
         qos: hie
-        scheduler_directives: "#SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems"
         time: "01:00:00"
       vllm:
         dtype: bfloat16
