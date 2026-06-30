@@ -882,7 +882,6 @@ jobs:
               qos: ${{ inputs.slurm.qos }}
               cpus_per_task: ${{ inputs.slurm.cpus_per_task }}
               nodes: ${{ inputs.slurm.nodes }}
-              gpus: ${{ inputs.vllm.num_gpus }}
               node_type: ${{ inputs.slurm.node_type }}
               time: ${{ inputs.slurm.time }}
               scheduler_directives: ${{ inputs.slurm.scheduler_directives }}
@@ -934,7 +933,6 @@ jobs:
         label: Submit to Job Scheduler
         tooltip: Enable to submit job via SLURM or PBS scheduler (detected automatically from resource). Disable for direct SSH execution.
         default: true
-        hidden: true
 
       # ========================================================================
       # Model Configuration
@@ -1012,7 +1010,8 @@ jobs:
       slurm:
         type: group
         label: SLURM Configuration
-        hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+        hidden: ${{ inputs.resource.schedulerType != 'slurm'  || inputs.submit_to_scheduler != true }}
+        ignore: ${{ inputs.resource.schedulerType != 'slurm'  || inputs.submit_to_scheduler != true }}
         collapsed: true
         items:
           is_enabled:
@@ -1026,21 +1025,22 @@ jobs:
             type: slurm-accounts
             resource: ${{ inputs.resource }}
             tooltip: SLURM account for job submission (--account)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+            ignore: ${{ 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
 
           partition:
             type: slurm-partitions
             label: Partition
             resource: ${{ inputs.resource }}
             tooltip: Partition for job submission (--partition)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
           qos:
             label: Quality of Service (QoS)
             type: slurm-qos
             resource: ${{ inputs.resource }}
             tooltip: SLURM QoS setting (--qos)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+            ignore: ${{ 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
 
           cpus_per_task:
             type: number
@@ -1049,20 +1049,15 @@ jobs:
             max: 256
             default: 1
             tooltip: Number of CPUs for the job (--cpus-per-task)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+            ignore: ${{ 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
 
           nodes:
             label: Number of nodes
             type: number
             default: 1
             tooltip: "--nodes=value slurm directive"
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
-          gpus:
-            label: Number of GPUs
-            type: number
-            default: 0
-            tooltip: '--gres=gpu:value slurm directive'
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
+            ignore: ${{ 'existing' != inputs.resource.provider }}
             hidden: ${{ .ignore }}
 
           node_type:
@@ -1072,7 +1067,7 @@ jobs:
             default: ""
             option-key: ${{ inputs.resource.ip }}
             tooltip: '--constraint=<value> slurm directive'
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' || (inputs.resource.ip != 'blueback.navydsrc.hpc.mil' && inputs.resource.ip != 'narwhal.navydsrc.hpc.mil' && inputs.resource.ip != 'nautilus.navydsrc.hpc.mil' && inputs.resource.ip != 'raider.afrl.hpc.mil' && inputs.resource.ip != 'crux.mhpcc.hpc.mil') }}
+            ignore: ${{ inputs.resource.ip != 'blueback.navydsrc.hpc.mil' && inputs.resource.ip != 'narwhal.navydsrc.hpc.mil' && inputs.resource.ip != 'nautilus.navydsrc.hpc.mil' && inputs.resource.ip != 'raider.afrl.hpc.mil' && inputs.resource.ip != 'crux.mhpcc.hpc.mil' }}
             hidden: ${{ .ignore }}
             options:
               blueback.navydsrc.hpc.mil:
@@ -1113,7 +1108,6 @@ jobs:
             default: 01:00:00
             prefillDefault: true
             tooltip: Maximum job duration, e.g., 01:00:00 (--time)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
           scheduler_directives:
             type: editor
@@ -1121,7 +1115,6 @@ jobs:
             optional: true
             tooltip: Additional SLURM directives (include #SBATCH prefix)
             default: "##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems"
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'slurm' }}
 
       # ========================================================================
       # PBS Configuration
@@ -1129,7 +1122,8 @@ jobs:
       pbs:
         type: group
         label: PBS Configuration
-        hidden: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+        hidden: ${{ inputs.resource.schedulerType != 'pbs'  || inputs.submit_to_scheduler != true }}
+        ignore: ${{ inputs.resource.schedulerType != 'pbs'  || inputs.submit_to_scheduler != true }}
         collapsed: true
         items:
           is_enabled:
@@ -1142,13 +1136,13 @@ jobs:
             label: Account
             type: string
             tooltip: PBS account for job submission (-A)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
+            ignore: ${{ 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
 
           scheduler_directives:
             label: Additional Directives
             type: editor
             tooltip: Additional PBS directives (include #PBS prefix)
-            ignore: ${{ inputs.submit_to_scheduler != true || inputs.resource.schedulerType != 'pbs' }}
 
       runmode:
         label: Container Type
@@ -1502,7 +1496,6 @@ configurations:
         hf_token: ${{ org.HF_TOKEN }}
       slurm:
         cpus_per_task: 1
-        gpus: 1
         is_enabled: true
         nodes: 1
         partition: AIML
@@ -1535,7 +1528,6 @@ configurations:
         hf_token: ${{ org.HF_TOKEN }}
       slurm:
         cpus_per_task: 1
-        gpus: 1
         is_enabled: true
         nodes: 1
         node_type: mla
