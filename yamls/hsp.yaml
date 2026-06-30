@@ -20,7 +20,7 @@
 #   4. Model Configuration         - HuggingFace or local model paths
 #   5. vLLM Settings               - GPU count, memory, context length, dtype
 #   6. RAG Settings                - Documents directory, system prompt
-#   7. Container Options           - Container source (lfs, path, pull, build)
+#   7. Container Options           - vLLM/RAG sandbox images (GitHub Container Registry)
 #   8. Advanced Settings           - Ports, API keys, repository branch
 #
 # Usage:
@@ -87,11 +87,10 @@ jobs:
           MODEL_CACHE_DIR=${{ inputs.model.cache_dir }}
           EMBEDDING_MODEL_CACHE_DIR=${{ inputs.rag.embedding_model_cache_dir }}
 
-          DEFAULT_CACHE_DIR=${WORKDIR}
-
-          if [ -d "${PROJECTS_HOME}/hsp" ]; then
-            DEFAULT_CACHE_DIR=${PROJECTS_HOME}/hsp/models
-          fi
+          # Model cache defaults to $PROJECTS_HOME/hsp/models; $PROJECTS_HOME falls back to
+          # $HOME/pw when unset (e.g. cloud nodes) -> $HOME/pw/hsp/models.
+          PROJECTS_HOME="${PROJECTS_HOME:-$HOME/pw}"
+          DEFAULT_CACHE_DIR=${PROJECTS_HOME}/hsp/models
 
           if [ ! -d "${DEFAULT_CACHE_DIR}" ]; then
             mkdir -p "${DEFAULT_CACHE_DIR}"
@@ -114,26 +113,21 @@ jobs:
         run: |
           set -x
           
-          VLLM_PATH="${{ inputs.container.vllm_path }}"
-          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
-          RAG_PATH="${{ inputs.container.rag_path }}"
-          RAG_PATH="${RAG_PATH/#\~/$HOME}"
-
-          DEFAULT_SINGULARITY_DIR="${{ needs.setup.outputs.rundir }}"
-
-          if [ -d "${PROJECTS_HOME}/hsp" ]; then
-            DEFAULT_SINGULARITY_DIR=${PROJECTS_HOME}/hsp/containers
-          fi
+          PROJECTS_HOME="${PROJECTS_HOME:-$HOME/pw}"
+          DEFAULT_SINGULARITY_DIR=${PROJECTS_HOME}/hsp/containers
 
           mkdir -p "${DEFAULT_SINGULARITY_DIR}"
           chmod 755 "${DEFAULT_SINGULARITY_DIR}"
 
-          if [ -z "${VLLM_PATH}" ]; then
+          # Container format depends on the resource: existing/HPC clusters use a
+          # SquashFS .sif (reliable on parallel filesystems); cloud clusters use a
+          # sandbox directory. The matching download_*_container job pulls it from ghcr.
+          if [[ "${{ inputs.resource.provider }}" == "existing" ]]; then
             VLLM_PATH=${DEFAULT_SINGULARITY_DIR}/vllm.sif
-          fi
-
-          if [ -z "${RAG_PATH}" ]; then
             RAG_PATH=${DEFAULT_SINGULARITY_DIR}/rag.sif
+          else
+            VLLM_PATH=${DEFAULT_SINGULARITY_DIR}/vllm_sandbox
+            RAG_PATH=${DEFAULT_SINGULARITY_DIR}/rag_sandbox
           fi
 
           echo "::notice::Container paths — vLLM: ${VLLM_PATH} | RAG: ${RAG_PATH}"
@@ -206,10 +200,197 @@ jobs:
 
 
   # ============================================================================
+  # Download Containers from the GitHub Container Registry (ghcr) via oras
+  # ============================================================================
+  # Containers are pulled from ghcr with oras into $PROJECTS_HOME/hsp/containers.
+  # Existing/HPC clusters (parallel filesystems where sandbox-dir reads are
+  # unreliable) use a SquashFS .sif (single file, reliable reads); cloud clusters
+  # use a sandbox directory. The matching pair runs based on inputs.resource.provider,
+  # and each pull is skipped when a valid container is already present. Both formats
+  # are consumed as-is by start_service.sh (VLLM_CONTAINER_PATH / RAG_CONTAINER_PATH).
+  download_vllm_container:
+    needs: [setup]
+    if: ${{ inputs.runmode == 'singularity' && 'existing' != inputs.resource.provider }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Checkout oras
+        uses: parallelworks/checkout
+        with:
+          repo: https://github.com/parallelworks/interactive_session.git
+          branch: main
+          sparse_checkout:
+            - tools/oras
+      - name: Download vLLM Sandbox from GitHub Container Registry
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          IMAGE="${{ inputs.container.vllm_image_sandbox }}"
+          if [[ -d "$VLLM_PATH/.singularity.d" ]]; then
+            echo "::notice::vLLM sandbox already present at $VLLM_PATH — skipping download"
+            exit 0
+          fi
+          rm -rf "$VLLM_PATH"   # clear any stale/invalid container at the target path
+          DEST_DIR="$(dirname "$VLLM_PATH")"
+          mkdir -p "$DEST_DIR"
+          ORAS="${PW_PARENT_JOB_DIR}/tools/oras/oras"
+          chmod +x "$ORAS" 2>/dev/null || true
+          TMP="$(mktemp -d "${DEST_DIR}/.vllm-dl.XXXXXX")"
+          echo "::notice::Pulling vLLM sandbox from ${IMAGE} (large file — this may take several minutes)..."
+          if ! "$ORAS" pull "$IMAGE" -o "$TMP"; then
+            echo "::error title=Download Failed::oras pull failed for ${IMAGE}. Verify the package exists and is public, and that the node can reach the registry."
+            rm -rf "$TMP"; exit 1
+          fi
+          if ! tar -xzf "$TMP"/*.tgz -C "$TMP"; then
+            echo "::error title=Download Failed::Failed to extract the vLLM sandbox — check available disk space at $DEST_DIR."
+            rm -rf "$TMP"; exit 1
+          fi
+          rm -f "$TMP"/*.tgz
+          SRC="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          [[ -d "$SRC" ]] || { echo "::error title=Download Failed::No sandbox directory found after extracting the vLLM package."; rm -rf "$TMP"; exit 1; }
+          mv "$SRC" "$VLLM_PATH"
+          rm -rf "$TMP"
+          chmod -R a+rX "$VLLM_PATH"
+          echo "::notice::vLLM sandbox ready at $VLLM_PATH"
+
+  download_vllm_container_existing:
+    needs: [setup]
+    if: ${{ inputs.runmode == 'singularity' && 'existing' == inputs.resource.provider }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Checkout oras
+        uses: parallelworks/checkout
+        with:
+          repo: https://github.com/parallelworks/interactive_session.git
+          branch: main
+          sparse_checkout:
+            - tools/oras
+      - name: Download vLLM SIF from GitHub Container Registry
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
+          VLLM_PATH="${VLLM_PATH/#\~/$HOME}"
+          IMAGE="${{ inputs.container.vllm_image_sif }}"
+          if [[ -f "$VLLM_PATH" ]]; then
+            echo "::notice::vLLM container already present at $VLLM_PATH — skipping download"
+            exit 0
+          fi
+          rm -rf "$VLLM_PATH"   # clear any stale/invalid container at the target path
+          DEST_DIR="$(dirname "$VLLM_PATH")"
+          mkdir -p "$DEST_DIR"
+          ORAS="${PW_PARENT_JOB_DIR}/tools/oras/oras"
+          chmod +x "$ORAS" 2>/dev/null || true
+          TMP="$(mktemp -d "${DEST_DIR}/.vllm-dl.XXXXXX")"
+          echo "::notice::Pulling vLLM SIF from ${IMAGE} (large file — this may take several minutes)..."
+          if ! "$ORAS" pull "$IMAGE" -o "$TMP"; then
+            echo "::error title=Download Failed::oras pull failed for ${IMAGE}. Verify the package exists and is public, and that the node can reach the registry."
+            rm -rf "$TMP"; exit 1
+          fi
+          SRC="$(find "$TMP" -mindepth 1 -maxdepth 1 -type f -name '*.sif' | head -1)"
+          [[ -f "$SRC" ]] || { echo "::error title=Download Failed::No .sif file found after pulling the vLLM package."; rm -rf "$TMP"; exit 1; }
+          mv "$SRC" "$VLLM_PATH"
+          rm -rf "$TMP"
+          chmod -R a+rX "$VLLM_PATH"
+          echo "::notice::vLLM SIF ready at $VLLM_PATH"
+
+  download_rag_container:
+    needs: [setup, download_vllm_container]
+    if: ${{ inputs.runmode == 'singularity' && inputs.runtype == 'all' && 'existing' != inputs.resource.provider }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Checkout oras
+        uses: parallelworks/checkout
+        with:
+          repo: https://github.com/parallelworks/interactive_session.git
+          branch: main
+          sparse_checkout:
+            - tools/oras
+      - name: Download RAG Sandbox from GitHub Container Registry
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
+          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+          IMAGE="${{ inputs.container.rag_image_sandbox }}"
+          if [[ -d "$RAG_PATH/.singularity.d" ]]; then
+            echo "::notice::RAG sandbox already present at $RAG_PATH — skipping download"
+            exit 0
+          fi
+          rm -rf "$RAG_PATH"   # clear any stale/invalid container at the target path
+          DEST_DIR="$(dirname "$RAG_PATH")"
+          mkdir -p "$DEST_DIR"
+          ORAS="${PW_PARENT_JOB_DIR}/tools/oras/oras"
+          chmod +x "$ORAS" 2>/dev/null || true
+          TMP="$(mktemp -d "${DEST_DIR}/.rag-dl.XXXXXX")"
+          echo "::notice::Pulling RAG sandbox from ${IMAGE} (large file — this may take several minutes)..."
+          if ! "$ORAS" pull "$IMAGE" -o "$TMP"; then
+            echo "::error title=Download Failed::oras pull failed for ${IMAGE}. Verify the package exists and is public, and that the node can reach the registry."
+            rm -rf "$TMP"; exit 1
+          fi
+          if ! tar -xzf "$TMP"/*.tgz -C "$TMP"; then
+            echo "::error title=Download Failed::Failed to extract the RAG sandbox — check available disk space at $DEST_DIR."
+            rm -rf "$TMP"; exit 1
+          fi
+          rm -f "$TMP"/*.tgz
+          SRC="$(find "$TMP" -mindepth 1 -maxdepth 1 -type d | head -1)"
+          [[ -d "$SRC" ]] || { echo "::error title=Download Failed::No sandbox directory found after extracting the RAG package."; rm -rf "$TMP"; exit 1; }
+          mv "$SRC" "$RAG_PATH"
+          rm -rf "$TMP"
+          chmod -R a+rX "$RAG_PATH"
+          echo "::notice::RAG sandbox ready at $RAG_PATH"
+
+  download_rag_container_existing:
+    needs: [setup, download_vllm_container_existing]
+    if: ${{ inputs.runmode == 'singularity' && inputs.runtype == 'all' && 'existing' == inputs.resource.provider }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Checkout oras
+        uses: parallelworks/checkout
+        with:
+          repo: https://github.com/parallelworks/interactive_session.git
+          branch: main
+          sparse_checkout:
+            - tools/oras
+      - name: Download RAG SIF from GitHub Container Registry
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
+          RAG_PATH="${RAG_PATH/#\~/$HOME}"
+          IMAGE="${{ inputs.container.rag_image_sif }}"
+          if [[ -f "$RAG_PATH" ]]; then
+            echo "::notice::RAG container already present at $RAG_PATH — skipping download"
+            exit 0
+          fi
+          rm -rf "$RAG_PATH"   # clear any stale/invalid container at the target path
+          DEST_DIR="$(dirname "$RAG_PATH")"
+          mkdir -p "$DEST_DIR"
+          ORAS="${PW_PARENT_JOB_DIR}/tools/oras/oras"
+          chmod +x "$ORAS" 2>/dev/null || true
+          TMP="$(mktemp -d "${DEST_DIR}/.rag-dl.XXXXXX")"
+          echo "::notice::Pulling RAG SIF from ${IMAGE} (large file — this may take several minutes)..."
+          if ! "$ORAS" pull "$IMAGE" -o "$TMP"; then
+            echo "::error title=Download Failed::oras pull failed for ${IMAGE}. Verify the package exists and is public, and that the node can reach the registry."
+            rm -rf "$TMP"; exit 1
+          fi
+          SRC="$(find "$TMP" -mindepth 1 -maxdepth 1 -type f -name '*.sif' | head -1)"
+          [[ -f "$SRC" ]] || { echo "::error title=Download Failed::No .sif file found after pulling the RAG package."; rm -rf "$TMP"; exit 1; }
+          mv "$SRC" "$RAG_PATH"
+          rm -rf "$TMP"
+          chmod -R a+rX "$RAG_PATH"
+          echo "::notice::RAG SIF ready at $RAG_PATH"
+
+  # ============================================================================
   # Prepare Containers (Apptainer/Singularity)
   # ============================================================================
   prepare_containers:
-    needs: [setup]
+    needs: [setup, download_vllm_container, download_vllm_container_existing, download_rag_container, download_rag_container_existing]
     if: ${{ inputs.runmode == 'singularity' }}
     ssh:
       remoteHost: ${{ inputs.resource.ip }}
@@ -222,258 +403,6 @@ jobs:
           command -v singularity >/dev/null 2>&1 || command -v apptainer >/dev/null 2>&1 || { echo "::error title=Missing Dependency::singularity/apptainer not found on PATH. Please load the module (e.g. 'module load singularity') or ensure it is installed on the cluster."; exit 1; }
           singularity --version || apptainer --version
           echo "::notice::Singularity/Apptainer is available and ready"
-
-      - name: Pull Containers from Bucket
-        id: pull_containers
-        if: ${{ inputs.container.source == 'pull' }}
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          RUNDIR="${{ needs.setup.outputs.rundir }}"
-          cd "$RUNDIR"
-
-          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
-          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
-
-          mkdir -p "$(dirname "$VLLM_PATH")"
-          chmod 755 "$(dirname "$VLLM_PATH")"
-          if [[ ! -f "$VLLM_PATH" ]]; then
-            echo "::notice::Pulling vLLM container from ${{ inputs.container.bucket }}/vllm.sif → $VLLM_PATH (large file, this may take several minutes)..."
-            pw bucket cp "${{ inputs.container.bucket }}/vllm.sif" "$VLLM_PATH"
-            chmod 644 "$VLLM_PATH"
-          else
-            echo "::notice::vLLM container already exists at $VLLM_PATH — skipping download"
-          fi
-
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            mkdir -p "$(dirname "$RAG_PATH")"
-            chmod 755 "$(dirname "$RAG_PATH")"
-            if [[ ! -f "$RAG_PATH" ]]; then
-              echo "::notice::Pulling RAG container from ${{ inputs.container.bucket }}/rag.sif → $RAG_PATH (large file, this may take several minutes)..."
-              pw bucket cp "${{ inputs.container.bucket }}/rag.sif" "$RAG_PATH"
-              chmod 644 "$RAG_PATH"
-            else
-              echo "::notice::RAG container already exists at $RAG_PATH — skipping download"
-            fi
-          fi
-
-          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
-          [[ "${{ inputs.runtype }}" == "all" && "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
-
-          echo "::notice::Container pull complete — containers are ready in $RUNDIR"
-
-      - name: Pull Containers from LFS Repo
-        id: pull_containers_lfs
-        if: ${{ inputs.container.source == 'lfs' }}
-        early-cancel: any-job-failed
-        run: |
-          set -euo pipefail
-          RUNDIR="${{ needs.setup.outputs.rundir }}"
-          cd "$RUNDIR"
-
-          command -v git >/dev/null 2>&1 || { echo "::error title=Missing Dependency::git not found on PATH. Please ensure git is installed on the cluster."; exit 1; }
-          git lfs version >/dev/null 2>&1 || { echo "::error title=Missing Dependency::git-lfs not found. Please ensure git-lfs is installed on the cluster."; exit 1; }
-          export GIT_LFS_SKIP_SMUDGE=1
-
-          LFS_REPO="${{ inputs.container.lfs_repo }}"
-          LFS_BRANCH="${{ inputs.container.lfs_branch }}"
-          LFS_DIR=".lfs_containers"
-          REV_FILE=".lfs_containers_rev"
-
-          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
-          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
-
-          need_vllm=true
-          need_rag=false
-          [[ -f "$VLLM_PATH" ]] && need_vllm=false
-          [[ "${{ inputs.runtype }}" == "all" ]] && { [[ ! -f "$RAG_PATH" ]] && need_rag=true; }
-
-          remote_rev=$(git ls-remote "$LFS_REPO" "$LFS_BRANCH" | awk '{print $1}')
-          if [[ -z "$remote_rev" ]]; then
-            echo "::error title=LFS Error::Could not resolve branch '$LFS_BRANCH' in $LFS_REPO. Verify the LFS Repo and LFS Branch inputs."
-            exit 1
-          fi
-          stored_rev=""
-          [[ -f "$REV_FILE" ]] && stored_rev=$(cat "$REV_FILE" || true)
-
-          if [[ "$need_vllm" == "false" && "$need_rag" == "false" ]]; then
-            if [[ -n "$remote_rev" && "$remote_rev" == "$stored_rev" ]]; then
-              echo "Containers already present and match remote revision $remote_rev; skipping LFS pull."
-            else
-              echo "Containers already present; remote revision is $remote_rev (stored: $stored_rev)."
-              echo "Skipping LFS pull to avoid re-download. Remove containers to force refresh."
-            fi
-            exit 0
-          fi
-
-          if [[ -d "$LFS_DIR/.git" ]]; then
-            git -C "$LFS_DIR" fetch origin "$LFS_BRANCH"
-          else
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch "$LFS_BRANCH" "$LFS_REPO" "$LFS_DIR"
-          fi
-
-          git -C "$LFS_DIR" checkout -f "$LFS_BRANCH"
-          git -C "$LFS_DIR" reset --hard "origin/$LFS_BRANCH"
-          git -C "$LFS_DIR" lfs install --local
-
-          git -C "$LFS_DIR" sparse-checkout init --no-cone
-          patterns=("vllm/vllm.*.sif" "vllm/vllm.sif.part_*" "vllm/vllm.sif" "vllm.*.sif" "vllm.sif.part_*" "vllm.sif" "scripts/sif_parts.sh")
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            patterns+=("rag/rag.*.sif" "rag/rag.sif.part_*" "rag/rag.sif" "rag.*.sif" "rag.sif.part_*" "rag.sif")
-          fi
-          git -C "$LFS_DIR" sparse-checkout set --no-cone "${patterns[@]}"
-
-          lfs_include="vllm/vllm.*.sif,vllm/vllm.sif.part_*,vllm/vllm.sif,vllm.*.sif,vllm.sif.part_*,vllm.sif"
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            lfs_include="${lfs_include},rag/rag.*.sif,rag/rag.sif.part_*,rag/rag.sif,rag.*.sif,rag.sif.part_*,rag.sif"
-          fi
-          git -C "$LFS_DIR" config lfs.concurrenttransfers 4
-          git -C "$LFS_DIR" config lfs.transfer.maxretries 10
-          git -C "$LFS_DIR" config lfs.transfer.maxretrydelay 30
-          git -C "$LFS_DIR" config lfs.fetchinclude "$lfs_include"
-          git -C "$LFS_DIR" config lfs.fetchexclude ""
-          attempt=1
-          max_attempts=2
-          while true; do
-            echo "::notice::LFS pull attempt ${attempt}/${max_attempts} — downloading container files (large files, this may take several minutes)..."
-            if git -C "$LFS_DIR" lfs fetch; then
-              break
-            fi
-            if [[ $attempt -ge $max_attempts ]]; then
-              echo "::error title=LFS Download Failed::Container download via git-lfs failed after ${max_attempts} attempts. Check your network connection and LFS repo access."
-              exit 1
-            fi
-            sleep $((attempt * 5))
-            ((attempt++))
-          done
-          echo "Checking out LFS files..."
-          git -C "$LFS_DIR" lfs checkout
-
-          assemble_sif() {
-            local prefix=$1
-            local target=$2
-            local dir_prefix="$LFS_DIR/${prefix}"
-            local full_sub="$dir_prefix/${prefix}.sif"
-            local full_root="$LFS_DIR/${prefix}.sif"
-            mkdir -p "$(dirname "$target")"
-
-            if [[ -f "$full_sub" ]]; then
-              cp "$full_sub" "$target"
-              return 0
-            fi
-            if [[ -f "$full_root" ]]; then
-              cp "$full_root" "$target"
-              return 0
-            fi
-
-            local script="$LFS_DIR/scripts/sif_parts.sh"
-            shopt -s nullglob
-            local numeric_parts_sub=("$dir_prefix/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
-            local numeric_parts_root=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif)
-            shopt -u nullglob
-            if [[ -x "$script" ]]; then
-              if [[ ${#numeric_parts_sub[@]} -gt 0 ]]; then
-                bash "$script" join --prefix "$prefix" --in-dir "$dir_prefix" --output "$target"
-                return 0
-              fi
-              if [[ ${#numeric_parts_root[@]} -gt 0 ]]; then
-                bash "$script" join --prefix "$prefix" --in-dir "$LFS_DIR" --output "$target"
-                return 0
-              fi
-            fi
-
-            shopt -s nullglob
-            local parts=("$dir_prefix/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$dir_prefix/${prefix}.sif.part_"*)
-            if ((${#parts[@]} == 0)); then
-              parts=("$LFS_DIR/${prefix}."[0-9][0-9][0-9][0-9][0-9].sif "$LFS_DIR/${prefix}.sif.part_"*)
-            fi
-            shopt -u nullglob
-
-            if ((${#parts[@]} == 0)); then
-              echo "::error title=Assembly Error::No SIF container parts found for '${prefix}' in ${dir_prefix} or ${LFS_DIR}. The LFS repo may be missing the expected container files."
-              exit 1
-            fi
-
-            mapfile -t parts_sorted < <(printf "%s\n" "${parts[@]}" | LC_ALL=C sort)
-            cat "${parts_sorted[@]}" > "$target"
-          }
-
-          if [[ "$need_vllm" == "true" ]]; then
-            echo "::notice::Assembling vLLM container from parts → $VLLM_PATH..."
-            assemble_sif vllm "$VLLM_PATH"
-            chmod 644 "$VLLM_PATH"
-          fi
-          if [[ "$need_rag" == "true" ]]; then
-            echo "::notice::Assembling RAG container from parts → $RAG_PATH..."
-            assemble_sif rag "$RAG_PATH"
-            chmod 644 "$RAG_PATH"
-          fi
-
-          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
-          [[ "${{ inputs.runtype }}" == "all" && "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
-
-          [[ -n "$remote_rev" ]] && echo "$remote_rev" > "$REV_FILE"
-          echo "::notice::Container LFS download and assembly complete — containers are ready"
-
-      - name: Link Existing Containers
-        id: link_containers
-        if: ${{ inputs.container.source == 'path' }}
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          RUNDIR="${{ needs.setup.outputs.rundir }}"
-          cd "$RUNDIR"
-
-          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
-
-          [[ -f "$VLLM_PATH" ]] || { echo "::error title=Container Not Found::vLLM container not found at $VLLM_PATH. Check the 'vLLM Container Path' input or choose a different Container Source."; exit 1; }
-          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
-          echo "::notice::vLLM container linked from $VLLM_PATH"
-
-          if [[ "${{ inputs.runtype }}" == "all" ]]; then
-            RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
-            [[ -f "$RAG_PATH" ]] || { echo "::error title=Container Not Found::RAG container not found at $RAG_PATH. Check the 'RAG Container Path' input or choose a different Container Source."; exit 1; }
-            [[ "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
-            echo "::notice::RAG container linked from $RAG_PATH"
-          fi
-
-      - name: Build Containers from Source
-        id: build_containers
-        if: ${{ inputs.container.source == 'build' }}
-        early-cancel: any-job-failed
-        run: |
-          set -x
-          RUNDIR="${{ needs.setup.outputs.rundir }}"
-          cd "$RUNDIR"
-
-          VLLM_PATH="${{ needs.setup.outputs.VLLM_PATH }}"
-          RAG_PATH="${{ needs.setup.outputs.RAG_PATH }}"
-
-          echo "::notice::Building Apptainer containers from source (requires sudo or fakeroot) — this may take 10-30 minutes..."
-          echo "::notice::vLLM container will be built to: $VLLM_PATH"
-          echo "::notice::RAG container will be built to: $RAG_PATH"
-
-          build_container() {
-            local target=$1 def=$2
-            [[ -f "$target" ]] && { echo "::notice::Container $target already exists — skipping build"; return 0; }
-            echo "::notice::Building container $target from $def..."
-            mkdir -p "$(dirname "$target")"
-            chmod 755 "$(dirname "$target")"
-            if sudo -n true 2>/dev/null; then
-              sudo singularity build "$target" "$def"
-            else
-              singularity build --fakeroot "$target" "$def"
-            fi
-            chmod 644 "$target"
-          }
-
-          build_container "$VLLM_PATH" singularity/Singularity.vllm
-          [[ "${{ inputs.runtype }}" == "all" ]] && build_container "$RAG_PATH" singularity/Singularity.rag
-
-          [[ "$VLLM_PATH" != "$RUNDIR/vllm.sif" ]] && ln -sf "$VLLM_PATH" "$RUNDIR/vllm.sif"
-          [[ "${{ inputs.runtype }}" == "all" && "$RAG_PATH" != "$RUNDIR/rag.sif" ]] && ln -sf "$RAG_PATH" "$RUNDIR/rag.sif"
-
-          echo "::notice::Container build complete — all containers are ready"
 
   # ============================================================================
   # Prepare Model
@@ -546,15 +475,17 @@ jobs:
             if ! git lfs version >/dev/null 2>&1; then
               echo "Installing git-lfs locally..."
               mkdir -p $HOME/.local
-              cd /tmp
+              # /tmp is often mounted noexec on cloud nodes — extract/install under $HOME
+              LFS_TMP=$(mktemp -d "${HOME}/.lfs-install.XXXXXX")
+              cd "$LFS_TMP"
               LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
               [[ -z "$LFS_URL" ]] && { echo "::error title=Setup Failed::Could not find git-lfs download URL from GitHub API. Check network connectivity."; exit 1; }
               wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
               tar -xzf git-lfs-linux-amd64.tar.gz
               ./git-lfs-*/install.sh --local
-              rm -rf git-lfs-*
               export PATH="$HOME/.local/bin:$PATH"
               cd ${{ needs.setup.outputs.rundir }}
+              rm -rf "$LFS_TMP"
               git lfs version >/dev/null 2>&1 || { echo "::error title=Setup Failed::Failed to install git-lfs locally. Check write permissions to $HOME/.local/bin."; exit 1; }
             fi
 
@@ -663,6 +594,10 @@ jobs:
 
           echo "::notice::Found cached model $MODEL_ID at $MODEL_PATH"
 
+          # Ensure the model is readable (a+rX) by the container; best-effort since a
+          # pre-staged model on a shared path may be owned by another user.
+          chmod a+rX -R "$MODEL_PATH" 2>/dev/null || echo "::notice::Could not adjust permissions on $MODEL_PATH (may be owned by another user) — continuing"
+
           cat >> "$RUNDIR/.run.env" << EOF
           export MODEL_PATH=$MODEL_PATH
           export MODEL_NAME=$MODEL_PATH
@@ -696,7 +631,7 @@ jobs:
             CACHE_DIR="${{ needs.setup.outputs.MODEL_CACHE_DIR }}"
           fi
           if [[ -z "$CACHE_DIR" || "$CACHE_DIR" == "undefined" ]]; then
-            CACHE_DIR="~/pw/models"
+            CACHE_DIR="${PROJECTS_HOME:-$HOME/pw}/hsp/models"
           fi
           CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
           HF_TOKEN="${{ inputs.model.hf_token }}"
@@ -1000,7 +935,7 @@ jobs:
             type: string
             label: Model Cache Directory
             optional: true
-            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space. If not specified, defaults to $PROJECTS_HOME/hsp/models (if $PROJECTS_HOME/hsp exists), then $WORKDIR.
+            tooltip: Directory to clone model into. Model is cloned once and reused for subsequent runs. Ensure sufficient disk space. If not specified, defaults to $PROJECTS_HOME/hsp/models ($PROJECTS_HOME defaults to $HOME/pw if unset).
             hidden: ${{ inputs.model.source != 'huggingface' }}
             ignore: ${{ inputs.model.source != 'huggingface' }}
 
@@ -1290,7 +1225,7 @@ jobs:
             label: Embedding Model Cache Directory
             type: string
             optional: true
-            tooltip: Directory to store the embedding model (HuggingFace or bucket). If not specified, defaults to $PROJECTS_HOME/hsp/models (if $PROJECTS_HOME/hsp exists), then $WORKDIR.
+            tooltip: Directory to store the embedding model (HuggingFace or bucket). If not specified, defaults to $PROJECTS_HOME/hsp/models ($PROJECTS_HOME defaults to $HOME/pw if unset).
             hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
             ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
 
@@ -1318,61 +1253,41 @@ jobs:
         hidden: ${{ inputs.runmode != 'singularity' }}
         collapsed: true
         items:
-          source:
-            type: dropdown
-            label: Container Source
-            default: pull
-            tooltip: How to obtain Apptainer/Singularity containers
-            options:
-              - value: lfs
-                label: "🧬 Git LFS repo"
-              - value: path
-                label: "📂 Use existing path"
-              - value: pull
-                label: "📥 Pull from bucket (default)"
-              - value: build
-                label: "🔨 Build from source (requires sudo/fakeroot)"
-
-          lfs_repo:
-            label: LFS Repo
+          vllm_image_sif:
+            label: vLLM Container Image (.sif — existing clusters)
             type: string
-            default: https://github.com/parallelworks/singularity-containers.git
-            tooltip: Git repo containing LFS SIF parts (vllm.*.sif or vllm/vllm.*.sif; rag.*.sif or rag/rag.*.sif)
-            hidden: ${{ inputs.container.source != 'lfs' }}
-            ignore: ${{ inputs.container.source != 'lfs' }}
-
-          lfs_branch:
-            label: LFS Branch
-            type: string
-            default: main
-            tooltip: Branch to pull from the LFS repo
-            hidden: ${{ inputs.container.source != 'lfs' }}
-            ignore: ${{ inputs.container.source != 'lfs' }}
-
-          bucket:
-            label: Container Bucket
-            type: string
-            default: pw://mshaxted/codeassist
+            default: ghcr.io/parallelworks/vllm:v1.0
+            ignore: ${{ 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
             prefillDefault: true
-            tooltip: Bucket containing vllm.sif and rag.sif containers
-            hidden: ${{ inputs.container.source != 'pull' }}
-            ignore: ${{ inputs.container.source != 'pull' }}
+            tooltip: OCI reference of the vLLM SquashFS .sif, pulled on existing/HPC clusters into $PROJECTS_HOME/hsp/containers/vllm.sif.
 
-          vllm_path:
-            label: vLLM Container Path
+          vllm_image_sandbox:
+            label: vLLM Container Image (sandbox — cloud)
             type: string
-            optional: true
-            tooltip: Path to vllm.sif container (use existing or build destination). If not specified, defaults to $PROJECTS_HOME/hsp/containers/vllm.sif (if $PROJECTS_HOME/hsp exists), then ${RUNDIR}/vllm.sif.
-            hidden: ${{ inputs.container.source == 'pull' }}
-            ignore: ${{ inputs.container.source == 'pull' }}
+            default: ghcr.io/parallelworks/vllm_sandbox:v1
+            ignore: ${{ 'existing' == inputs.resource.provider }}
+            hidden: ${{ .ignore }}
+            prefillDefault: true
+            tooltip: OCI reference of the vLLM sandbox directory, pulled on cloud clusters into $PROJECTS_HOME/hsp/containers/vllm_sandbox.
 
-          rag_path:
-            label: RAG Container Path
+          rag_image_sif:
+            label: RAG Container Image (.sif — existing clusters)
             type: string
-            optional: true
-            tooltip: Path to rag.sif container (typically same directory as vllm.sif; only needed for vLLM+RAG mode). If not specified, defaults to $PROJECTS_HOME/hsp/containers/rag.sif (if $PROJECTS_HOME/hsp exists), then ${RUNDIR}/rag.sif.
-            hidden: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
-            ignore: ${{ inputs.container.source == 'pull' || inputs.runtype != 'all' }}
+            default: ghcr.io/parallelworks/rag:v1.0
+            prefillDefault: true
+            tooltip: OCI reference of the RAG SquashFS .sif (vLLM+RAG mode only), pulled on existing/HPC clusters into $PROJECTS_HOME/hsp/containers/rag.sif.
+            ignore: ${{ inputs.runtype != 'all' || 'existing' != inputs.resource.provider }}
+            hidden: ${{ .ignore }}
+
+          rag_image_sandbox:
+            label: RAG Container Image (sandbox — cloud)
+            type: string
+            default: ghcr.io/parallelworks/rag_sandbox:v1
+            prefillDefault: true
+            tooltip: OCI reference of the RAG sandbox directory (vLLM+RAG mode only), pulled on cloud clusters into $PROJECTS_HOME/hsp/containers/rag_sandbox.
+            ignore: ${{ inputs.runtype != 'all' || 'existing' == inputs.resource.provider }}
+            hidden: ${{ .ignore }}
 
       # ========================================================================
       # Advanced Settings
@@ -1479,9 +1394,6 @@ configurations:
         embedding_model_id: sentence-transformers/all-MiniLM-L6-v2
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
-      container:
-        bucket: pw://mshaxted/codeassist
-        source: pull
       advanced_settings:
         tiktoken_encodings: true
         vllm_attention_backend: TRITON_ATTN
@@ -1511,9 +1423,6 @@ configurations:
       rag:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
-      container:
-        bucket: pw://mshaxted/codeassist
-        source: pull
       advanced_settings:
         tiktoken_encodings: true
         vllm_attention_backend: TRITON_ATTN
@@ -1543,9 +1452,6 @@ configurations:
       rag:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
-      container:
-        bucket: pw://mshaxted/codeassist
-        source: pull
       advanced_settings:
         tiktoken_encodings: true
         vllm_attention_backend: TRITON_ATTN
@@ -1575,9 +1481,6 @@ configurations:
         embedding_model_id: sentence-transformers/all-MiniLM-L6-v2
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
-      container:
-        bucket: pw://mshaxted/codeassist
-        source: pull
       advanced_settings:
         tiktoken_encodings: true
         vllm_attention_backend: TRITON_ATTN
