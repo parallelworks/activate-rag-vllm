@@ -249,6 +249,24 @@ elif [ "$RUNMODE" == "singularity" ]; then
         exit 1
     fi
 
+    # Fail fast on incomplete model directories instead of letting vLLM
+    # crash with an opaque tokenizer traceback
+    if [[ ! -s "$MODEL_PATH/config.json" ]]; then
+        echo "$(date) ERROR: config.json is missing from $MODEL_PATH; the model directory is incomplete"
+        exit 1
+    fi
+    if [[ ! -s "$MODEL_PATH/tokenizer.json" && ! -s "$MODEL_PATH/tokenizer.model" && ! -s "$MODEL_PATH/vocab.json" && ! -s "$MODEL_PATH/tekken.json" ]]; then
+        echo "$(date) ERROR: No tokenizer file (tokenizer.json/tokenizer.model/vocab.json) found in $MODEL_PATH"
+        echo "$(date) Download the tokenizer assets from the model's HuggingFace repo into $MODEL_PATH"
+        exit 1
+    fi
+    for f in config.json tokenizer.json tokenizer.model vocab.json tekken.json; do
+        if [[ -f "$MODEL_PATH/$f" ]] && head -c 60 "$MODEL_PATH/$f" | grep -q "git-lfs.github.com/spec"; then
+            echo "$(date) ERROR: $MODEL_PATH/$f is a git-lfs pointer stub, not the real file; re-download it with git lfs"
+            exit 1
+        fi
+    done
+
     # Disable weight download if cache exists
     if [ -d "cache/huggingface" ]; then
         sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
