@@ -672,14 +672,19 @@ jobs:
 
             # Validate every shard against the HF manifest (size + sha256 via a
             # HEAD on the resolve URL) and re-download any corrupt ones; abort
-            # if a shard still fails after repair
+            # if a shard still fails after repair. Size checks are instant and
+            # catch truncation; hashing runs one sha256sum per core so a ~60GB
+            # model verifies at disk speed rather than single-stream CPU speed.
             verify_and_repair_shards() {
               local dir=$1
               local auth=()
               [[ -n "$HF_TOKEN" ]] && auth=(-H "Authorization: Bearer $HF_TOKEN")
+              local tmp; tmp=$(mktemp -d)
+              local f base url headers expected_size expected_sha actual_size b
+              declare -A SHARD_URL SHARD_SHA
+              local -a bad=()
               for f in "$dir"/*.safetensors; do
                 [[ -e "$f" ]] || continue
-                local base url headers expected_size expected_sha actual_size ok
                 base=$(basename "$f")
                 url="https://huggingface.co/$MODEL_ID/resolve/main/$base"
                 headers=$(curl -sI --connect-timeout 15 --max-time 60 "${auth[@]}" "$url" | tr -d '\r' || true)
@@ -689,25 +694,33 @@ jobs:
                   echo "WARNING: no manifest data for $base; skipping validation"
                   continue
                 fi
+                SHARD_URL[$base]=$url
+                SHARD_SHA[$base]=$expected_sha
                 actual_size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
-                ok=true
                 if [[ "$actual_size" != "$expected_size" ]]; then
                   echo "$base: size mismatch (have ${actual_size:-0}, want $expected_size)"
-                  ok=false
-                elif [[ ${#expected_sha} -eq 64 ]] && [[ "$(sha256sum "$f" | awk '{print $1}')" != "$expected_sha" ]]; then
-                  echo "$base: sha256 mismatch"
-                  ok=false
+                  bad+=("$base")
+                elif [[ ${#expected_sha} -eq 64 ]]; then
+                  printf '%s\n' "$dir/$base" >> "$tmp/paths"
+                  printf '%s  %s\n' "$expected_sha" "$dir/$base" >> "$tmp/expected"
                 fi
-                if [[ "$ok" == "false" ]]; then
-                  echo "Re-downloading $base..."
-                  rm -f "$f"
-                  curl -fL --retry 5 --retry-delay 5 --connect-timeout 15 -C - "${auth[@]}" -o "$f" "$url" || { echo "ERROR: failed to re-download $base"; exit 1; }
-                  if [[ ${#expected_sha} -eq 64 ]] && [[ "$(sha256sum "$f" | awk '{print $1}')" != "$expected_sha" ]]; then
-                    echo "ERROR: $base still fails sha256 after re-download; not proceeding"
-                    exit 1
-                  fi
-                  echo "$base: repaired and verified"
+              done
+              if [[ -s "$tmp/paths" ]]; then
+                xargs -d '\n' -P "$(nproc)" -n 1 sha256sum < "$tmp/paths" > "$tmp/computed"
+                while read -r b; do
+                  [[ -n "$b" ]] && { echo "$b: sha256 mismatch"; bad+=("$b"); }
+                done < <(join -j 2 <(sort -k2 "$tmp/computed") <(sort -k2 "$tmp/expected") | awk '$2 != $3 {print $1}' | xargs -r -n1 basename)
+              fi
+              rm -rf "$tmp"
+              for b in "${bad[@]}"; do
+                echo "Re-downloading $b..."
+                rm -f "$dir/$b"
+                curl -fL --retry 5 --retry-delay 5 --connect-timeout 15 -C - "${auth[@]}" -o "$dir/$b" "${SHARD_URL[$b]}" || { echo "ERROR: failed to re-download $b"; exit 1; }
+                if [[ ${#SHARD_SHA[$b]} -eq 64 ]] && [[ "$(sha256sum "$dir/$b" | awk '{print $1}')" != "${SHARD_SHA[$b]}" ]]; then
+                  echo "ERROR: $b still fails sha256 after re-download; not proceeding"
+                  exit 1
                 fi
+                echo "$b: repaired and verified"
               done
             }
             verify_and_repair_shards "$TARGET_DIR"
