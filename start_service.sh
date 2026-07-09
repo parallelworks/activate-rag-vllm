@@ -3,7 +3,15 @@ set -x
 # Note: job.started and HOSTNAME markers are injected by script_submitter v4.0
 # when inject_markers=true (default)
 touch job.started
-hostname | cut -d'.' -f1 > HOSTNAME
+# The session tunnel targets the contents of HOSTNAME. Under a scheduler the
+# service runs on a compute node, so its hostname is needed; for direct
+# execution the agent reaches the service on localhost (cloud VM hostnames
+# are not usable as tunnel targets).
+if [[ -n "${SLURM_JOB_ID:-}" || -n "${PBS_JOBID:-}" ]]; then
+    hostname | cut -d'.' -f1 > HOSTNAME
+else
+    echo localhost > HOSTNAME
+fi
 
 source .run.env > /dev/null 2>&1
 #rm .run.env > /dev/null 2>&1
