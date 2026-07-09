@@ -532,75 +532,138 @@ jobs:
               echo "Cached model at $TARGET_DIR appears incomplete, removing..."
               rm -rf "$TARGET_DIR"
             fi
-            echo "Cloning model $MODEL_ID to $TARGET_DIR"
-            
-            # Ensure git-lfs is available
-            if ! git lfs version >/dev/null 2>&1; then
-              echo "Installing git-lfs locally..."
-              mkdir -p $HOME/.local
-              cd /tmp
-              # Resolve the tag from the releases/latest redirect --
-              # api.github.com is rate-limited from shared cloud IPs
-              LFS_VER=$(curl -fsSL --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' https://github.com/git-lfs/git-lfs/releases/latest | sed -n 's|.*/tag/v||p' || true)
-              LFS_VER=${LFS_VER:-3.7.1}
-              curl -fsSL --connect-timeout 15 --max-time 300 -o git-lfs-linux-amd64.tar.gz "https://github.com/git-lfs/git-lfs/releases/download/v${LFS_VER}/git-lfs-linux-amd64-v${LFS_VER}.tar.gz" || { echo "ERROR: Could not download git-lfs"; exit 1; }
-              tar -xzf git-lfs-linux-amd64.tar.gz
-              ./git-lfs-*/install.sh --local
-              rm -rf git-lfs-*
-              export PATH="$HOME/.local/bin:$PATH"
-              cd ${{ needs.setup.outputs.rundir }}
-              git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
+            echo "Downloading model $MODEL_ID to $TARGET_DIR"
+
+            DOWNLOAD_METHOD="${{ inputs.model.download_method }}"
+
+            if [[ "$DOWNLOAD_METHOD" == "hfcli" ]]; then
+              # Set up huggingface-cli (hf_transfer backend) in a venv;
+              # fall back to git-lfs if python3/venv can't be provisioned
+              HF_VENV="$RUNDIR/.hfcli"
+              HF_BIN="$HF_VENV/bin/hf"
+              [[ -x "$HF_BIN" ]] || HF_BIN="$HF_VENV/bin/huggingface-cli"
+              if [[ ! -x "$HF_BIN" ]]; then
+                if ! python3 -m venv "$HF_VENV" 2>/dev/null; then
+                  if sudo -n true 2>/dev/null; then
+                    if command -v apt-get >/dev/null 2>&1; then
+                      sudo DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+                      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv python3-pip || true
+                    elif command -v dnf >/dev/null 2>&1; then
+                      sudo dnf install -y python3 python3-pip || true
+                    elif command -v yum >/dev/null 2>&1; then
+                      sudo yum install -y python3 python3-pip || true
+                    fi
+                  fi
+                  python3 -m venv "$HF_VENV" 2>/dev/null || true
+                fi
+                if [[ -x "$HF_VENV/bin/pip" ]]; then
+                  "$HF_VENV/bin/pip" install --quiet --upgrade "huggingface_hub[hf_transfer]" || true
+                fi
+                HF_BIN="$HF_VENV/bin/hf"
+                [[ -x "$HF_BIN" ]] || HF_BIN="$HF_VENV/bin/huggingface-cli"
+              fi
+              if [[ ! -x "$HF_BIN" ]]; then
+                echo "WARNING: could not set up huggingface-cli; falling back to git-lfs"
+                DOWNLOAD_METHOD="gitlfs"
+              fi
             fi
 
-            git lfs install
+            if [[ "$DOWNLOAD_METHOD" == "hfcli" ]]; then
+              [[ -n "$HF_TOKEN" ]] && export HF_TOKEN
+              export HF_HUB_ENABLE_HF_TRANSFER=1
+              attempt=1
+              max_attempts=3
+              while true; do
+                echo "hf download attempt ${attempt}/${max_attempts}..."
+                if "$HF_BIN" download "$MODEL_ID" --local-dir "$TARGET_DIR" \
+                    --exclude "original/*" --exclude "metal/*" --exclude "*.bin" \
+                    --exclude "*.gguf" --exclude "*.onnx" --exclude "consolidated*.pth"; then
+                  break
+                fi
+                if [[ $attempt -ge $max_attempts ]]; then
+                  echo "ERROR: hf download failed after ${max_attempts} attempts"
+                  exit 1
+                fi
+                # hf_transfer can be flaky on some networks; retry without it
+                unset HF_HUB_ENABLE_HF_TRANSFER
+                sleep $((attempt * 5))
+                ((attempt++))
+              done
 
-            # Build clone URL
-            REPO_URL="https://huggingface.co/$MODEL_ID"
-            [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
-
-            # Clone without LFS or checkout, then sparse-checkout only safetensors
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --no-checkout "$REPO_URL" "$TARGET_DIR"
-            cd "$TARGET_DIR"
-
-            # Sparse checkout: exclude alternate weight formats and duplicate
-            # checkpoint dirs (original/, metal/), keeping safetensors weights
-            # plus tokenizer/config assets
-            git sparse-checkout init --no-cone
-            git sparse-checkout set '/*' '!*.bin' '!*.gguf' '!*.onnx' '!consolidated*.pth' '!/original' '!/metal'
-            git checkout
-
-            # Configure LFS for reliability with large models
-            git lfs install --local
-            git config lfs.concurrenttransfers 4
-            git config lfs.transfer.maxretries 10
-            git config lfs.transfer.maxretrydelay 30
-
-            # Fetch all needed LFS objects (weights + tokenizer assets like
-            # gpt-oss's LFS-tracked tokenizer.json) with retry logic
-            attempt=1
-            max_attempts=3
-            while true; do
-              echo "LFS fetch attempt ${attempt}/${max_attempts}..."
-              if git lfs fetch --exclude="*.bin,*.gguf,*.onnx,consolidated*.pth,original/*,metal/*"; then
-                break
+              # Fallback: if model only ships bin weights, download those too
+              if ! ls "$TARGET_DIR"/*.safetensors 1>/dev/null 2>&1; then
+                echo "No safetensors files found, falling back to bin weights..."
+                "$HF_BIN" download "$MODEL_ID" --local-dir "$TARGET_DIR" --include "*.bin"
               fi
-              if [[ $attempt -ge $max_attempts ]]; then
-                echo "ERROR: LFS fetch failed after ${max_attempts} attempts"
-                exit 1
+            else
+              # Ensure git-lfs is available
+              if ! git lfs version >/dev/null 2>&1; then
+                echo "Installing git-lfs locally..."
+                mkdir -p $HOME/.local
+                cd /tmp
+                # Resolve the tag from the releases/latest redirect --
+                # api.github.com is rate-limited from shared cloud IPs
+                LFS_VER=$(curl -fsSL --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' https://github.com/git-lfs/git-lfs/releases/latest | sed -n 's|.*/tag/v||p' || true)
+                LFS_VER=${LFS_VER:-3.7.1}
+                curl -fsSL --connect-timeout 15 --max-time 300 -o git-lfs-linux-amd64.tar.gz "https://github.com/git-lfs/git-lfs/releases/download/v${LFS_VER}/git-lfs-linux-amd64-v${LFS_VER}.tar.gz" || { echo "ERROR: Could not download git-lfs"; exit 1; }
+                tar -xzf git-lfs-linux-amd64.tar.gz
+                ./git-lfs-*/install.sh --local
+                rm -rf git-lfs-*
+                export PATH="$HOME/.local/bin:$PATH"
+                cd ${{ needs.setup.outputs.rundir }}
+                git lfs version >/dev/null 2>&1 || { echo "ERROR: Failed to install git-lfs"; exit 1; }
               fi
-              sleep $((attempt * 5))
-              ((attempt++))
-            done
-            echo "Checking out LFS files..."
-            git lfs checkout
 
-            # Fallback: if model only ships bin weights, re-include and fetch those
-            if ! ls *.safetensors 1>/dev/null 2>&1; then
-              echo "No safetensors files found, falling back to bin weights..."
-              git sparse-checkout set '/*'
+              git lfs install
+
+              # Build clone URL
+              REPO_URL="https://huggingface.co/$MODEL_ID"
+              [[ -n "$HF_TOKEN" ]] && REPO_URL="https://user:${HF_TOKEN}@huggingface.co/$MODEL_ID"
+
+              # Clone without LFS or checkout, then sparse-checkout the needed files
+              GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --no-checkout "$REPO_URL" "$TARGET_DIR"
+              cd "$TARGET_DIR"
+
+              # Sparse checkout: exclude alternate weight formats and duplicate
+              # checkpoint dirs (original/, metal/), keeping safetensors weights
+              # plus tokenizer/config assets
+              git sparse-checkout init --no-cone
+              git sparse-checkout set '/*' '!*.bin' '!*.gguf' '!*.onnx' '!consolidated*.pth' '!/original' '!/metal'
               git checkout
-              git lfs fetch --include="*.bin"
-              git lfs checkout "*.bin"
+
+              # Configure LFS for reliability with large models
+              git lfs install --local
+              git config lfs.concurrenttransfers 4
+              git config lfs.transfer.maxretries 10
+              git config lfs.transfer.maxretrydelay 30
+
+              # Fetch all needed LFS objects (weights + tokenizer assets like
+              # gpt-oss's LFS-tracked tokenizer.json) with retry logic
+              attempt=1
+              max_attempts=3
+              while true; do
+                echo "LFS fetch attempt ${attempt}/${max_attempts}..."
+                if git lfs fetch --exclude="*.bin,*.gguf,*.onnx,consolidated*.pth,original/*,metal/*"; then
+                  break
+                fi
+                if [[ $attempt -ge $max_attempts ]]; then
+                  echo "ERROR: LFS fetch failed after ${max_attempts} attempts"
+                  exit 1
+                fi
+                sleep $((attempt * 5))
+                ((attempt++))
+              done
+              echo "Checking out LFS files..."
+              git lfs checkout
+
+              # Fallback: if model only ships bin weights, re-include and fetch those
+              if ! ls *.safetensors 1>/dev/null 2>&1; then
+                echo "No safetensors files found, falling back to bin weights..."
+                git sparse-checkout set '/*'
+                git checkout
+                git lfs fetch --include="*.bin"
+                git lfs checkout "*.bin"
+              fi
             fi
 
             cd "$RUNDIR"
@@ -901,12 +964,25 @@ jobs:
             type: dropdown
             label: Model Source
             default: huggingface
-            tooltip: Use a pre-downloaded model (local) or clone from HuggingFace using git-lfs
+            tooltip: Use a pre-downloaded model (local) or download from HuggingFace
             options:
               - value: local
                 label: "📁 Local Path (pre-staged weights)"
               - value: huggingface
-                label: "🤗 HuggingFace Clone (git-lfs)"
+                label: "🤗 HuggingFace Download"
+
+          download_method:
+            type: dropdown
+            label: Download Method
+            default: hfcli
+            tooltip: HuggingFace CLI uses parallel chunked transfers (fastest, resumes cleanly) and needs Python on the node — installed automatically when possible, with automatic fallback to git-lfs. git-lfs clones the model repo with no Python dependency.
+            options:
+              - value: hfcli
+                label: "🚀 HuggingFace CLI (hf_transfer, fastest)"
+              - value: gitlfs
+                label: "🐙 git-lfs clone"
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
           
           local_path:
             type: string
