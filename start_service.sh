@@ -267,6 +267,33 @@ elif [ "$RUNMODE" == "singularity" ]; then
         fi
     done
 
+    # Detect truncated safetensors shards (interrupted copies/downloads) by
+    # checking each file's size against its own header, like safetensors does
+    if command -v python3 >/dev/null 2>&1 && ls "$MODEL_PATH"/*.safetensors >/dev/null 2>&1; then
+        if ! python3 - "$MODEL_PATH" <<'PYEOF'
+import glob, json, os, struct, sys
+bad = False
+for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.safetensors"))):
+    try:
+        with open(p, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            header = json.loads(f.read(n))
+        end = max((v["data_offsets"][1] for k, v in header.items() if k != "__metadata__"), default=0)
+        expected = 8 + n + end
+        if os.path.getsize(p) != expected:
+            print(f"TRUNCATED: {p} (expected {expected} bytes, found {os.path.getsize(p)})")
+            bad = True
+    except Exception as e:
+        print(f"UNREADABLE: {p} ({e})")
+        bad = True
+sys.exit(1 if bad else 0)
+PYEOF
+        then
+            echo "$(date) ERROR: safetensors files in $MODEL_PATH are truncated or unreadable (listed above); re-download them"
+            exit 1
+        fi
+    fi
+
     # Disable weight download if cache exists
     if [ -d "cache/huggingface" ]; then
         sed -i 's/#export TRANSFORMERS_OFFLINE=1/export TRANSFORMERS_OFFLINE=1/' env.sh
