@@ -200,20 +200,23 @@ elif [ "$RUNMODE" == "singularity" ]; then
     cp singularity/env.sh.example env.sh
     cp singularity/Singularity.* ./
 
-    # Allocate ports for all services
-    VLLM_SERVER_PORT=$(pw agent open-port)
-    RAG_PORT=$(pw agent open-port)
-    CHROMA_PORT=$(pw agent open-port)
-    PROXY_PORT=$(pw agent open-port)
-
-    # Set SESSION_PORT based on deployment type
+    # Allocate service ports. The session runner pre-allocates ${service_port},
+    # writes it to SESSION_PORT, and points the session and its readiness poll
+    # at it before this script runs, so the user-facing service must bind to it
+    # rather than allocating its own port (matches the docker branch behavior).
     # - vLLM only: users connect directly to vLLM
     # - all (RAG): users connect to RAG proxy which forwards to vLLM
     if [ "$RUNTYPE" == "all" ]; then
-        echo "${PROXY_PORT}" > SESSION_PORT 
+        PROXY_PORT=${service_port:-$(pw agent open-port)}
+        VLLM_SERVER_PORT=$(pw agent open-port)
+        echo "${PROXY_PORT}" > SESSION_PORT
     else
-        echo "${VLLM_SERVER_PORT}" > SESSION_PORT 
+        VLLM_SERVER_PORT=${service_port:-$(pw agent open-port)}
+        PROXY_PORT=$(pw agent open-port)
+        echo "${VLLM_SERVER_PORT}" > SESSION_PORT
     fi
+    RAG_PORT=$(pw agent open-port)
+    CHROMA_PORT=$(pw agent open-port)
 
     sed -i "s/^export VLLM_SERVER_PORT=.*/export VLLM_SERVER_PORT=${VLLM_SERVER_PORT}/" env.sh
     sed -i "s/^export RAG_PORT=.*/export RAG_PORT=${RAG_PORT}/" env.sh
