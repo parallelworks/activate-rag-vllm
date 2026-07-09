@@ -668,6 +668,48 @@ jobs:
 
             cd "$RUNDIR"
 
+            # Validate every shard against the HF manifest (size + sha256 via a
+            # HEAD on the resolve URL) and re-download any corrupt ones; abort
+            # if a shard still fails after repair
+            verify_and_repair_shards() {
+              local dir=$1
+              local auth=()
+              [[ -n "$HF_TOKEN" ]] && auth=(-H "Authorization: Bearer $HF_TOKEN")
+              for f in "$dir"/*.safetensors; do
+                [[ -e "$f" ]] || continue
+                local base url headers expected_size expected_sha actual_size ok
+                base=$(basename "$f")
+                url="https://huggingface.co/$MODEL_ID/resolve/main/$base"
+                headers=$(curl -sI --connect-timeout 15 --max-time 60 "${auth[@]}" "$url" | tr -d '\r' || true)
+                expected_size=$(echo "$headers" | awk 'tolower($1)=="x-linked-size:"{s=$2} END{print s}')
+                expected_sha=$(echo "$headers" | awk 'tolower($1)=="x-linked-etag:"{gsub(/"/,"",$2); s=$2} END{print s}')
+                if [[ -z "$expected_size" ]]; then
+                  echo "WARNING: no manifest data for $base; skipping validation"
+                  continue
+                fi
+                actual_size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
+                ok=true
+                if [[ "$actual_size" != "$expected_size" ]]; then
+                  echo "$base: size mismatch (have ${actual_size:-0}, want $expected_size)"
+                  ok=false
+                elif [[ ${#expected_sha} -eq 64 ]] && [[ "$(sha256sum "$f" | awk '{print $1}')" != "$expected_sha" ]]; then
+                  echo "$base: sha256 mismatch"
+                  ok=false
+                fi
+                if [[ "$ok" == "false" ]]; then
+                  echo "Re-downloading $base..."
+                  rm -f "$f"
+                  curl -fL --retry 5 --retry-delay 5 --connect-timeout 15 -C - "${auth[@]}" -o "$f" "$url" || { echo "ERROR: failed to re-download $base"; exit 1; }
+                  if [[ ${#expected_sha} -eq 64 ]] && [[ "$(sha256sum "$f" | awk '{print $1}')" != "$expected_sha" ]]; then
+                    echo "ERROR: $base still fails sha256 after re-download; not proceeding"
+                    exit 1
+                  fi
+                  echo "$base: repaired and verified"
+                fi
+              done
+            }
+            verify_and_repair_shards "$TARGET_DIR"
+
             # Verify model weights exist (not just LFS pointers)
             if [[ -f "$TARGET_DIR/model.safetensors" ]]; then
               actual_size=$(stat -c%s "$TARGET_DIR/model.safetensors" 2>/dev/null || stat -f%z "$TARGET_DIR/model.safetensors" 2>/dev/null)
