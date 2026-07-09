@@ -229,7 +229,41 @@ jobs:
           cd ${{ needs.setup.outputs.rundir }}
 
           command -v git >/dev/null 2>&1 || { echo "ERROR: git not found"; exit 1; }
-          git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found"; exit 1; }
+
+          # Install git-lfs if missing: system package when sudo is available,
+          # otherwise a user-local install from the upstream release tarball
+          if ! git lfs version >/dev/null 2>&1; then
+            echo "git-lfs not found, attempting install..."
+            if sudo -n true 2>/dev/null; then
+              if command -v dnf >/dev/null 2>&1; then
+                sudo dnf install -y git-lfs || true
+              elif command -v yum >/dev/null 2>&1; then
+                sudo yum install -y git-lfs || true
+              elif command -v apt-get >/dev/null 2>&1; then
+                sudo DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+                sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git-lfs || true
+              fi
+            fi
+            if ! git lfs version >/dev/null 2>&1; then
+              case "$(uname -m)" in
+                x86_64) LFS_ARCH=amd64 ;;
+                aarch64) LFS_ARCH=arm64 ;;
+                *) echo "ERROR: unsupported architecture $(uname -m) for git-lfs install"; exit 1 ;;
+              esac
+              # Resolve the tag from the releases/latest redirect --
+              # api.github.com is rate-limited from shared cloud IPs
+              LFS_VER=$(curl -fsSL --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' https://github.com/git-lfs/git-lfs/releases/latest | sed -n 's|.*/tag/v||p' || true)
+              LFS_VER=${LFS_VER:-3.7.1}
+              mkdir -p "$HOME/.local"
+              tmpdir=$(mktemp -d)
+              curl -fsSL --connect-timeout 15 --max-time 300 -o "$tmpdir/git-lfs.tar.gz" "https://github.com/git-lfs/git-lfs/releases/download/v${LFS_VER}/git-lfs-linux-${LFS_ARCH}-v${LFS_VER}.tar.gz"
+              tar -xzf "$tmpdir/git-lfs.tar.gz" -C "$tmpdir"
+              "$tmpdir"/git-lfs-*/install.sh --local
+              rm -rf "$tmpdir"
+              export PATH="$HOME/.local/bin:$PATH"
+            fi
+            git lfs version >/dev/null 2>&1 || { echo "ERROR: git-lfs not found and automatic install failed"; exit 1; }
+          fi
           export GIT_LFS_SKIP_SMUDGE=1
 
           LFS_REPO="${{ inputs.container.lfs_repo }}"
@@ -505,9 +539,11 @@ jobs:
               echo "Installing git-lfs locally..."
               mkdir -p $HOME/.local
               cd /tmp
-              LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
-              [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
-              wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+              # Resolve the tag from the releases/latest redirect --
+              # api.github.com is rate-limited from shared cloud IPs
+              LFS_VER=$(curl -fsSL --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' https://github.com/git-lfs/git-lfs/releases/latest | sed -n 's|.*/tag/v||p' || true)
+              LFS_VER=${LFS_VER:-3.7.1}
+              curl -fsSL --connect-timeout 15 --max-time 300 -o git-lfs-linux-amd64.tar.gz "https://github.com/git-lfs/git-lfs/releases/download/v${LFS_VER}/git-lfs-linux-amd64-v${LFS_VER}.tar.gz" || { echo "ERROR: Could not download git-lfs"; exit 1; }
               tar -xzf git-lfs-linux-amd64.tar.gz
               ./git-lfs-*/install.sh --local
               rm -rf git-lfs-*
@@ -690,9 +726,11 @@ jobs:
                 echo "Installing git-lfs locally..."
                 mkdir -p $HOME/.local
                 cd /tmp
-                LFS_URL=$(curl -s https://api.github.com/repos/git-lfs/git-lfs/releases/latest | grep browser_download_url | grep linux-amd64 | head -1 | cut -d '"' -f 4)
-                [[ -z "$LFS_URL" ]] && { echo "ERROR: Could not find git-lfs download URL"; exit 1; }
-                wget -q "$LFS_URL" -O git-lfs-linux-amd64.tar.gz
+                # Resolve the tag from the releases/latest redirect --
+                # api.github.com is rate-limited from shared cloud IPs
+                LFS_VER=$(curl -fsSL --connect-timeout 15 --max-time 60 -o /dev/null -w '%{url_effective}' https://github.com/git-lfs/git-lfs/releases/latest | sed -n 's|.*/tag/v||p' || true)
+                LFS_VER=${LFS_VER:-3.7.1}
+                curl -fsSL --connect-timeout 15 --max-time 300 -o git-lfs-linux-amd64.tar.gz "https://github.com/git-lfs/git-lfs/releases/download/v${LFS_VER}/git-lfs-linux-amd64-v${LFS_VER}.tar.gz" || { echo "ERROR: Could not download git-lfs"; exit 1; }
                 tar -xzf git-lfs-linux-amd64.tar.gz
                 ./git-lfs-*/install.sh --local
                 rm -rf git-lfs-*
