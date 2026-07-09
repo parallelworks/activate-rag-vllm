@@ -499,9 +499,11 @@ jobs:
             GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --no-checkout "$REPO_URL" "$TARGET_DIR"
             cd "$TARGET_DIR"
 
-            # Sparse checkout: exclude bin/gguf/onnx/pth to only get safetensors weights
+            # Sparse checkout: exclude alternate weight formats and duplicate
+            # checkpoint dirs (original/, metal/), keeping safetensors weights
+            # plus tokenizer/config assets
             git sparse-checkout init --no-cone
-            git sparse-checkout set '/*' '!*.bin' '!*.gguf' '!*.onnx' '!consolidated*.pth'
+            git sparse-checkout set '/*' '!*.bin' '!*.gguf' '!*.onnx' '!consolidated*.pth' '!/original' '!/metal'
             git checkout
 
             # Configure LFS for reliability with large models
@@ -510,12 +512,13 @@ jobs:
             git config lfs.transfer.maxretries 10
             git config lfs.transfer.maxretrydelay 30
 
-            # Fetch only safetensors LFS objects with progress and retry logic
+            # Fetch all needed LFS objects (weights + tokenizer assets like
+            # gpt-oss's LFS-tracked tokenizer.json) with retry logic
             attempt=1
             max_attempts=3
             while true; do
               echo "::notice::LFS fetch attempt ${attempt}/${max_attempts} — downloading model weights (large files, this may take a while)..."
-              if git lfs fetch --include="*.safetensors"; then
+              if git lfs fetch --exclude="*.bin,*.gguf,*.onnx,consolidated*.pth,original/*,metal/*"; then
                 break
               fi
               if [[ $attempt -ge $max_attempts ]]; then
@@ -526,7 +529,7 @@ jobs:
               ((attempt++))
             done
             echo "Checking out LFS files..."
-            git lfs checkout "*.safetensors"
+            git lfs checkout
 
             # Fallback: if model only ships bin weights, re-include and fetch those
             if ! ls *.safetensors 1>/dev/null 2>&1; then
@@ -551,6 +554,13 @@ jobs:
                 break  # Just check the first one
               done
             fi
+
+            # Verify tokenizer assets are real files, not LFS pointers
+            for tf in tokenizer.json tokenizer.model vocab.json tekken.json; do
+              if [[ -f "$TARGET_DIR/$tf" ]] && head -c 60 "$TARGET_DIR/$tf" | grep -q "git-lfs.github.com/spec"; then
+                echo "::error title=Incomplete Download::$TARGET_DIR/$tf is a git-lfs pointer rather than the real file. The LFS fetch may have failed."; exit 1
+              fi
+            done
 
             [[ ! -f "$TARGET_DIR/config.json" ]] && { echo "::error title=Incomplete Clone::Model clone is incomplete — config.json is missing from $TARGET_DIR. Try re-running the workflow."; exit 1; }
 
