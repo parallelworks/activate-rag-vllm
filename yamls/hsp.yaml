@@ -801,7 +801,6 @@ jobs:
   # Session Runner
   # ============================================================================
   session_runner:
-    working-directory: ${{ needs.setup.outputs.rundir }}
     needs:
       - setup
       - prepare_containers
