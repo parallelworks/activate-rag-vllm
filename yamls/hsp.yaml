@@ -1420,9 +1420,9 @@ configurations:
         cpus_per_task: 1
         is_enabled: true
         nodes: 1
-        partition: AIML
+        partition: standard
         qos: standard
-        scheduler_directives: "##SBATCH --constraint=mla # uncomment for Navy and AFRL DSRC systems"
+        scheduler_directives: "#SBATCH --gres=gpu:h100_nvl:1"
         time: "01:00:00"
       vllm:
         dtype: bfloat16
