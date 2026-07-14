@@ -75,7 +75,7 @@ jobs:
           echo "export VLLM_EXTRA_ARGS=\"$VLLM_ARGS\"" >> .run.env
 
           # Max tokens for response generation (used by RAG proxy)
-          echo "export MAX_TOKENS=${{ inputs.vllm.max_tokens }}" >> .run.env
+          echo "export MAX_TOKENS=${{ inputs.rag.max_tokens }}" >> .run.env
 
           # Model configuration
           echo "export MODEL_SOURCE=${{ inputs.model.source }}" >> .run.env
@@ -662,22 +662,6 @@ jobs:
                 label: 64K tokens
               - value: '131072'
                 label: 128K tokens
-          max_tokens:
-            type: dropdown
-            label: Max Response Tokens
-            default: '8192'
-            tooltip: Maximum tokens to generate per response. Higher values allow longer responses but use more memory.
-            options:
-              - value: '2048'
-                label: 2K tokens
-              - value: '4096'
-                label: 4K tokens
-              - value: '8192'
-                label: 8K tokens (Recommended)
-              - value: '16384'
-                label: 16K tokens
-              - value: '32768'
-                label: 32K tokens
           dtype:
             type: dropdown
             label: Data Type
@@ -711,6 +695,22 @@ jobs:
             default: /public/codelab/docs
             type: string
             tooltip: Directory containing documents to index for RAG
+          max_tokens:
+            type: dropdown
+            label: Max Response Tokens
+            default: '8192'
+            tooltip: Maximum tokens the RAG service generates per response (sets MAX_TOKENS). Higher values allow longer responses but use more memory.
+            options:
+              - value: '2048'
+                label: 2K tokens
+              - value: '4096'
+                label: 4K tokens
+              - value: '8192'
+                label: 8K tokens (Recommended)
+              - value: '16384'
+                label: 16K tokens
+              - value: '32768'
+                label: 32K tokens
           embedding_model_source:
             label: Embedding Model Source
             type: dropdown
