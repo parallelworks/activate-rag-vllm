@@ -31,11 +31,18 @@ if [ -z "${service_parent_install_dir}" ] || [ "${service_parent_install_dir}" =
     service_parent_install_dir=${HOME}/pw/software
 fi
 service_parent_install_dir="${service_parent_install_dir/#\~/$HOME}"
-mkdir -p "${service_parent_install_dir}/containers" "${service_parent_install_dir}/tools" 2>/dev/null || true
-if [ ! -w "${service_parent_install_dir}/containers" ]; then
-    echo "::warning::${service_parent_install_dir} is not writable; using ${HOME}/pw/software"
+# Deployments with their own container layout (noaa: <downloads_dir>/singularity)
+# set containers_dir in inputs.sh
+if [ -z "${containers_dir}" ] || [ "${containers_dir}" = "undefined" ]; then
+    containers_dir="${service_parent_install_dir}/containers"
+fi
+containers_dir="${containers_dir/#\~/$HOME}"
+mkdir -p "${containers_dir}" "${service_parent_install_dir}/tools" 2>/dev/null || true
+if [ ! -w "${containers_dir}" ]; then
+    echo "::warning::${containers_dir} is not writable; using ${HOME}/pw/software"
     service_parent_install_dir=${HOME}/pw/software
-    mkdir -p "${service_parent_install_dir}/containers" "${service_parent_install_dir}/tools"
+    containers_dir=${service_parent_install_dir}/containers
+    mkdir -p "${containers_dir}" "${service_parent_install_dir}/tools"
 fi
 
 oras_bin="${service_parent_install_dir}/tools/oras/oras"
@@ -61,13 +68,13 @@ fi
 # force a re-pull after changing the container URI tag
 sif_path_for() {
     local name="${1##*/}"
-    echo "${service_parent_install_dir}/containers/${name%%:*}.sif"
+    echo "${containers_dir}/${name%%:*}.sif"
 }
 pull_sif() {
     local uri=$1 sif=$2 pull_dir pulled_sif
     [ -f "${sif}" ] && return 0
     echo "::group::SIF Download ${uri}"
-    pull_dir=$(mktemp -d -p "${service_parent_install_dir}/containers")
+    pull_dir=$(mktemp -d -p "${containers_dir}")
     if ! "${oras_bin}" pull "${uri}" -o "${pull_dir}"; then
         echo "::error title=Error::oras pull failed for ${uri}"
         exit 1
@@ -129,6 +136,10 @@ if [ "${runtype}" = "all" ]; then
         model_dir="${model_local_path/#\~/$HOME}"
     elif [ "${model_source}" = "cached_model" ]; then
         model_dir="${model_cache_dir/#\~/$HOME}/${cached_model_id##*/}"
+    elif [ -n "${hf_model_dir}" ] && [ "${hf_model_dir}" != "undefined" ]; then
+        # Deployments with their own model layout (noaa: <downloads_dir>/models/<model-id>)
+        # set hf_model_dir in inputs.sh
+        model_dir="${hf_model_dir/#\~/$HOME}"
     else
         model_dir="${model_cache_dir/#\~/$HOME}/${hf_model_id##*/}"
     fi

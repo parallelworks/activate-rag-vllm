@@ -35,6 +35,11 @@ if [ "${model_source}" = "local" ]; then
 elif [ "${model_source}" = "cached_model" ]; then
     model_dir="${model_cache_dir/#\~/$HOME}/${cached_model_id##*/}"
     served_model_name="${cached_model_id}"
+elif [ -n "${hf_model_dir}" ] && [ "${hf_model_dir}" != "undefined" ]; then
+    # Deployments with their own model layout (noaa: <downloads_dir>/models/<model-id>)
+    # set hf_model_dir in inputs.sh
+    model_dir="${hf_model_dir/#\~/$HOME}"
+    served_model_name="${hf_model_id}"
 else
     model_dir="${model_cache_dir/#\~/$HOME}/${hf_model_id##*/}"
     served_model_name="${hf_model_id}"
