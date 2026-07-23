@@ -56,9 +56,12 @@ if [ ! -x "${oras_bin}" ]; then
     echo "::endgroup::"
 fi
 
-# SIF paths are derived from the tag so changing a container URI re-pulls
+# v4-compatible names (vllm.sif, rag.sif) so pre-staged containers under
+# $PROJECTS_HOME/hsp/containers are found and reused; delete the file to
+# force a re-pull after changing the container URI tag
 sif_path_for() {
-    echo "${service_parent_install_dir}/containers/$(echo "${1##*/}" | tr ':' '-').sif"
+    local name="${1##*/}"
+    echo "${service_parent_install_dir}/containers/${name%%:*}.sif"
 }
 pull_sif() {
     local uri=$1 sif=$2 pull_dir pulled_sif
