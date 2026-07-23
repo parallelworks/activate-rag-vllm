@@ -137,7 +137,7 @@ jobs:
           validate_model() {
               [ -s "${TARGET_DIR}/config.json" ] || return 1
               local f
-              f=$(find "${TARGET_DIR}" -maxdepth 1 \( -name '*.safetensors' -o -name '*.bin' \) -size +1M 2>/dev/null | head -1)
+              f=$(find -H "${TARGET_DIR}" -maxdepth 1 \( -name '*.safetensors' -o -name '*.bin' \) -size +1M 2>/dev/null | head -1)
               [ -n "$f" ]
           }
 
