@@ -724,8 +724,8 @@ jobs:
           parent_install_dir:
             label: Parent Install Directory
             type: string
-            default: ${PROJECTS_HOME:-$HOME/pw}/hsp/software
-            tooltip: The container image and tools are installed in this directory. Ensure it has sufficient space!
+            default: ${PROJECTS_HOME:-$HOME/pw}/hsp
+            tooltip: Container images go to containers/ and tools/caches under this directory, matching the v4 layout ($PROJECTS_HOME defaults to $HOME/pw if unset). Ensure it has sufficient space!
           container_uri:
             label: vLLM Container
             type: string
