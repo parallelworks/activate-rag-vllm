@@ -75,11 +75,19 @@ jobs:
         early-cancel: any-job-failed
         run: |
           set -x
+          if [ ! -s controller_v5.sh ]; then
+              echo "::error title=Error::controller_v5.sh not found in the checkout — branch '${{ inputs.service.repository_branch }}' of ${{ inputs.service.repository }} does not contain the v5 scripts"
+              exit 1
+          fi
           cp inputs.sh controller-${PW_JOB_ID}.sh
           cat controller_v5.sh >> controller-${PW_JOB_ID}.sh
           bash controller-${PW_JOB_ID}.sh
       - name: Create Service Script
         run: |
+          if [ ! -s start_service_v5.sh ]; then
+              echo "::error title=Error::start_service_v5.sh not found in the checkout — branch '${{ inputs.service.repository_branch }}' of ${{ inputs.service.repository }} does not contain the v5 scripts"
+              exit 1
+          fi
           rm -f HOSTNAME SESSION_PORT job.ended job.started
           # This script starts the service
           cp inputs.sh start-service-${PW_JOB_ID}.sh
@@ -295,6 +303,11 @@ jobs:
             is_enabled: ${{ inputs.cluster.pbs.is_enabled }}
             account: ${{ inputs.cluster.pbs.account }}
             scheduler_directives: ${{ inputs.cluster.pbs.scheduler_directives }}
+      - name: Cancel Wait for Endpoint
+        uses: parallelworks/cancel-jobs
+        with:
+          jobs:
+            - wait_for_endpoint
 
   wait_for_endpoint:
     needs:
