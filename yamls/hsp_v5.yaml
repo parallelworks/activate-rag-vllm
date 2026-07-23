@@ -329,6 +329,16 @@ jobs:
         autoselect: true
         include-workspace: false
         tooltip: Resource to host the vLLM server
+      runtype:
+        label: Deployment Type
+        type: dropdown
+        default: vllm
+        tooltip: Deploy vLLM only or the full vLLM+RAG stack
+        options:
+          - value: vllm
+            label: vLLM Only
+          - value: all
+            label: vLLM + RAG (Chroma)
       cluster:
         hidden: ${{ inputs.resource.schedulerType == '' }}
         ignore: ${{ inputs.resource.schedulerType == '' }}
@@ -466,17 +476,6 @@ jobs:
                   Add extra PBS directives, one per line, using the #PBS prefix. For example:
                   #PBS -l mem=16gb
                   #PBS -l ngpus=1
-
-      runtype:
-        label: Deployment Type
-        type: dropdown
-        default: vllm
-        tooltip: Deploy vLLM only or the full vLLM+RAG stack
-        options:
-          - value: vllm
-            label: vLLM Only
-          - value: all
-            label: vLLM + RAG (Chroma)
 
       model:
         type: group
