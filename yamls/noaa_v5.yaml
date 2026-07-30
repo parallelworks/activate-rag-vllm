@@ -1,0 +1,700 @@
+# yaml-language-server: $schema=https://activate.parallel.works/workflow.schema.json
+---
+# vLLM inference server exposed as a pw endpoint (v5), with an optional RAG
+# stack (ChromaDB + indexer + OpenAI-compatible proxy).
+# NOAA (noaa.parallel.works) deployment variant.
+#
+# SIF images are pulled once from ghcr.io as ORAS artifacts; nodes that cannot
+# mount squashfs images get a sandbox directory unpacked from them on demand.
+# In RAG mode the repository is cloned and its start_service.sh launches the
+# stack; the endpoint targets the RAG proxy instead of vLLM directly.
+# The run completes once the endpoint registers and the service lives on;
+# tear it down with `pw endpoints delete <name>`.
+
+permissions:
+  - '*'
+
+jobs:
+  preprocessing:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Checkout
+        uses: parallelworks/checkout
+        with:
+          repo: ${{ inputs.service.repository }}
+          branch: ${{ inputs.service.repository_branch }}
+      - name: Create Inputs
+        run: |
+          set -x
+          # Write PW variables
+          env | grep '^PW_' | grep -v 'PW_API_KEY' > inputs.sh
+          # Encase values between quotes
+          sed -i 's/=\(.*\)/="\1"/' inputs.sh
+          # Write input form variables and ensure the pw agent is in the PATH
+          cat <<'EOF' >> inputs.sh
+          PATH=$HOME/pw:$PATH
+          runtype="${{ inputs.runtype }}"
+          service_parent_install_dir="${{ inputs.service.parent_install_dir }}"
+          container_uri="${{ inputs.service.container_uri }}"
+          rag_container_uri="${{ inputs.service.rag_container_uri }}"
+          rag_rundir="${{ inputs.service.rundir }}"
+          repository="${{ inputs.service.repository }}"
+          repository_branch="${{ inputs.service.repository_branch }}"
+          model_source="${{ inputs.model.source }}"
+          model_local_path="${{ inputs.model.local_path }}"
+          hf_model_id="${{ inputs.model.hf_model_id }}"
+          hf_token="${{ inputs.model.hf_token }}"
+          model_cache_dir="${{ inputs.model.cache_dir }}"
+          vllm_attention_backend="${{ inputs.vllm.attention_backend }}"
+          rag_docsdir="${{ inputs.rag.docsdir }}"
+          rag_max_tokens="${{ inputs.rag.max_tokens }}"
+          rag_embedding_source="${{ inputs.rag.embedding_model_source }}"
+          rag_embedding_id="${{ inputs.rag.embedding_model_id }}"
+          rag_embedding_path="${{ inputs.rag.embedding_model_path }}"
+          rag_embedding_cache_dir="${{ inputs.rag.embedding_model_cache_dir }}"
+          rag_systemprompt="${{ inputs.rag.systemprompt }}"
+          pw_endpoints_args="--name ${{ inputs.service.name }}-${PW_RUN_SLUG} --openai"
+          EOF
+          vllm_args="--tensor-parallel-size ${{ inputs.vllm.num_gpus }} --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }}"
+          if [ "${{ inputs.vllm.dtype }}" != "custom" ]; then
+            vllm_args="--dtype ${{ inputs.vllm.dtype }} ${vllm_args}"
+          fi
+          if [ "${{ inputs.vllm.max_model_len }}" != "auto" ]; then
+            vllm_args="${vllm_args} --max-model-len ${{ inputs.vllm.max_model_len }}"
+          fi
+          vllm_args="${vllm_args} ${{ inputs.vllm.extra_args }}"
+          echo "vllm_args=\"${vllm_args}\"" >> inputs.sh
+          # Remove empty variables
+          sed -i '/=\s*$\|=undefined\s*$/d' inputs.sh
+          sed -i '/=""/d' inputs.sh
+          # Add export to all lines
+          sed -i 's/^/export /' inputs.sh
+      - name: Set Up Install Parent Directory
+        run: |
+          source inputs.sh
+          set -x
+          # This script prepares the target host and always runs in the controller node
+          if [ -z "${service_parent_install_dir}" ] && [ -d /contrib/pw ]; then
+            echo "::notice title=Install Directory::Using Install Directory: /contrib/pw"
+            echo "service_parent_install_dir=/contrib/pw" >> inputs.sh
+          fi
+      - name: Controller Preprocessing
+        early-cancel: any-job-failed
+        run: |
+          set -x
+          if [ ! -s controller_v5.sh ]; then
+              echo "::error title=Error::controller_v5.sh not found in the checkout — branch '${{ inputs.service.repository_branch }}' of ${{ inputs.service.repository }} does not contain the v5 scripts"
+              exit 1
+          fi
+          cp inputs.sh controller-${PW_JOB_ID}.sh
+          cat controller_v5.sh >> controller-${PW_JOB_ID}.sh
+          bash controller-${PW_JOB_ID}.sh
+      - name: Create Service Script
+        run: |
+          if [ ! -s start_service_v5.sh ]; then
+              echo "::error title=Error::start_service_v5.sh not found in the checkout — branch '${{ inputs.service.repository_branch }}' of ${{ inputs.service.repository }} does not contain the v5 scripts"
+              exit 1
+          fi
+          rm -f HOSTNAME SESSION_PORT job.ended job.started
+          # This script starts the service
+          cp inputs.sh start-service-${PW_JOB_ID}.sh
+
+          # Write code common to all services
+          cat <<'EOF' >> start-service-${PW_JOB_ID}.sh
+
+          cleanup() {
+              trap - EXIT INT TERM HUP QUIT USR1 USR2 PIPE
+              echo "::notice::Cleaning up..."
+              if [ -f cancel.sh ]; then
+                  mv cancel.sh cancel.sh.submitted
+                  echo "echo Cleanup script was already executed" > cancel.sh
+                  bash cancel.sh.submitted
+              fi
+              kill -- -$$
+          }
+
+          trap cleanup EXIT INT TERM HUP QUIT USR1 USR2 PIPE
+
+          echo "::notice::Starting service"
+          EOF
+
+          cat start_service_v5.sh >> start-service-${PW_JOB_ID}.sh
+          echo "SCRIPT_PATH=${PWD}/start-service-${PW_JOB_ID}.sh" | tee -a $OUTPUTS
+          echo "SKIP_CLEANUP_PATH=${PWD}/SKIP_CLEANUP" | tee -a $OUTPUTS
+
+  prepare_model:
+    if: ${{ inputs.model.source == 'huggingface' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Download Model
+        early-cancel: any-job-failed
+        run: |
+          set -o pipefail
+          set -x
+          MODEL_ID="${{ inputs.model.hf_model_id }}"
+          HF_TOKEN="${{ inputs.model.hf_token }}"
+          CACHE_DIR="${{ inputs.model.cache_dir }}"
+          if [ -z "${CACHE_DIR}" ] || [ "${CACHE_DIR}" = "undefined" ]; then
+              CACHE_DIR=${HOME}/pw/models
+          fi
+          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
+          TARGET_DIR="${CACHE_DIR}/${MODEL_ID##*/}"
+
+          validate_model() {
+              [ -s "${TARGET_DIR}/config.json" ] || return 1
+              local f
+              f=$(find "${TARGET_DIR}" -maxdepth 1 \( -name '*.safetensors' -o -name '*.bin' \) -size +1M 2>/dev/null | head -1)
+              [ -n "$f" ]
+          }
+
+          if validate_model; then
+              echo "Model already cached at ${TARGET_DIR}"
+              exit 0
+          fi
+          # hf download is incremental: it resumes a partial download in place
+          # and only fetches files that are missing or changed
+          mkdir -p "${CACHE_DIR}"
+
+          VENV_BASE="${{ inputs.service.parent_install_dir }}"
+          if [ -z "${VENV_BASE}" ] || [ "${VENV_BASE}" = "undefined" ]; then
+              VENV_BASE=${HOME}/pw/software
+          fi
+          VENV="${VENV_BASE/#\~/$HOME}/.hfcli"
+          HF_BIN="${VENV}/bin/hf"
+          [ -x "${HF_BIN}" ] || HF_BIN="${VENV}/bin/huggingface-cli"
+          if [ ! -x "${HF_BIN}" ]; then
+              if ! python3 -m venv "${VENV}"; then
+                  echo "::error title=Error::python3 -m venv failed; install python3/python3-venv on the cluster"
+                  exit 1
+              fi
+              "${VENV}/bin/pip" install --quiet --upgrade 'huggingface_hub[hf_transfer]'
+              HF_BIN="${VENV}/bin/hf"
+              [ -x "${HF_BIN}" ] || HF_BIN="${VENV}/bin/huggingface-cli"
+          fi
+
+          if [ -n "${HF_TOKEN}" ] && [ "${HF_TOKEN}" != "undefined" ]; then
+              export HF_TOKEN
+          fi
+          export HF_HUB_ENABLE_HF_TRANSFER=1
+          for attempt in 1 2 3; do
+              if "${HF_BIN}" download "${MODEL_ID}" --local-dir "${TARGET_DIR}" \
+                  --exclude "original/*" --exclude "metal/*" --exclude "*.bin" \
+                  --exclude "*.gguf" --exclude "*.onnx" --exclude "consolidated*.pth"; then
+                  break
+              fi
+              if [ "${attempt}" = 3 ]; then
+                  echo "::error title=Error::model download failed after 3 attempts"
+                  exit 1
+              fi
+              # hf_transfer can be flaky on some networks; retry without it
+              unset HF_HUB_ENABLE_HF_TRANSFER
+              sleep $((attempt * 5))
+          done
+
+          # Some models only ship bin weights
+          if ! ls "${TARGET_DIR}"/*.safetensors >/dev/null 2>&1; then
+              "${HF_BIN}" download "${MODEL_ID}" --local-dir "${TARGET_DIR}" --include "*.bin"
+          fi
+
+          if ! validate_model; then
+              echo "::error title=Error::downloaded model at ${TARGET_DIR} is incomplete"
+              exit 1
+          fi
+          echo "Model ready at ${TARGET_DIR}"
+
+  prepare_embedding_model:
+    if: ${{ inputs.runtype == 'all' && inputs.rag.embedding_model_source != 'local' }}
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Download Embedding Model
+        early-cancel: any-job-failed
+        run: |
+          set -o pipefail
+          set -x
+          SOURCE="${{ inputs.rag.embedding_model_source }}"
+          MODEL_ID="${{ inputs.rag.embedding_model_id }}"
+          HF_TOKEN="${{ inputs.model.hf_token }}"
+          CACHE_DIR="${{ inputs.rag.embedding_model_cache_dir }}"
+          if [ -z "${CACHE_DIR}" ] || [ "${CACHE_DIR}" = "undefined" ]; then
+              CACHE_DIR=${HOME}/pw/models
+          fi
+          CACHE_DIR="${CACHE_DIR/#\~/$HOME}"
+          TARGET_DIR="${CACHE_DIR}/${MODEL_ID##*/}"
+
+          if [ -s "${TARGET_DIR}/config.json" ]; then
+              echo "Embedding model already cached at ${TARGET_DIR}"
+              exit 0
+          fi
+          mkdir -p "${CACHE_DIR}"
+
+          if [ "${SOURCE}" = "bucket" ]; then
+              BUCKET="${{ inputs.rag.embedding_model_bucket }}"
+              BUCKET="${BUCKET%/}"
+              SAFE_ID="${MODEL_ID//\//__}"
+              pw bucket cp -r "${BUCKET}/${MODEL_ID##*/}" "${CACHE_DIR}" 2>/dev/null || \
+                  pw bucket cp -r "${BUCKET}/${SAFE_ID}" "${CACHE_DIR}" || {
+                  echo "::error title=Error::failed to pull embedding model from ${BUCKET}"
+                  exit 1
+              }
+              if [ -d "${CACHE_DIR}/${SAFE_ID}" ] && [ ! -d "${TARGET_DIR}" ]; then
+                  mv "${CACHE_DIR}/${SAFE_ID}" "${TARGET_DIR}"
+              fi
+          else
+              VENV_BASE="${{ inputs.service.parent_install_dir }}"
+              if [ -z "${VENV_BASE}" ] || [ "${VENV_BASE}" = "undefined" ]; then
+                  VENV_BASE=${HOME}/pw/software
+              fi
+              VENV="${VENV_BASE/#\~/$HOME}/.hfcli"
+              HF_BIN="${VENV}/bin/hf"
+              [ -x "${HF_BIN}" ] || HF_BIN="${VENV}/bin/huggingface-cli"
+              if [ ! -x "${HF_BIN}" ]; then
+                  if ! python3 -m venv "${VENV}"; then
+                      echo "::error title=Error::python3 -m venv failed; install python3/python3-venv on the cluster"
+                      exit 1
+                  fi
+                  "${VENV}/bin/pip" install --quiet --upgrade 'huggingface_hub[hf_transfer]'
+                  HF_BIN="${VENV}/bin/hf"
+                  [ -x "${HF_BIN}" ] || HF_BIN="${VENV}/bin/huggingface-cli"
+              fi
+              if [ -n "${HF_TOKEN}" ] && [ "${HF_TOKEN}" != "undefined" ]; then
+                  export HF_TOKEN
+              fi
+              "${HF_BIN}" download "${MODEL_ID}" --local-dir "${TARGET_DIR}" || {
+                  echo "::error title=Error::embedding model download failed"
+                  exit 1
+              }
+          fi
+
+          if [ ! -s "${TARGET_DIR}/config.json" ]; then
+              echo "::error title=Error::embedding model at ${TARGET_DIR} is incomplete"
+              exit 1
+          fi
+          echo "Embedding model ready at ${TARGET_DIR}"
+
+  script_submitter:
+    needs:
+      - preprocessing
+      - prepare_model
+      - prepare_embedding_model
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Script Submitter
+        uses: github/parallelworks/interactive_session@main
+        early-cancel: any-job-failed
+        with:
+          $yaml: workflow/script_submitter/v3.6/noaa.yaml
+          resource: ${{ inputs.resource }}
+          shebang: '#!/bin/bash'
+          use_existing_script: true
+          script_path: ${{ needs.preprocessing.outputs.SCRIPT_PATH }}
+          define_cleanup_script: true
+          cleanup_script_path: ./cancel.sh
+          scheduler: ${{ inputs.cluster.scheduler }}
+          use_scheduler_agent: false
+          submit_and_exit: false
+          skip_cleanups_file: ${{ needs.preprocessing.outputs.SKIP_CLEANUP_PATH }}
+          slurm:
+            is_enabled: ${{ inputs.cluster.slurm.is_enabled }}
+            account: ${{ inputs.cluster.slurm.account }}
+            partition: ${{ inputs.cluster.slurm.partition }}
+            qos: ${{ inputs.cluster.slurm.qos }}
+            ntasks: ${{ inputs.cluster.slurm.ntasks }}
+            nodes: ${{ inputs.cluster.slurm.nodes }}
+            scheduler_directives: ${{ inputs.cluster.slurm.scheduler_directives }}
+            time: ${{ inputs.cluster.slurm.time }}
+          pbs:
+            is_enabled: ${{ inputs.cluster.pbs.is_enabled }}
+            scheduler_directives: ${{ inputs.cluster.pbs.scheduler_directives }}
+      - name: Cancel Wait for Endpoint
+        uses: parallelworks/cancel-jobs
+        with:
+          jobs:
+            - wait_for_endpoint
+
+  wait_for_endpoint:
+    needs:
+      - preprocessing
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Wait for endpoint
+        early-cancel: any-job-failed
+        run: |
+          endpoint_name="${{ inputs.service.name }}-${PW_RUN_SLUG}"
+          echo "::notice::Waiting for endpoint ${endpoint_name} to come online"
+          until pw endpoints list | grep -qw "${endpoint_name}"; do
+            echo "$(date) Endpoint ${endpoint_name} not found yet; retrying in 10 seconds"
+            sleep 10
+          done
+          echo "::notice::Endpoint ${endpoint_name} is online"
+          touch ${{ needs.preprocessing.outputs.SKIP_CLEANUP_PATH }}
+          sleep 2
+      - name: Cancel Script Submitter
+        uses: parallelworks/cancel-jobs
+        with:
+          jobs:
+            - script_submitter
+
+'on':
+  execute:
+    inputs:
+      resource:
+        type: compute-clusters
+        label: GPU Cluster
+        autoselect: true
+        include-workspace: false
+        tooltip: Resource to host the vLLM server
+      runtype:
+        label: Deployment Type
+        type: dropdown
+        default: vllm
+        tooltip: Deploy vLLM only or the full vLLM+RAG stack
+        options:
+          - value: vllm
+            label: vLLM Only
+          - value: all
+            label: vLLM + RAG (Chroma)
+      cluster:
+        hidden: ${{ inputs.resource.schedulerType == '' }}
+        ignore: ${{ inputs.resource.schedulerType == '' }}
+        type: group
+        label: Compute Cluster Settings
+        items:
+          scheduler:
+            type: boolean
+            default: true
+            label: Schedule Job?
+            tooltip: |
+              Yes → Job is submitted to the scheduler using sbatch, qsub, etc
+              No  → Job is executed in the controller or login node instead
+          slurm:
+            type: group
+            label: SLURM Directives
+            hidden: ${{ inputs.resource.schedulerType != 'slurm' || inputs.cluster.scheduler == false }}
+            ignore: ${{ inputs.resource.schedulerType != 'slurm' || inputs.cluster.scheduler == false }}
+            items:
+              is_enabled:
+                type: boolean
+                hidden: true
+                default: true
+                label: Is SLURM enabled? Yes, unless the slurm section is hidden and ignored
+              account:
+                label: SLURM account
+                type: slurm-accounts
+                resource: ${{ inputs.resource }}
+                tooltip: '--account=value slurm directive'
+                ignore: ${{ 'existing' != inputs.resource.provider }}
+                hidden: ${{ .ignore }}
+              partition:
+                type: slurm-partitions
+                label: SLURM partition
+                optional: true
+                resource: ${{ inputs.resource }}
+                tooltip: '--partition=value SLURM directive'
+              qos:
+                label: Quality of Service [QoS]
+                type: slurm-qos
+                resource: ${{ inputs.resource }}
+                tooltip: '--qos=value slurm directive'
+                ignore: ${{ 'existing' != inputs.resource.provider }}
+                hidden: ${{ .ignore }}
+              ntasks:
+                label: Number of tasks
+                type: number
+                default: 1
+                tooltip: '--ntasks=value slurm directive'
+                ignore: ${{ 'existing' != inputs.resource.provider }}
+                hidden: ${{ .ignore }}
+              nodes:
+                label: Number of nodes
+                type: number
+                default: 1
+                tooltip: '--nodes=value slurm directive'
+                ignore: ${{ 'existing' != inputs.resource.provider }}
+                hidden: ${{ .ignore }}
+              time:
+                label: Walltime
+                type: string
+                default: '04:00:00'
+                tooltip: '--time= SLURM directive to set the maximum wall-clock time limit for the job'
+              scheduler_directives:
+                type: editor
+                optional: true
+                tooltip: |
+                  Add extra SLURM directives, one per line, using the #SBATCH prefix. For example:
+                  #SBATCH --exclusive
+                  #SBATCH --gres=gpu:1
+                default: |
+                  ##SBATCH --gres=gpu:1 # uncomment for gpus on onprem systems
+          pbs:
+            type: group
+            label: PBS Directives
+            hidden: ${{ inputs.resource.schedulerType != 'pbs' || inputs.cluster.scheduler == false }}
+            ignore: ${{ inputs.resource.schedulerType != 'pbs' || inputs.cluster.scheduler == false }}
+            items:
+              is_enabled:
+                type: boolean
+                hidden: true
+                default: true
+                label: Is PBS enabled? Yes, unless the pbs section is hidden and ignored
+              scheduler_directives:
+                label: Scheduler Directives
+                type: editor
+                optional: true
+                tooltip: |
+                  Add extra PBS directives, one per line, using the #PBS prefix. For example:
+                  #PBS -l mem=16gb
+                  #PBS -l ngpus=1
+
+      model:
+        type: group
+        label: Model Configuration
+        items:
+          source:
+            type: dropdown
+            label: Model Source
+            default: huggingface
+            tooltip: Use a pre-downloaded model (local) or download from HuggingFace
+            options:
+              - value: local
+                label: "📁 Local Path (pre-staged weights)"
+              - value: huggingface
+                label: "🤗 HuggingFace Download"
+          local_path:
+            type: string
+            label: Model Path
+            placeholder: /path/to/model/weights
+            default: /models/Llama-3_3-Nemotron-Super-49B-v1_5
+            prefillDefault: true
+            tooltip: Full path to directory containing model weights
+            hidden: ${{ inputs.model.source != 'local' }}
+            ignore: ${{ inputs.model.source != 'local' }}
+          hf_model_id:
+            type: string
+            label: HuggingFace Model ID
+            placeholder: openai/gpt-oss-20b
+            default: openai/gpt-oss-20b
+            prefillDefault: true
+            tooltip: Model ID to download from HuggingFace. Default is gpt-oss-20b, a 20B MoE model compatible with the openai tool call parser.
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+          hf_token:
+            label: HuggingFace Token
+            default: ${{ org.HF_TOKEN }}
+            type: password
+            optional: true
+            tooltip: Required for gated models (Llama, etc.)
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+          cache_dir:
+            type: string
+            label: Model Cache Directory
+            default: ~/pw/models
+            prefillDefault: true
+            tooltip: Directory to download the model into. The model is downloaded once and reused for subsequent runs. Ensure sufficient disk space.
+            hidden: ${{ inputs.model.source != 'huggingface' }}
+            ignore: ${{ inputs.model.source != 'huggingface' }}
+
+      vllm:
+        type: group
+        label: vLLM Settings
+        collapsed: true
+        items:
+          num_gpus:
+            type: dropdown
+            label: Number of GPUs
+            default: "1"
+            tooltip: Number of GPUs for tensor parallelism (must match available GPUs)
+            options:
+              - value: "1"
+                label: "1 GPU"
+              - value: "2"
+                label: "2 GPUs"
+              - value: "4"
+                label: "4 GPUs"
+              - value: "8"
+                label: "8 GPUs"
+          gpu_memory:
+            type: dropdown
+            label: GPU Memory Utilization
+            default: "0.85"
+            tooltip: Fraction of GPU memory to use (lower if OOM errors occur)
+            options:
+              - value: "0.95"
+                label: "95% (Maximum)"
+              - value: "0.90"
+                label: "90%"
+              - value: "0.85"
+                label: "85% (Recommended)"
+              - value: "0.80"
+                label: "80%"
+              - value: "0.70"
+                label: "70% (Conservative)"
+          max_model_len:
+            type: dropdown
+            label: Max Context Length
+            default: "auto"
+            tooltip: Maximum sequence length. Lower values reduce memory usage.
+            options:
+              - value: "auto"
+                label: "Auto (use model default)"
+              - value: "4096"
+                label: "4K tokens"
+              - value: "8192"
+                label: "8K tokens"
+              - value: "16384"
+                label: "16K tokens"
+              - value: "32768"
+                label: "32K tokens"
+              - value: "65536"
+                label: "64K tokens"
+              - value: "131072"
+                label: "128K tokens"
+          dtype:
+            type: dropdown
+            label: Data Type
+            default: bfloat16
+            tooltip: Model precision. Select 'Custom' to specify via extra arguments.
+            options:
+              - value: bfloat16
+                label: "bfloat16 (Recommended for A100/H100)"
+              - value: float16
+                label: "float16 (Better compatibility)"
+              - value: auto
+                label: "Auto (model default)"
+              - value: custom
+                label: "Custom (specify in extra args)"
+          attention_backend:
+            type: dropdown
+            label: vLLM Attention Backend
+            default: TRITON_ATTN
+            tooltip: Attention implementation used by vLLM
+            options: [FLASH_ATTN, TRITON_ATTN, FLASHINFER, FLASHINFER_MLA, TRITON_MLA, CUTLASS_MLA, FLASHMLA, FLASHMLA_SPARSE, FLASH_ATTN_MLA, TORCH_SDPA, ROCM_ATTN, ROCM_AITER_MLA, ROCM_AITER_TRITON_MLA, ROCM_AITER_FA, PALLAS, IPEX, CPU_ATTN, NO_ATTENTION, CUSTOM]
+          extra_args:
+            type: string
+            label: Additional Arguments
+            default: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+            prefillDefault: true
+            placeholder: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+            tooltip: Additional vLLM arguments. If dtype is 'Custom', include --dtype here.
+            optional: true
+
+      rag:
+        type: group
+        label: RAG Settings
+        hidden: ${{ inputs.runtype != 'all' }}
+        collapsed: true
+        items:
+          docsdir:
+            label: Documents Directory
+            optional: true
+            default: ./docs
+            type: string
+            tooltip: Directory containing documents to index for RAG (relative paths resolve inside the run directory)
+          max_tokens:
+            type: dropdown
+            label: Max Response Tokens
+            default: "8192"
+            tooltip: Maximum tokens the RAG service generates per response. Higher values allow longer responses but use more memory.
+            options:
+              - value: "2048"
+                label: "2K tokens"
+              - value: "4096"
+                label: "4K tokens"
+              - value: "8192"
+                label: "8K tokens (Recommended)"
+              - value: "16384"
+                label: "16K tokens"
+              - value: "32768"
+                label: "32K tokens"
+          embedding_model_source:
+            label: Embedding Model Source
+            type: dropdown
+            default: huggingface
+            tooltip: How to load the embedding model for RAG
+            options:
+              - value: local
+                label: "📁 Local Path (pre-staged weights)"
+              - value: huggingface
+                label: "🤗 HuggingFace Download"
+              - value: bucket
+                label: "📥 Pull from bucket"
+          embedding_model_id:
+            label: Embedding Model ID
+            type: string
+            default: sentence-transformers/all-MiniLM-L6-v2
+            tooltip: HuggingFace model ID for embeddings (also used to resolve the bucket folder name)
+            hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
+            ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
+          embedding_model_path:
+            label: Embedding Model Path
+            type: string
+            optional: true
+            tooltip: Local path to an embedding model directory
+            hidden: ${{ inputs.rag.embedding_model_source != 'local' }}
+            ignore: ${{ inputs.rag.embedding_model_source != 'local' }}
+          embedding_model_cache_dir:
+            label: Embedding Model Cache Directory
+            type: string
+            default: ~/pw/models
+            tooltip: Directory to store the embedding model (HuggingFace or bucket)
+            hidden: ${{ inputs.rag.embedding_model_source == 'local' }}
+            ignore: ${{ inputs.rag.embedding_model_source == 'local' }}
+          embedding_model_bucket:
+            label: Embedding Model Bucket
+            type: string
+            default: pw://mshaxted/codeassist
+            tooltip: Bucket base path containing embedding models by folder name
+            hidden: ${{ inputs.rag.embedding_model_source != 'bucket' }}
+            ignore: ${{ inputs.rag.embedding_model_source != 'bucket' }}
+          systemprompt:
+            type: string
+            label: System Prompt
+            textarea: true
+            optional: true
+            default: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+
+      service:
+        type: group
+        label: Advanced Settings
+        collapsed: true
+        items:
+          name:
+            type: string
+            hidden: true
+            default: vllm
+          parent_install_dir:
+            label: Parent Install Directory
+            type: string
+            optional: true
+            tooltip: 'Container images go to containers/ and tools/caches under this directory. Default: /contrib/pw if it exists, otherwise ${HOME}/pw/software. Ensure it has sufficient space!'
+          container_uri:
+            label: vLLM Container
+            type: string
+            default: ghcr.io/parallelworks/vllm:v1.0
+            tooltip: ORAS artifact containing the vLLM SIF image
+          rag_container_uri:
+            label: RAG Container
+            type: string
+            default: ghcr.io/parallelworks/rag:v1.0
+            tooltip: ORAS artifact containing the RAG SIF image
+            hidden: ${{ inputs.runtype != 'all' }}
+          repository:
+            type: string
+            label: Repository
+            default: https://github.com/parallelworks/activate-rag-vllm.git
+            tooltip: Repository providing the workflow scripts and RAG service code
+          repository_branch:
+            type: string
+            label: Repository Branch
+            default: main
+          rundir:
+            label: RAG Run Directory
+            type: string
+            default: ~/pw/activate-rag-vllm
+            tooltip: The repository is cloned here and the RAG stack runs from it. Keep the path short.
+            hidden: ${{ inputs.runtype != 'all' }}
