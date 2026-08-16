@@ -1,0 +1,170 @@
+permissions:
+  - '*'
+
+# Serve models with Ollama and register the server as a platform model
+# provider. The bare-metal sibling of vllm-endpoint.yaml: same shape, for
+# hosts that are not Kubernetes clusters (the marketplace ollama_openwebui
+# workflow covers those).
+#
+# Ollama's operational advantage is model management at runtime: one
+# server, models pulled and swapped by tag, so new models need no new
+# launch. The trade-offs against vLLM: lower throughput under concurrent
+# agent traffic, and a small default context window, which this workflow
+# pins explicitly because a silently truncated context is the worst
+# failure mode for grounded answers.
+
+on:
+  execute:
+    inputs:
+      resource:
+        label: Resource
+        type: compute-clusters
+        include-workspace: false
+        tooltip: Cluster or GPU server to serve from.
+      model:
+        label: Model Tag
+        type: string
+        default: qwen3.8:27b
+        tooltip: Ollama library tag pulled after the server starts (about 18 GB for qwen3.8:27b, Q4_K_M). More can be pulled later against the same server.
+      ollama:
+        type: group
+        label: Ollama
+        items:
+          gpu_ids:
+            label: GPU IDs
+            type: string
+            default: '0'
+            tooltip: CUDA_VISIBLE_DEVICES for the server, so a mixed box serves from the right card.
+          context_length:
+            label: Context Length
+            type: number
+            default: 16384
+            tooltip: OLLAMA_CONTEXT_LENGTH. Ollama's own default is small, and a silently truncated context breaks retrieval-grounded answers; set what the GPU can hold.
+          models_dir:
+            label: Models Directory
+            type: string
+            default: ~/pw/ollama
+            tooltip: Where pulled models are stored on the resource. Reused across runs.
+      container:
+        type: group
+        label: Container
+        items:
+          bucket_path:
+            label: Ollama Image (bucket)
+            type: string
+            default: pw://Matthew.Shaxted/awsbucket/ollama.sif
+            tooltip: Apptainer image of ollama/ollama. If the bucket pull fails, the workflow builds the image from Docker Hub on the resource instead.
+          local_path:
+            label: Ollama Image (on the resource)
+            type: string
+            default: ~/pw/singularity/ollama.sif
+            tooltip: Where the image is cached on the resource. An existing file is reused; delete it to force a refresh.
+      endpoint:
+        type: group
+        label: Platform Registration
+        items:
+          name:
+            label: Endpoint Name
+            type: string
+            default: ollama
+            tooltip: Session and model-catalog name. Every model the server holds appears as session:<owner>:<name>/<tag>.
+          keep:
+            label: Keep Session on Exit
+            type: boolean
+            default: true
+            tooltip: Leave the session registered when the workflow process exits.
+      workdir:
+        label: Work Directory
+        type: string
+        default: ${HOME}/ollama-endpoint
+        tooltip: Run directory on the resource for logs and pid files.
+
+jobs:
+  serve:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Prepare directories and stop a prior launch
+        run: |
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          MODELS="$(eval echo '${{ inputs.ollama.models_dir }}')"
+          WORKDIR="$(eval echo '${{ inputs.workdir }}')"
+          mkdir -p "$WORKDIR" "$(dirname "$SIF")" "$MODELS"
+          cd "$WORKDIR"
+          if [ -f ollama-endpoint.pids ]; then
+            echo "Stopping processes from a prior launch:"
+            while read -r p; do
+              [ -n "$p" ] || continue
+              kill "$p" 2>/dev/null || true
+              kill -- -"$p" 2>/dev/null || true
+            done < ollama-endpoint.pids
+          fi
+          : > ollama-endpoint.pids
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          "$RUNTIME" instance stop ollama-endpoint 2>/dev/null || true
+
+      - name: Stage the container
+        run: |
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          if [ -f "$SIF" ]; then
+            echo "Image present at $SIF; reusing."
+            exit 0
+          fi
+          PW_BIN="$(command -v pw || echo ~/.local/bin/pw)"
+          if ! "$PW_BIN" buckets cp ${{ inputs.container.bucket_path }} "$SIF"; then
+            echo "Bucket pull failed; building from Docker Hub."
+            RUNTIME="$(command -v apptainer || command -v singularity)"
+            "$RUNTIME" build "$SIF" docker://ollama/ollama:latest
+          fi
+          ls -la "$SIF"
+
+      - name: Start Ollama
+        run: |
+          WORKDIR="$(eval echo '${{ inputs.workdir }}')"
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          MODELS="$(eval echo '${{ inputs.ollama.models_dir }}')"
+          cd "$WORKDIR"
+          PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
+          echo "$PORT" > ollama.port
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          "$RUNTIME" instance start --nv --cleanenv --writable-tmpfs \
+            --bind "$MODELS:/root/.ollama" \
+            --bind "$PWD:/rundir" \
+            "$SIF" ollama-endpoint
+          "$RUNTIME" exec instance://ollama-endpoint bash -c "
+            export CUDA_VISIBLE_DEVICES='${{ inputs.ollama.gpu_ids }}'
+            export OLLAMA_HOST=0.0.0.0:$PORT
+            export OLLAMA_CONTEXT_LENGTH=${{ inputs.ollama.context_length }}
+            nohup ollama serve > /rundir/ollama.out 2>&1 &
+            echo \$! > /rundir/ollama.pid
+          "
+          cat ollama.pid >> ollama-endpoint.pids
+          for i in $(seq 1 30); do
+            curl -s -m 5 "localhost:$PORT/api/version" | grep -q version && { echo "Ollama up."; exit 0; }
+            sleep 2
+          done
+          echo "Ollama did not start; log:"; tail -20 ollama.out; exit 1
+
+      - name: Pull the model
+        run: |
+          cd "$(eval echo '${{ inputs.workdir }}')"
+          PORT=$(cat ollama.port)
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          "$RUNTIME" exec instance://ollama-endpoint bash -c "
+            OLLAMA_HOST=127.0.0.1:$PORT ollama pull '${{ inputs.model }}'
+            OLLAMA_HOST=127.0.0.1:$PORT ollama list
+          "
+
+      - name: Register as a platform model provider
+        run: |
+          cd "$(eval echo '${{ inputs.workdir }}')"
+          PORT=$(cat ollama.port)
+          PW_BIN="$(command -v pw || echo ~/.local/bin/pw)"
+          KEEP=""
+          [ "${{ inputs.endpoint.keep }}" = "true" ] && KEEP="--keep"
+          setsid nohup "$PW_BIN" endpoints http --openai $KEEP -o text \
+            --name "${{ inputs.endpoint.name }}" "$PORT" > endpoint.log 2>&1 < /dev/null &
+          echo "$!" >> ollama-endpoint.pids
+          sleep 15
+          tail -5 endpoint.log
+          echo "Models appear in the catalog as session:<owner>:${{ inputs.endpoint.name }}/<tag>"

@@ -117,8 +117,13 @@ jobs:
     steps:
       - name: Prepare directories and stop a prior launch
         run: |
-          mkdir -p ${{ inputs.workdir }} $(dirname ${{ inputs.container.local_path }}) ${{ inputs.model.cache_dir }}
-          cd ${{ inputs.workdir }}
+          # eval echo: inputs may carry ~ or ${HOME}, which do not expand
+          # inside interpolated strings on their own.
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          CACHE="$(eval echo '${{ inputs.model.cache_dir }}')"
+          WORKDIR="$(eval echo '${{ inputs.workdir }}')"
+          mkdir -p "$WORKDIR" "$(dirname "$SIF")" "$CACHE"
+          cd "$WORKDIR"
           if [ -f vllm-endpoint.pids ]; then
             echo "Stopping processes from a prior launch:"
             while read -r p; do
@@ -134,17 +139,20 @@ jobs:
 
       - name: Stage the container
         run: |
-          if [ -f "${{ inputs.container.local_path }}" ]; then
-            echo "Image present at ${{ inputs.container.local_path }}; reusing."
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          if [ -f "$SIF" ]; then
+            echo "Image present at $SIF; reusing."
             exit 0
           fi
           PW_BIN="$(command -v pw || echo ~/.local/bin/pw)"
-          "$PW_BIN" buckets cp ${{ inputs.container.bucket_path }} "${{ inputs.container.local_path }}"
-          ls -la "${{ inputs.container.local_path }}"
+          "$PW_BIN" buckets cp ${{ inputs.container.bucket_path }} "$SIF"
+          ls -la "$SIF"
 
       - name: Fetch the model
         run: |
-          MODEL_DIR="${{ inputs.model.cache_dir }}/$(basename '${{ inputs.model.hf_model_id }}')"
+          CACHE="$(eval echo '${{ inputs.model.cache_dir }}')"
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          MODEL_DIR="$CACHE/$(basename '${{ inputs.model.hf_model_id }}')"
           if [ -f "$MODEL_DIR/config.json" ]; then
             echo "Model present at $MODEL_DIR; reusing."
             exit 0
@@ -154,14 +162,17 @@ jobs:
           # The container carries huggingface_hub; the host need not.
           # --cleanenv: host SSL_CERT_FILE and friends point at paths the
           # container does not have, which breaks TLS inside it.
-          "$RUNTIME" exec --cleanenv --bind "${{ inputs.model.cache_dir }}:/modelcache" "${{ inputs.container.local_path }}" \
+          "$RUNTIME" exec --cleanenv --bind "$CACHE:/modelcache" "$SIF" \
             bash -lc "HF_TOKEN='${{ inputs.model.hf_token }}' hf download '${{ inputs.model.hf_model_id }}' --local-dir '/modelcache/$(basename '${{ inputs.model.hf_model_id }}')'"
           ls "$MODEL_DIR" | head -5
 
       - name: Start vLLM
         run: |
-          cd ${{ inputs.workdir }}
-          MODEL_DIR="${{ inputs.model.cache_dir }}/$(basename '${{ inputs.model.hf_model_id }}')"
+          WORKDIR="$(eval echo '${{ inputs.workdir }}')"
+          SIF="$(eval echo '${{ inputs.container.local_path }}')"
+          CACHE="$(eval echo '${{ inputs.model.cache_dir }}')"
+          cd "$WORKDIR"
+          MODEL_DIR="$CACHE/$(basename '${{ inputs.model.hf_model_id }}')"
           PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
           echo "$PORT" > vllm.port
           RUNTIME="$(command -v apptainer || command -v singularity)"
@@ -169,7 +180,7 @@ jobs:
           "$RUNTIME" instance start --nv --cleanenv --env CUDA_DEVICE_ORDER=PCI_BUS_ID --writable-tmpfs \
             --bind "$MODEL_DIR:/model" \
             --bind "$PWD:/rundir" \
-            "${{ inputs.container.local_path }}" vllm-endpoint
+            "$SIF" vllm-endpoint
           "$RUNTIME" exec instance://vllm-endpoint bash -c "
             export CUDA_VISIBLE_DEVICES='${{ inputs.vllm.gpu_ids }}'
             nohup python3 -m vllm.entrypoints.openai.api_server \
@@ -185,11 +196,11 @@ jobs:
             echo \$! > /rundir/vllm.pid
           "
           cat vllm.pid >> vllm-endpoint.pids
-          echo "vLLM starting on port $PORT; log: ${{ inputs.workdir }}/vllm.out"
+          echo "vLLM starting on port $PORT; log: $WORKDIR/vllm.out"
 
       - name: Wait for the model to load
         run: |
-          cd ${{ inputs.workdir }}
+          cd "$(eval echo '${{ inputs.workdir }}')"
           PORT=$(cat vllm.port)
           # A 27B model loads for minutes; poll rather than guess, and fail
           # with the log tail rather than silently.
@@ -212,7 +223,7 @@ jobs:
 
       - name: Register as a platform model
         run: |
-          cd ${{ inputs.workdir }}
+          cd "$(eval echo '${{ inputs.workdir }}')"
           PORT=$(cat vllm.port)
           PW_BIN="$(command -v pw || echo ~/.local/bin/pw)"
           KEEP=""
