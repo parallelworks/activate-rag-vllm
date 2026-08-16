@@ -83,7 +83,7 @@ on:
           bucket_path:
             label: vLLM Image (bucket)
             type: string
-            default: pw://mshaxted/codeassist/vllm-0.27.sif
+            default: pw://Matthew.Shaxted/awsbucket/vllm-0.27.sif
             tooltip: Apptainer/Singularity image built from singularity/Singularity.vllm. Qwen3.8 needs vLLM 0.17 or newer; rebuild and restage if the staged image is older.
           local_path:
             label: vLLM Image (on the resource)
