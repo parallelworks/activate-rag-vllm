@@ -59,13 +59,13 @@ on:
           gpu_memory:
             label: GPU Memory Utilization
             type: number
-            default: 0.9
-            tooltip: Fraction of each GPU's memory vLLM may use.
+            default: 0.95
+            tooltip: Fraction of each GPU's memory vLLM may use. The 19 GB 4-bit checkpoint needs 0.95 on a 24 GB card.
           max_model_len:
             label: Max Model Length
             type: string
-            default: '32768'
-            tooltip: Context window to serve. The model's native window is larger, but KV cache competes with weights for GPU memory; on one 24 GB card with 4-bit weights, 32k fits comfortably.
+            default: '16384'
+            tooltip: Context window to serve. The model's native window is larger, but KV cache competes with weights for GPU memory; 16k with an fp8 KV cache is what fits beside the 19 GB checkpoint on a 24 GB card (measured on a30gpuserver, 22.2 GB in use).
           dtype:
             label: Dtype
             type: string
@@ -74,8 +74,8 @@ on:
           extra_args:
             label: Extra vLLM Arguments
             type: string
-            default: --trust-remote-code --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3
-            tooltip: Appended to the serve command. The qwen3 parsers make tool calling and reasoning work through the OpenAI surface; replace them when serving a non-Qwen model.
+            default: --trust-remote-code --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --kv-cache-dtype fp8 --enforce-eager
+            tooltip: Appended to the serve command. fp8 KV and eager mode are what let the model fit the single 24 GB card; drop --enforce-eager on a roomier GPU for throughput. The qwen3 parsers make tool calling and reasoning work through the OpenAI surface; replace them when serving a non-Qwen model.
       container:
         type: group
         label: Container
@@ -83,7 +83,7 @@ on:
           bucket_path:
             label: vLLM Image (bucket)
             type: string
-            default: pw://mshaxted/codeassist/vllm.sif
+            default: pw://mshaxted/codeassist/vllm-0.27.sif
             tooltip: Apptainer/Singularity image built from singularity/Singularity.vllm. Qwen3.8 needs vLLM 0.17 or newer; rebuild and restage if the staged image is older.
           local_path:
             label: vLLM Image (on the resource)
