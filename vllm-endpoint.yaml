@@ -152,7 +152,9 @@ jobs:
           export HF_TOKEN='${{ inputs.model.hf_token }}'
           RUNTIME="$(command -v apptainer || command -v singularity)"
           # The container carries huggingface_hub; the host need not.
-          "$RUNTIME" exec --bind "${{ inputs.model.cache_dir }}:/modelcache" "${{ inputs.container.local_path }}" \
+          # --cleanenv: host SSL_CERT_FILE and friends point at paths the
+          # container does not have, which breaks TLS inside it.
+          "$RUNTIME" exec --cleanenv --bind "${{ inputs.model.cache_dir }}:/modelcache" "${{ inputs.container.local_path }}" \
             bash -lc "HF_TOKEN='${{ inputs.model.hf_token }}' hf download '${{ inputs.model.hf_model_id }}' --local-dir '/modelcache/$(basename '${{ inputs.model.hf_model_id }}')'"
           ls "$MODEL_DIR" | head -5
 
@@ -164,7 +166,7 @@ jobs:
           echo "$PORT" > vllm.port
           RUNTIME="$(command -v apptainer || command -v singularity)"
           export CUDA_DEVICE_ORDER=PCI_BUS_ID
-          "$RUNTIME" instance start --nv --writable-tmpfs \
+          "$RUNTIME" instance start --nv --cleanenv --env CUDA_DEVICE_ORDER=PCI_BUS_ID --writable-tmpfs \
             --bind "$MODEL_DIR:/model" \
             --bind "$PWD:/rundir" \
             "${{ inputs.container.local_path }}" vllm-endpoint
