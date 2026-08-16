@@ -195,7 +195,6 @@ jobs:
               > /rundir/vllm.out 2>&1 &
             echo \$! > /rundir/vllm.pid
           "
-          cat vllm.pid >> vllm-endpoint.pids
           echo "vLLM starting on port $PORT; log: $WORKDIR/vllm.out"
 
       - name: Wait for the model to load
@@ -210,7 +209,7 @@ jobs:
               curl -s -m 5 "localhost:$PORT/v1/models"
               exit 0
             fi
-            if ! kill -0 "$(cat vllm.pid 2>/dev/null)" 2>/dev/null; then
+            if ! pgrep -f "openai.api_server.*--port $PORT" > /dev/null; then
               echo "vLLM process exited; last 40 log lines:"
               tail -40 vllm.out
               exit 1

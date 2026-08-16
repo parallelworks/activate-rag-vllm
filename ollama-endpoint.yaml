@@ -138,7 +138,6 @@ jobs:
             nohup ollama serve > /rundir/ollama.out 2>&1 &
             echo \$! > /rundir/ollama.pid
           "
-          cat ollama.pid >> ollama-endpoint.pids
           for i in $(seq 1 30); do
             curl -s -m 5 "localhost:$PORT/api/version" | grep -q version && { echo "Ollama up."; exit 0; }
             sleep 2
