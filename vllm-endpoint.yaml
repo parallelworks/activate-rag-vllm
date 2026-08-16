@@ -1,0 +1,223 @@
+permissions:
+  - '*'
+
+# Serve a model with vLLM and register it as a platform model.
+#
+# This is the serving half of what workflow.yaml does, on its own: no RAG
+# stack, no Open WebUI, no interactive session. vLLM starts on the resource
+# and `pw endpoints http --openai` registers its /v1 surface in the platform
+# model catalog, so chat, ACTIVATE Studio, and any OpenAI-speaking client
+# pick it like any other model. Retrieval belongs to whatever consumes the
+# model (Studio carries its own), so nothing here indexes documents.
+#
+# Defaults target Qwen3.8-27B on an A30 server: vLLM 0.17+ (rebuild the
+# container if the staged image predates it), tensor parallel across the
+# GPUs, and the qwen3 reasoning and tool-call parsers.
+
+on:
+  execute:
+    inputs:
+      resource:
+        label: Resource
+        type: compute-clusters
+        include-workspace: false
+        tooltip: Cluster or GPU server to serve from. vLLM runs on the login/head node; use the scheduler inputs below to place it on a compute node instead.
+      model:
+        type: group
+        label: Model
+        items:
+          hf_model_id:
+            label: HuggingFace Model ID
+            type: string
+            default: MIRALABS/Qwen3.8-27B-W4A16-AutoRound
+            tooltip: Model to download and serve. The default is a 4-bit AutoRound build of Qwen3.8-27B (compressed-tensors, vLLM Marlin) that fits one 24 GB Ampere GPU with room for KV cache; the BF16 original (Qwen/Qwen3.8-27B) needs about 54 GB across multiple GPUs.
+          hf_token:
+            label: HuggingFace Token
+            type: string
+            default: ${{ org.HF_TOKEN }}
+            optional: true
+            tooltip: Needed for gated models; unused otherwise.
+          cache_dir:
+            label: Model Cache Directory
+            type: string
+            default: ~/pw/models
+            tooltip: Where model weights are downloaded on the resource. Reused across runs; size the filesystem for the model (about 54 GB for Qwen3.8-27B at BF16).
+      vllm:
+        type: group
+        label: vLLM
+        items:
+          num_gpus:
+            label: GPUs (tensor parallel size)
+            type: number
+            default: 1
+            tooltip: Tensor parallel across this many GPUs. The 4-bit default model serves on one 24 GB GPU; the BF16 original needs 4 of them.
+          gpu_ids:
+            label: GPU IDs
+            type: string
+            default: '0'
+            tooltip: CUDA_VISIBLE_DEVICES for the server, so a mixed box serves from the right card (a30gpuserver has the A30 as 0 and a small display card as 1).
+          gpu_memory:
+            label: GPU Memory Utilization
+            type: number
+            default: 0.9
+            tooltip: Fraction of each GPU's memory vLLM may use.
+          max_model_len:
+            label: Max Model Length
+            type: string
+            default: '32768'
+            tooltip: Context window to serve. The model's native window is larger, but KV cache competes with weights for GPU memory; on one 24 GB card with 4-bit weights, 32k fits comfortably.
+          dtype:
+            label: Dtype
+            type: string
+            default: auto
+            tooltip: auto respects the checkpoint (BF16 for the base model, FP8 for the -FP8 variant).
+          extra_args:
+            label: Extra vLLM Arguments
+            type: string
+            default: --trust-remote-code --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3
+            tooltip: Appended to the serve command. The qwen3 parsers make tool calling and reasoning work through the OpenAI surface; replace them when serving a non-Qwen model.
+      container:
+        type: group
+        label: Container
+        items:
+          bucket_path:
+            label: vLLM Image (bucket)
+            type: string
+            default: pw://mshaxted/codeassist/vllm.sif
+            tooltip: Apptainer/Singularity image built from singularity/Singularity.vllm. Qwen3.8 needs vLLM 0.17 or newer; rebuild and restage if the staged image is older.
+          local_path:
+            label: vLLM Image (on the resource)
+            type: string
+            default: ~/pw/singularity/vllm.sif
+            tooltip: Where the image is cached on the resource. An existing file is reused; delete it to force a fresh pull from the bucket.
+      endpoint:
+        type: group
+        label: Platform Registration
+        items:
+          name:
+            label: Endpoint Name
+            type: string
+            default: qwen38-27b
+            tooltip: Session and model-catalog name. Users select the model as session:<owner>:<name>/<served model>.
+          keep:
+            label: Keep Session on Exit
+            type: boolean
+            default: true
+            tooltip: Leave the session registered when the workflow process exits, so the model stays in the catalog across relaunches.
+      workdir:
+        label: Work Directory
+        type: string
+        default: ${HOME}/vllm-endpoint
+        tooltip: Run directory on the resource for logs and pid files.
+
+jobs:
+  serve:
+    ssh:
+      remoteHost: ${{ inputs.resource.ip }}
+    steps:
+      - name: Prepare directories and stop a prior launch
+        run: |
+          mkdir -p ${{ inputs.workdir }} $(dirname ${{ inputs.container.local_path }}) ${{ inputs.model.cache_dir }}
+          cd ${{ inputs.workdir }}
+          if [ -f vllm-endpoint.pids ]; then
+            echo "Stopping processes from a prior launch:"
+            while read -r p; do
+              [ -n "$p" ] || continue
+              kill "$p" 2>/dev/null || true
+              kill -- -"$p" 2>/dev/null || true
+            done < vllm-endpoint.pids
+          fi
+          : > vllm-endpoint.pids
+          # Instances survive the pid file; stop by name.
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          "$RUNTIME" instance stop vllm-endpoint 2>/dev/null || true
+
+      - name: Stage the container
+        run: |
+          if [ -f "${{ inputs.container.local_path }}" ]; then
+            echo "Image present at ${{ inputs.container.local_path }}; reusing."
+            exit 0
+          fi
+          PW_BIN="$(command -v pw || echo ~/.local/bin/pw)"
+          "$PW_BIN" buckets cp ${{ inputs.container.bucket_path }} "${{ inputs.container.local_path }}"
+          ls -la "${{ inputs.container.local_path }}"
+
+      - name: Fetch the model
+        run: |
+          MODEL_DIR="${{ inputs.model.cache_dir }}/$(basename '${{ inputs.model.hf_model_id }}')"
+          if [ -f "$MODEL_DIR/config.json" ]; then
+            echo "Model present at $MODEL_DIR; reusing."
+            exit 0
+          fi
+          export HF_TOKEN='${{ inputs.model.hf_token }}'
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          # The container carries huggingface_hub; the host need not.
+          "$RUNTIME" exec --bind "${{ inputs.model.cache_dir }}:/modelcache" "${{ inputs.container.local_path }}" \
+            bash -lc "HF_TOKEN='${{ inputs.model.hf_token }}' hf download '${{ inputs.model.hf_model_id }}' --local-dir '/modelcache/$(basename '${{ inputs.model.hf_model_id }}')'"
+          ls "$MODEL_DIR" | head -5
+
+      - name: Start vLLM
+        run: |
+          cd ${{ inputs.workdir }}
+          MODEL_DIR="${{ inputs.model.cache_dir }}/$(basename '${{ inputs.model.hf_model_id }}')"
+          PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')
+          echo "$PORT" > vllm.port
+          RUNTIME="$(command -v apptainer || command -v singularity)"
+          export CUDA_DEVICE_ORDER=PCI_BUS_ID
+          "$RUNTIME" instance start --nv --writable-tmpfs \
+            --bind "$MODEL_DIR:/model" \
+            --bind "$PWD:/rundir" \
+            "${{ inputs.container.local_path }}" vllm-endpoint
+          "$RUNTIME" exec instance://vllm-endpoint bash -c "
+            export CUDA_VISIBLE_DEVICES='${{ inputs.vllm.gpu_ids }}'
+            nohup python3 -m vllm.entrypoints.openai.api_server \
+              --model /model \
+              --served-model-name '$(basename '${{ inputs.model.hf_model_id }}')' \
+              --host 0.0.0.0 --port $PORT \
+              --tensor-parallel-size ${{ inputs.vllm.num_gpus }} \
+              --gpu-memory-utilization ${{ inputs.vllm.gpu_memory }} \
+              --max-model-len ${{ inputs.vllm.max_model_len }} \
+              --dtype ${{ inputs.vllm.dtype }} \
+              ${{ inputs.vllm.extra_args }} \
+              > /rundir/vllm.out 2>&1 &
+            echo \$! > /rundir/vllm.pid
+          "
+          cat vllm.pid >> vllm-endpoint.pids
+          echo "vLLM starting on port $PORT; log: ${{ inputs.workdir }}/vllm.out"
+
+      - name: Wait for the model to load
+        run: |
+          cd ${{ inputs.workdir }}
+          PORT=$(cat vllm.port)
+          # A 27B model loads for minutes; poll rather than guess, and fail
+          # with the log tail rather than silently.
+          for i in $(seq 1 240); do
+            if curl -s -m 5 "localhost:$PORT/v1/models" | grep -q '"id"'; then
+              echo "vLLM up after ~$((i * 5))s:"
+              curl -s -m 5 "localhost:$PORT/v1/models"
+              exit 0
+            fi
+            if ! kill -0 "$(cat vllm.pid 2>/dev/null)" 2>/dev/null; then
+              echo "vLLM process exited; last 40 log lines:"
+              tail -40 vllm.out
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "vLLM did not come up in 20 minutes; last 40 log lines:"
+          tail -40 vllm.out
+          exit 1
+
+      - name: Register as a platform model
+        run: |
+          cd ${{ inputs.workdir }}
+          PORT=$(cat vllm.port)
+          PW_BIN="$(command -v pw || echo ~/.local/bin/pw)"
+          KEEP=""
+          [ "${{ inputs.endpoint.keep }}" = "true" ] && KEEP="--keep"
+          setsid nohup "$PW_BIN" endpoints http --openai $KEEP -o text \
+            --name "${{ inputs.endpoint.name }}" "$PORT" > endpoint.log 2>&1 < /dev/null &
+          echo "$!" >> vllm-endpoint.pids
+          sleep 15
+          tail -5 endpoint.log
+          echo "Model appears in the catalog as session:<owner>:${{ inputs.endpoint.name }}/$(basename '${{ inputs.model.hf_model_id }}')"
