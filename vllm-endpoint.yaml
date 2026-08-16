@@ -40,8 +40,8 @@ on:
           cache_dir:
             label: Model Cache Directory
             type: string
-            default: ~/pw/models
-            tooltip: Where model weights are downloaded on the resource. Reused across runs; size the filesystem for the model (about 54 GB for Qwen3.8-27B at BF16).
+            default: ${WORKDIR:-$HOME/pw}/models
+            tooltip: Where model weights are downloaded on the resource. Defaults into the site work filesystem (WORKDIR) since weights are tens of GB; falls back to home where WORKDIR is unset. Reused across runs.
       vllm:
         type: group
         label: vLLM

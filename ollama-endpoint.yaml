@@ -43,8 +43,8 @@ on:
           models_dir:
             label: Models Directory
             type: string
-            default: ~/pw/ollama
-            tooltip: Where pulled models are stored on the resource. Reused across runs.
+            default: ${WORKDIR:-$HOME/pw}/ollama
+            tooltip: Where pulled models are stored on the resource. Defaults into the site work filesystem (WORKDIR), falling back to home where it is unset. Reused across runs.
       container:
         type: group
         label: Container
