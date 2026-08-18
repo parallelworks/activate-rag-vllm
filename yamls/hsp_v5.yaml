@@ -757,7 +757,7 @@ jobs:
 # CONFIGURATIONS
 # ==============================================================================
 configurations:
-  Carpenter:
+  Carpenter-gpt-oss-20b:
     inputs:
       runtype: vllm
       cluster:
@@ -784,7 +784,7 @@ configurations:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
 
-  Makau:
+  Makau-gpt-oss-20b:
     inputs:
       runtype: vllm
       cluster:
@@ -811,7 +811,37 @@ configurations:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
 
-  Nautilus:
+  Makau-gpt-oss-120b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          partition: standard
+          qos: standard
+          # 120b needs 4x H100 SXM5 (80GB): weights alone are ~64GiB, so a
+          # single GPU leaves no room for the KV cache
+          scheduler_directives: "#SBATCH --gres=gpu:h100_sxm5:4"
+          time: "01:00:00"
+      model:
+        source: cached_model
+        cached_model_id: openai/gpt-oss-120b
+        hf_token: ${{ org.HF_TOKEN }}
+      vllm:
+        dtype: bfloat16
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+        gpu_memory: "0.90"
+        max_model_len: "auto"
+        num_gpus: "4"
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
+  Nautilus-gpt-oss-20b:
     inputs:
       runtype: vllm
       cluster:
@@ -838,7 +868,7 @@ configurations:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
 
-  Wheat:
+  Wheat-gpt-oss-20b:
     inputs:
       runtype: vllm
       cluster:
