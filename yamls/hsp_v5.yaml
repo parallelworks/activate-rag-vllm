@@ -757,6 +757,37 @@ jobs:
 # CONFIGURATIONS
 # ==============================================================================
 configurations:
+  Blueback-gpt-oss-20b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          # Blueback's only CUDA GPUs are the visualization nodes' single
+          # NVIDIA L40 48GB; its AI/ML nodes are AMD MI300A APUs, which the
+          # CUDA vLLM container cannot use. 20b (~13GiB of weights) fits on
+          # one L40; 120b does not fit on this system.
+          node_type: viz
+          qos: standard
+          scheduler_directives: "#SBATCH --gres=gpu:l40:1"
+          time: "01:00:00"
+      model:
+        source: cached_model
+        hf_token: ${{ org.HF_TOKEN }}
+      vllm:
+        dtype: bfloat16
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+        gpu_memory: "0.90"
+        max_model_len: "auto"
+        num_gpus: "1"
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
   Carpenter-gpt-oss-20b:
     inputs:
       runtype: vllm
@@ -783,6 +814,7 @@ configurations:
         embedding_model_id: sentence-transformers/all-MiniLM-L6-v2
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
 
   Makau-gpt-oss-20b:
     inputs:
@@ -868,6 +900,119 @@ configurations:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
 
+  Nautilus-gpt-oss-120b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          # 120b's weights alone are ~64GiB and Nautilus GPUs are A100 40GB,
+          # so the model must be sharded across all 4 GPUs of an AI/ML (mla)
+          # node; qos standard because HIE is meant for interactive work
+          node_type: mla
+          partition: general
+          qos: standard
+          scheduler_directives: "#SBATCH --gres=gpu:4"
+          time: "01:00:00"
+      model:
+        source: cached_model
+        cached_model_id: openai/gpt-oss-120b
+        hf_token: ${{ org.HF_TOKEN }}
+      vllm:
+        dtype: bfloat16
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+        gpu_memory: "0.90"
+        max_model_len: "auto"
+        num_gpus: "4"
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
+  Raider-gpt-oss-20b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          # Raider's MLA nodes have 4x A100 SXM4 40GB; the guide requires the
+          # typed gpu gres to be paired with the mla/viz constraint
+          node_type: mla
+          partition: general
+          qos: standard
+          scheduler_directives: "#SBATCH --gres=gpu:a100:1"
+          time: "01:00:00"
+      model:
+        source: cached_model
+        hf_token: ${{ org.HF_TOKEN }}
+        # $PROJECTS_HOME is not set in non-interactive shells on Raider, so
+        # the ${PROJECTS_HOME:-$HOME/pw} default resolves to $HOME/pw there;
+        # pin the real paths where the SIF and models are staged
+        cache_dir: /p/app/projects/hsp/models
+      service:
+        parent_install_dir: /p/app/projects/hsp
+      vllm:
+        dtype: bfloat16
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+        gpu_memory: "0.90"
+        max_model_len: "auto"
+        num_gpus: "1"
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
+  Raider-gpt-oss-120b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          # 120b's weights alone are ~64GiB and Raider GPUs are A100 40GB, so
+          # the model must be sharded across all 4 GPUs of an MLA node; the
+          # guide requires the typed gpu gres to be paired with the mla
+          # constraint
+          node_type: mla
+          partition: general
+          qos: standard
+          scheduler_directives: "#SBATCH --gres=gpu:a100:4"
+          time: "01:00:00"
+      model:
+        source: cached_model
+        cached_model_id: openai/gpt-oss-120b
+        hf_token: ${{ org.HF_TOKEN }}
+        # $PROJECTS_HOME is not set in non-interactive shells on Raider, so
+        # the ${PROJECTS_HOME:-$HOME/pw} default resolves to $HOME/pw there;
+        # pin the real paths where the SIF and models are staged
+        cache_dir: /p/app/projects/hsp/models
+      service:
+        parent_install_dir: /p/app/projects/hsp
+      vllm:
+        dtype: bfloat16
+        # --disable-custom-all-reduce: vLLM's custom all-reduce kernel faults
+        # with 'Invalid access of peer GPU memory over nvlink' on Raider's
+        # A100 nodes during CUDA graph capture; NCCL all-reduce works
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai --disable-custom-all-reduce"
+        # 0.85, not 0.90: at 0.90 the weights+KV+graphs budget fills the 40GB
+        # A100 completely and the sampler warm-up (256 seqs x 201k vocab)
+        # OOMs on its ~600MiB transient buffer
+        gpu_memory: "0.85"
+        max_model_len: "auto"
+        num_gpus: "4"
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
   Wheat-gpt-oss-20b:
     inputs:
       runtype: vllm
@@ -888,6 +1033,38 @@ configurations:
         gpu_memory: "0.90"
         max_model_len: "auto"
         num_gpus: "1"
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_cache_dir: "${WORKDIR}"
+        embedding_model_id: sentence-transformers/all-MiniLM-L6-v2
+        embedding_model_source: huggingface
+        systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
+
+  Wheat-gpt-oss-120b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        pbs:
+          # 120b's weights alone are ~64GiB and every Wheat GPU is an A100 40GB,
+          # so the model must be sharded across a 4-GPU MLA node (nmlas selects
+          # MLA nodes on Wheat); HIE is capped at one 92-core node and is not
+          # meant for regular batch work, hence the standard queue
+          scheduler_directives: |
+            #PBS -q standard
+            #PBS -l select=1:ncpus=92:mpiprocs=1:nmlas=4
+            #PBS -l walltime=01:00:00
+            #PBS -V
+      model:
+        source: cached_model
+        cached_model_id: openai/gpt-oss-120b
+        hf_token: ${{ org.HF_TOKEN }}
+      vllm:
+        dtype: bfloat16
+        extra_args: "--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai"
+        gpu_memory: "0.90"
+        max_model_len: "auto"
+        num_gpus: "4"
         attention_backend: TRITON_ATTN
       rag:
         embedding_model_cache_dir: "${WORKDIR}"
