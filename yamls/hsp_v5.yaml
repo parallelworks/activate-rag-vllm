@@ -815,6 +815,66 @@ configurations:
         embedding_model_source: huggingface
         systemprompt: "You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly."
 
+  Jean-gpt-oss-20b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          partition: AIML
+          qos: normal
+          # Explicit gres so Slurm sets CUDA_VISIBLE_DEVICES and the job never
+          # shares GPUs if the AIML partition schedules nodes non-exclusively
+          scheduler_directives: "#SBATCH --gres=gpu:1"
+          time: '01:00:00'
+      model:
+        source: cached_model
+        hf_token: ${{ org.HF_TOKEN }}
+      vllm:
+        dtype: bfloat16
+        extra_args: '--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai'
+        gpu_memory: '0.90'
+        max_model_len: auto
+        num_gpus: '1'
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+
+  Jean-gpt-oss-120b:
+    inputs:
+      runtype: vllm
+      cluster:
+        scheduler: true
+        slurm:
+          cpus_per_task: 1
+          is_enabled: true
+          nodes: 1
+          partition: AIML
+          qos: normal
+          # 120b is sharded across 4 H100s for KV-cache headroom; explicit
+          # gres so Slurm sets CUDA_VISIBLE_DEVICES and the job never shares
+          # GPUs if the AIML partition schedules nodes non-exclusively
+          scheduler_directives: "#SBATCH --gres=gpu:4"
+          time: '01:00:00'
+      model:
+        source: cached_model
+        cached_model_id: openai/gpt-oss-120b
+        hf_token: ${{ org.HF_TOKEN }}
+      vllm:
+        dtype: bfloat16
+        extra_args: '--trust_remote_code --async-scheduling --enable-auto-tool-choice --tool-call-parser openai'
+        gpu_memory: '0.90'
+        max_model_len: auto
+        num_gpus: '4'
+        attention_backend: TRITON_ATTN
+      rag:
+        embedding_model_source: huggingface
+        systemprompt: You are a careful assistant. Use ONLY the provided context blocks to answer. Each block is numbered [1], [2], … and includes source metadata. When you use information from a block, you MUST cite it inline with [n]. At the end of your response, include a 'References' section with one reference per line formatted as [n] file_path (chunk index). Do not invent citations or sources. If the context does not contain the answer, say so briefly.
+
 
   Makau-gpt-oss-20b:
     inputs:

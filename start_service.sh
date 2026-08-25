@@ -426,8 +426,11 @@ EOF
         --bind "${MODEL_PATH}:/${MODEL_BASE}" \
         "$VLLM_SIF" vllm
 
-    # Run vLLM server inside the instance
-    singularity exec instance://vllm bash -c "
+    # Run vLLM server inside the instance. CC/CXX are pinned to the
+    # container's compilers: singularity passes the host env through, and
+    # some systems (Jean) export CC=icc, which Triton uses to build its CUDA
+    # driver stub but does not exist in the container
+    singularity exec --env CC=gcc --env CXX=g++ instance://vllm bash -c "
         source /.singularity.d/env/env.sh
         nohup python3 -m vllm.entrypoints.openai.api_server \
             --model '/${MODEL_BASE}' \

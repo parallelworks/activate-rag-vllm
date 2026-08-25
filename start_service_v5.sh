@@ -124,6 +124,11 @@ else
     endpoint_port=$(pw agent open-port)
     svc_log="${PWD}/vllm-${PW_JOB_ID}.out"
 
+    # CC/CXX must be pinned to the container's compilers: singularity passes
+    # the host env through by default, and some systems (Jean) export CC=icc,
+    # which Triton uses to build its CUDA driver stub but does not exist in
+    # the container. TRITON_CACHE_DIR joins the other JIT caches in the
+    # per-job /tmp so runs never share ~/.triton on NFS home.
     cat > launch-vllm-${PW_JOB_ID}.sh <<LAUNCHEOF
 #!/bin/bash
 exec "${singularity_bin}" exec --nv --writable-tmpfs \\
@@ -139,6 +144,9 @@ exec "${singularity_bin}" exec --nv --writable-tmpfs \\
     --env CUDA_CACHE_PATH=/tmp/cuda_cache \\
     --env TORCH_EXTENSIONS_DIR=/tmp/torch_extensions \\
     --env FLASHINFER_JIT_DIR=/tmp/flashinfer_jit \\
+    --env TRITON_CACHE_DIR=/tmp/triton_cache \\
+    --env CC=gcc \\
+    --env CXX=g++ \\
     --env CUDA_DEVICE_ORDER=PCI_BUS_ID \\
     ${extra_env} \\
     "${container_ref}" \\
