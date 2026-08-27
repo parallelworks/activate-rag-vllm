@@ -177,15 +177,29 @@ fi
 # Register the endpoint only once the service is answering: the platform
 # chat reports the session as unreachable while the model is still loading
 echo "Waiting for the service at ${gate_url} (log: ${svc_log})"
+
+# Stream the service log into this script's output while the service starts,
+# so model-loading progress shows up in the workflow logs without having to
+# tail ${svc_log} on the cluster; stopped once the service answers so the
+# runtime log is not duplicated for the lifetime of the endpoint
+tail -n +1 -F "${svc_log}" 2>/dev/null &
+tail_pid=$!
+stop_log_stream() {
+    kill ${tail_pid} 2>/dev/null
+    wait ${tail_pid} 2>/dev/null
+}
+
 elapsed=0
 until curl -sf -o /dev/null --max-time 5 "${gate_url}"; do
     if ! kill -0 ${svc_pid} 2>/dev/null; then
+        stop_log_stream
         echo "::error title=Error::service exited during startup; last log lines:"
         tail -50 "${svc_log}"
         pw workflows runs cancel ${PW_RUN_SLUG}
         exit 1
     fi
     if [ ${elapsed} -ge 3600 ]; then
+        stop_log_stream
         echo "::error title=Error::service did not start within 60 minutes; last log lines:"
         tail -50 "${svc_log}"
         pw workflows runs cancel ${PW_RUN_SLUG}
@@ -197,7 +211,8 @@ until curl -sf -o /dev/null --max-time 5 "${gate_url}"; do
         echo "$(date) service still starting (${elapsed}s elapsed)"
     fi
 done
-echo "Service is answering at ${gate_url}; registering endpoint"
+stop_log_stream
+echo "Service is answering at ${gate_url}; runtime log continues at ${svc_log}; registering endpoint"
 
 # --link ties the port's server process to the endpoint: deleting the
 # endpoint stops it even if the surrounding script is gone
