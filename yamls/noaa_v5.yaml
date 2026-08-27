@@ -700,7 +700,6 @@ configurations:
       cluster:
         scheduler: true
         slurm:
-          account: nesccmgmt
           is_enabled: true
           nodes: 1
           ntasks: 1
