@@ -19,3 +19,5 @@ cancel.sh
 run.sh
 .run.env
 __pycache__
+# HPC system user guides kept locally for reference; never commit them
+*-user-guide.txt

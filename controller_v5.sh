@@ -8,6 +8,17 @@ set -x
 if ! command -v singularity >/dev/null 2>&1 && ! command -v apptainer >/dev/null 2>&1; then
     module load apptainer 2>/dev/null || module load singularity 2>/dev/null || true
 fi
+# Some systems (Fran) install apptainer under a prefix that is only added to
+# PATH in interactive shells and ship no module for it; probe the usual
+# install prefixes before giving up
+if ! command -v singularity >/dev/null 2>&1 && ! command -v apptainer >/dev/null 2>&1; then
+    for dir in /opt/apptainer/bin /opt/singularity/bin /usr/local/apptainer/bin /usr/local/singularity/bin; do
+        if [ -x "${dir}/apptainer" ] || [ -x "${dir}/singularity" ]; then
+            export PATH="${dir}:${PATH}"
+            break
+        fi
+    done
+fi
 if ! command -v singularity >/dev/null 2>&1 && ! command -v apptainer >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     if command -v dnf >/dev/null 2>&1; then
         sudo dnf install -y epel-release || true
