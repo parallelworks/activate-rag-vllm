@@ -35,6 +35,13 @@ From: vllm/vllm-openai:latest
 
     # Note: Do NOT upgrade transformers - the vllm-openai base image has
     # compatible versions pinned. Upgrading breaks compatibility.
+    #
+    # One pinned exception: Transformers 5.15.0 cannot express Gemma 4's
+    # mixed attention layout (per-layer head_dim) and vLLM startup fails
+    # with AmbiguousGlobalPerLayerAttributeError. 5.14.1 handles it.
+    # https://github.com/vllm-project/vllm/issues/51744
+    pip install --no-cache-dir transformers==5.14.1
+
     
     $PY - << 'PY'
 import transformers
